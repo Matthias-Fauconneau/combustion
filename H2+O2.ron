@@ -1,13 +1,13 @@
 (
-units: (length: cm, activation_energy: cal_per_mol)
+units: (length: cm, activation_energy: cal_per_mol),
 phases: [IdealGas(elements: [H, O, Ar],
                 species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],
-								state=(temperature: 300., pressure: 1./*atm*/))],
+								state: (temperature: 300., pressure: 1./*atm*/))],
 species: {
 	"H": (
 		composition: {H: 1},
 		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.]
+			temperature_ranges: [200., 1000., 3500.],
 			data: [[2.5, 7.5332819e-13, -1.99591964e-15, 2.30081632e-18, -9.27732332e-22, 2.54736599e+04, -0.446682853],
 								[2.5, -2.30842973e-11, 1.61561948e-14, -4.73515235e-18, 4.98197357e-22, 2.54736599e+04, -0.446682914]]
 		),
@@ -16,7 +16,7 @@ species: {
 	"H2": (
 		composition: {H: 2},
 		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.]
+			temperature_ranges: [200., 1000., 3500.],
 			data: [[2.34433112, 7.98052075e-03, -1.9478151e-05, 2.1572094e-08, -7.37611761e-12, -917.935173, 0.683010238],
 								[3.3372792, -4.94024731e-05, 4.99456778e-07, -1.79566394e-10, 2.0255376e-14, -950.158922, -3.20502331]]
 		),
@@ -25,7 +25,7 @@ species: {
 	"O": (
 		composition: {O: 1},
 		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.]
+			temperature_ranges: [200., 1000., 3500.],
 			data: [[3.1682671, -3.27931884e-03, 6.64306396e-06, -6.12806624e-09, 2.11265971e-12, 2.91222592e+04, 2.5193346],
 								[2.56942078, -8.59741137e-05, 4.19484589e-08, -1.0177799e-11, 1.22833691e-15, 2.92175791e+04, 4.78433864]]
 		),
@@ -34,7 +34,7 @@ species: {
 	"O2": (
 		composition: {O: 2},
 		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.]
+			temperature_ranges: [200., 1000., 3500.],
 			data: [[3.78245636, -2.99673416e-03, 9.84730201e-06, -9.68129509e-09, 3.24372837e-12, -1063.94356, 3.65767573],
 								[3.28253784, 1.48308754e-03, -7.57966669e-07, 2.9470555e-10, -2.16717794e-14, -1088.45772, 5.45323129]]
 		),
@@ -42,11 +42,12 @@ species: {
 	),
 	"OH": (
 		composition: {O: 1, H: 1},
-		thermodynamic: NASA7(temperature_ranges: [200., 1000., 3500.],
+		thermodynamic: NASA7(
+			temperature_ranges: [200., 1000., 3500.],
 			data: [[3.99201543, -2.40131752e-03, 4.61793841e-06, -3.88113333e-09, 1.3641147e-12, 3615.8056, -0.103925458],
 								[3.9288767, 5.48429716e-04, 1.26505228e-07, -8.79461556e-11, 1.17412376e-14, 3858.657, 4.4766961]]
 		),
-		transport: Linear(well_depth: 80., diameter: 2.75)
+		transport: Linear(well_depth: 80., diameter: 2.75, polarizability: 0., rotational_relaxation: 0.)
 	),
 	"H2O": (
 		composition: {H: 2, O: 1},
@@ -67,7 +68,7 @@ species: {
 		transport: Nonlinear(well_depth: 107.4, diameter: 3.458, rotational_relaxation: 1.)
 	),
 	"H2O2": (
-		composition: {H: 2, O: 2}
+		composition: {H: 2, O: 2},
 		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			data: [[4.27611269, -5.42822417e-04, 1.67335701e-05, -2.15770813e-08, 8.62454363e-12, -1.77025821e+04, 3.43505074],
@@ -79,7 +80,7 @@ species: {
 		composition: {Ar: 1},
 		thermodynamic: NASA7(
 			temperature_ranges: [300., 5000.],
-			data: [2.5, 0., 0., 0., 0., -745.375, 4.366],
+			data: [[2.5, 0., 0., 0., 0., -745.375, 4.366]],
 		),
 		transport: Atom(well_depth: 136.5, diameter: 3.33),
 	),
@@ -87,7 +88,7 @@ species: {
 reactions: [
 	ThreeBody(equation: "2 O + M <=> O2 + M", rate_constant: (A: 1.2e+17, b: -1., Ea: 0.), efficiencies: {"H2": 2.4, "H2O": 15.4, "Ar": 0.83}),
 	ThreeBody(equation: "O + H + M <=> OH + M", rate_constant: (A: 5.e+17, b: -1., Ea: 0.), efficiencies: {"H2": 2., "H2O": 6., "Ar": 0.7}),
-	Elementary(equation: "O + H2 <=> H + OH", rate_constant: (A: 3.87e+04, b: 2.7, Ea: 6260.))
+	Elementary(equation: "O + H2 <=> H + OH", rate_constant: (A: 3.87e+04, b: 2.7, Ea: 6260.)),
 	Elementary(equation: "O + HO2 <=> OH + O2", rate_constant: (A: 2.e+13, b: 0., Ea: 0.)),
 	Elementary(equation: "O + H2O2 <=> OH + HO2", rate_constant: (A: 9.63e+06, b: 2., Ea: 4000.)),
 	ThreeBody(equation: "H + O2 + M <=> HO2 + M", rate_constant: (A: 2.8e+18, b: -0.86, Ea: 0.), efficiencies: {"O2": 0., "H2O": 0., "Ar": 0.}),
@@ -101,10 +102,10 @@ reactions: [
 	ThreeBody(equation: "H + OH + M <=> H2O + M", rate_constant: (A: 2.2e+22, b: -2., Ea: 0.), efficiencies: {"H2": 0.73, "H2O": 3.65, "Ar": 0.38}),
 	Elementary(equation: "H + HO2 <=> O + H2O", rate_constant: (A: 3.97e+12, b: 0., Ea: 671.)),
 	Elementary(equation: "H + HO2 <=> O2 + H2", rate_constant: (A: 4.48e+13, b: 0., Ea: 1068.)),
-	Elementary(equation: H + HO2 <=> 2 OH", rate_constant: (A: 8.4e+13, b: 0., Ea: 635.)),
-	Elementary(equation: H + H2O2 <=> HO2 + H2", rate_constant: (A: 1.21e+07, b: 2., Ea: 5200.)),
-	Elementary(equation: H + H2O2 <=> OH + H2O", rate_constant: (A: 1.e+13, b: 0., Ea: 3600.)),
-	Elementary(equation: OH + H2 <=> H + H2O", rate_constant: (A: 2.16e+08, b: 1.51, Ea: 3430.)),
+	Elementary(equation: "H + HO2 <=> 2 OH", rate_constant: (A: 8.4e+13, b: 0., Ea: 635.)),
+	Elementary(equation: "H + H2O2 <=> HO2 + H2", rate_constant: (A: 1.21e+07, b: 2., Ea: 5200.)),
+	Elementary(equation: "H + H2O2 <=> OH + H2O", rate_constant: (A: 1.e+13, b: 0., Ea: 3600.)),
+	Elementary(equation: "OH + H2 <=> H + H2O", rate_constant: (A: 2.16e+08, b: 1.51, Ea: 3430.)),
 	Falloff(equation: "2 OH (+M) <=> H2O2 (+M)", rate_constants: [(A: 2.3e+18, b: -0.9, Ea: -1700.),(A: 7.4e+13, b: -0.37, Ea: 0.)], troe: (A: 0.7346, T3: 94., T1: 1756., T2: 5182.), efficiencies: {"H2": 2., "H2O": 6., "Ar": 0.7}),
 	Elementary(equation: "2 OH <=> O + H2O", rate_constant: (A: 3.57e+04, b: 2.4, Ea: -2110.)),
 	Multiple(equation: "OH + HO2 <=> O2 + H2O", rate_constants: [(A: 1.45e+13, b: 0., Ea: -500.), (A: 5.e+15, b: 0., Ea: 1.733e+04)]),
