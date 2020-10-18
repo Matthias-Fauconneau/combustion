@@ -9,9 +9,6 @@ fn acc(a: &mut [f32], b: impl Iterator<Item=f32>) { for (a,b) in a.iter_mut().zi
 
 use std::collections::BTreeMap as Map;
 use serde::Deserialize;
-//#[derive(Deserialize, Debug)] enum LengthUnit { cm }
-//#[derive(Deserialize, Debug)] enum MolarEnergyUnit { cal_per_mol }
-//#[derive(Deserialize, Debug)] struct Units { length: LengthUnit, activation_energy: MolarEnergyUnit }
 #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] enum Element { H, O, Ar }
 #[derive(Deserialize, Debug)] struct State { temperature: f32, pressure: f32, volume: f32, mole_proportions: Map<String, f32>}
 #[derive(Deserialize, Debug)] enum Phase {
@@ -43,18 +40,15 @@ impl NASA7 {
 	transport: Transport
 }
 
-const ideal_gas_constant : f32 = 8.31446261815324; // R: J⋅K−1⋅mol−1 (J = m3⋅Pa)
+const ideal_gas_constant : f32 = 8.31446261815324;
 
 #[derive(Deserialize, Debug)] struct RateConstant {
 	#[serde(rename="A")] preexponential_factor: f32,
 	#[serde(rename="b")] temperature_exponent: f32,
 	#[serde(rename="Ea")] activation_energy: f32
 }
-fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &RateConstant, temperature: f32) -> f32 { //! cal J
-	let k = preexponential_factor*f32::powf(temperature, temperature_exponent)*f32::exp(-activation_energy/(ideal_gas_constant/4.184*temperature));
-	//dbg!(k, preexponential_factor, temperature, temperature_exponent, activation_energy, ideal_gas_constant*temperature);
-	assert!(k.is_normal(), "{:?}", k);
-	k
+fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &RateConstant, temperature: f32) -> f32 {
+	preexponential_factor*f32::powf(temperature, temperature_exponent)*f32::exp(-activation_energy/(ideal_gas_constant/4.184*temperature))
 }
 
 #[derive(Deserialize, Debug)] struct Troe { A: f32, T3: f32, T1: f32, T2: f32 }
@@ -77,7 +71,7 @@ fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activati
 fn rate(reactants: (&[usize], &[u8]), model: &ModelParameters, T: f32, concentrations: &[f32]) -> f32 {
 	let reactants : f32 = reactants.0.iter().zip(reactants.1.iter()).map(|(&specie, &coefficient)| f32::powi(concentrations[specie], coefficient as i32)).sum();
 	use ModelParameters::*;
-	let k = match model {
+	reactants * match model {
 		Elementary{rate_constants} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f32>(),
 		ThreeBody{rate_constants, efficiencies} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T) * reactants).sum::<f32>() * dot(efficiencies, concentrations),
 		Falloff{k_inf, k0, efficiencies, troe: Troe{A, T3, T1, T2}} => {
@@ -91,11 +85,7 @@ fn rate(reactants: (&[usize], &[u8]), model: &ModelParameters, T: f32, concentra
 			let F = f32::exp(f32::ln(10.)*log10Fcent/(1.+f1*f1));
 			k_inf * Pr / (1.+Pr) * F
 		}
-	};
-	let v = reactants * k;
-	//if v != 0. { dbg!(model, concentrations, reactants, k, v); }
-	assert!(v.is_finite(), "{:?} {:?} {:?} {:?} {:?}", T, v, reactants, model, concentrations);
-	v
+	}
 }
 
 #[derive(Deserialize, Debug)] struct Mechanism {
@@ -122,7 +112,6 @@ fn rate(reactants: (&[usize], &[u8]), model: &ModelParameters, T: f32, concentra
 		.filter(|&(coefficient,_,_)| coefficient!=0)
 		.collect::<Vec<_>>()
 	).collect::<Vec<_>>();
-	//dbg!(&reactions);
 	let Phase::IdealGas{state, ..} = &phases[0];
 	let State{pressure, volume, temperature, mole_proportions} = state;
 	let mole_proportions = species.keys().map(|specie| *mole_proportions.get(specie).unwrap_or(&0.)).collect::<Vec<_>>();
@@ -137,15 +126,12 @@ fn rate(reactants: (&[usize], &[u8]), model: &ModelParameters, T: f32, concentra
 	for _time in (0..100000).map(|i| i as f32*time_step) {
 		let density = total_mass / (total_amount * ideal_gas_constant) * pressure / temperature;
 		let concentrations = scale(density, mul(rcp(&molar_masses), mass_fractions.iter().copied())).collect::<Vec<_>>();
-		//dbg!(&density, &molar_masses, temperature, &concentrations, time);
 		let mass_fraction_rates = scale(1./density, mul(molar_masses.iter().copied(), reactions.iter().map(|reactions| reactions.iter().map(
 			|(coefficient, reactants, model)| (*coefficient as f32)*(rate((&reactants.0.0,&reactants.0.1), model, temperature, &concentrations) - rate((&reactants.1.0,&reactants.1.1), model, temperature, &concentrations))
 		).sum()))).collect::<Vec<_>>();
 		acc(&mut mass_fractions, scale(time_step, mass_fraction_rates.iter().copied()));
-		assert!(mass_fractions.iter().all(|&y| y>=0.), "mass_fractions: {:?}", mass_fractions);
 		let specific_heat_capacities = species.values().map(|Specie{specific_heat,..}| specific_heat.at(temperature)).collect::<Vec<_>>();
 		let specific_heat_capacity = dot(&mass_fractions, &specific_heat_capacities);
-		//dbg!(&time_step, &specific_heat_capacities, &mass_fraction_rates, &specific_heat_capacity, &temperature);
 		temperature += time_step * dot(&specific_heat_capacities, &mass_fraction_rates) / specific_heat_capacity * temperature;
 	}
 	use itertools::Itertools; println!("{:?} {:?}", species.keys().zip(mass_fractions.iter()).format(" "), temperature);
