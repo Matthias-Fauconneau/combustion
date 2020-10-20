@@ -5,6 +5,11 @@ authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+num = {path='../num'}
+vector = {path='../vector'}
+xy = {path='../xy'}
+image = {path='../image'}
+ui = {path='../ui'}
 fehler = ''
 anyhow = ''
 serde = ''

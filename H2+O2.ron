@@ -1,6 +1,7 @@
+#![enable(unwrap_newtypes)]
 (
 time_step: 0.1e-9,
-phases: [(
+phases: [IdealGas(
 	elements: [H, O, Ar],
 	species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],
 	state: (temperature: 1500., pressure: 101325, volume: 1., mole_proportions: {"H2": 2, "O2": 1, "Ar": 0.1})
@@ -120,9 +121,9 @@ reactions: [
 	(equation: ({"H":1,"H2O2":1},{"OH":1,"H2O":1}), model: Elementary(rate_constants: [(A: 10, b: 0., Ea: 3600.)])),
 	(equation: ({"OH":1,"H2":1},{"H":1,"H2O":1}), model: Elementary(rate_constants: [(A: 2.16e-4, b: 1.51, Ea: 3430.)])),
 	(equation: ({"OH":2},{"O":1,"H2O":1}), model: Elementary(rate_constants: [(A: 3.57e-8, b: 2.4, Ea: -2110.)])),
-	(equation: ({"OH":1,"HO2":1},{"O2":1,"H2O":1}), model: Elementary(rate_constants: [(A: 1.45e1, b: 0., Ea: -500.), (A: 5.e9, b: 0., Ea: 1.733e4)])),
+	(equation: ({"OH":1,"HO2":1},{"O2":1,"H2O":1}), model: Elementary(rate_constants: [(A: 14.5, b: 0., Ea: -500.), (A: 5.e9, b: 0., Ea: 1.733e4)])),
 	(equation: ({"OH":1,"H2O2":1},{"HO2":1,"H2O":1}), model: Elementary(rate_constants: [(A: 2, b: 0., Ea: 427.), (A: 1.7e12, b: 0., Ea: 2.941e4)])),
-	(equation: ({"H2O":2},{"O2":1,"H2O2":1}), model: Elementary(rate_constants: [(A: 1.3e-1, b: 0., Ea: -1630.), (A: 4.2e8, b: 0., Ea: 1.2e4)])),
+	(equation: ({"H2O":2},{"O2":1,"H2O2":1}), model: Elementary(rate_constants: [(A: 0.13, b: 0., Ea: -1630.), (A: 4.2e8, b: 0., Ea: 1.2e4)])),
 	(equation: ({"O":2},{"O2":1}), model: ThreeBody(rate_constants: [(A: 0.12, b: -1., Ea: 0.)], efficiencies: {"H2": 2.4, "H2O": 15.4, "Ar": 0.83})),
 	(equation: ({"O":1,"H":1},{"OH":1}), model: ThreeBody(rate_constants: [(A: 0.5, b: -1., Ea: 0.)], efficiencies: {"H2": 2., "H2O": 6., "Ar": 0.7})),
 	(equation: ({"H":1,"O2":1},{"HO2":1}), model: ThreeBody(rate_constants: [(A: 2.8, b: -0.86, Ea: 0.)], efficiencies: {"O2": 0., "H2O": 0., "Ar": 0.})),
