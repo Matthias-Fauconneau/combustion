@@ -5,13 +5,14 @@ authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+fehler = ''
+anyhow = ''
+iter = { path='../iter' }
+itertools = ''
+serde = ''
 num = {path='../num'}
 vector = {path='../vector'}
+ron = ''
 xy = {path='../xy'}
 image = {path='../image'}
 ui = {path='../ui'}
-fehler = ''
-anyhow = ''
-serde = ''
-ron = ''
-itertools = ''
