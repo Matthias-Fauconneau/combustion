@@ -9,7 +9,7 @@ fn line(target: &mut Image<&mut[bgra8]>, p0: vec2, p1: vec2, color: bgrf, opacit
   let gradient = d.y / d.x;
   fn blend(target: &mut Image<&mut[bgra8]>, x: u32, y: u32, color: bgrf, opacity: f32, transpose: bool) {
 		let xy{x,y} = if transpose { xy{x: y, y: x} } else { xy{x,y} };
-		if x < target.size.x && y < target.size.y { target[xy{x,y}].saturating_add( (opacity*color).into() ); }
+		if x < target.size.x && y < target.size.y { target[xy{x,y}].saturating_add_assign( (opacity*color).into() ); }
 	}
 	let (i0, intery) = {
 		let xend = f32::round(p0.x);
@@ -41,25 +41,22 @@ fn line(target: &mut Image<&mut[bgra8]>, p0: vec2, p1: vec2, color: bgrf, opacit
 
 use num::real;
 type Frame = (real, Box<[Box<[real]>]>);
-pub trait Source = Iterator<Item=Frame>;
-pub struct Plot<'t, S: Source>{
+pub struct Plot<'t>{
 	pub keys: Box<[&'t [&'t str]]>,
 	pub values: Vec<Frame>,
-	pub source: S
 }
-impl<'t, S: Source> ui::widget::Widget for Plot<'t, S> {
+impl ui::widget::Widget for Plot<'_> {
 	#[fehler::throws(anyhow::Error)] fn paint(&mut self, mut target: &mut ui::widget::Target) {
-		let Self{keys, values, source} = self;
+		let Self{keys, values} = self;
 		let _ = keys;
-		if let Some(v) = source.next() { values.push(v); }
 		let x_minmax = vector::minmax(values.iter().map(|&(x,_)| x)).unwrap();
 		let mut serie_of_sets = values.iter().map(|(_,sets)| sets);
 		let mut sets_minmax = serie_of_sets.next().unwrap().iter().map(|set| vector::minmax(set.iter().copied()).unwrap()).collect::<Box<[_]>>();
 		for sets in serie_of_sets { for (minmax, set) in sets_minmax.iter_mut().zip(sets.iter()) { *minmax = minmax.minmax(vector::minmax(set.iter().copied()).unwrap()) } }
+		fn map(vector::MinMax{min,max} : vector::MinMax<real>, v: real) -> Option<f32> { if min < max { Some(((v-min) / (max-min)).0) } else { None } }
 		let size = target.size;
-		fn map(vector::MinMax{min,max} : vector::MinMax<real>, v: real) -> f32 { ((v-min) / (max-min)).0 }
 		use itertools::Itertools;
-		values.iter().map(|(x, sets)| sets.iter().zip(sets_minmax.iter()).map(move |(set, &minmax)| set.iter().map(move |&y| xy{x: map(x_minmax, *x), y: map(minmax, y)}*size.into())).flatten())
-			.tuple_windows().for_each(|(s0, s1)| s0.zip(s1).for_each(|(p0, p1)| self::line(&mut target, dbg!(p0), dbg!(p1), bgrf{b:1., g:1., r: 1.}, 1.)));
+		values.iter().map(|(x, sets)| sets.iter().zip(sets_minmax.iter()).map(move |(set, &minmax)| set.iter().map(move |&y| Some(xy{x: map(x_minmax, *x)?, y: map(minmax, y)?}*size.into()))).flatten())
+			.tuple_windows().for_each(|(s0, s1)| s0.zip(s1).for_each(|line| if let (Some(p0), Some(p1)) = line { self::line(&mut target, p0, p1, bgrf{b:1., g:1., r: 1.}, 1.) }));
 	}
 }

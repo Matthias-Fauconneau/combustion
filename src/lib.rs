@@ -115,7 +115,7 @@ struct Reaction {
 	specie_net_coefficients: Box<[real]>
 }
 
-struct System {
+pub struct System {
 	molar_masses: Box<[real]>,
 	specific_heats: Box<[NASA7]>,
 	reactions: Box<[Reaction]>,
@@ -132,9 +132,9 @@ struct System {
 }
 
 pub struct Simulation<'t> {
-	species: Box<[&'t str]>,
-	system: System,
-	state: State
+	pub species: Box<[&'t str]>,
+	pub system: System,
+	pub state: State
 }
 
 use iter::from_iter;
@@ -177,7 +177,7 @@ impl Simulation<'t> {
 }
 
 impl State {
-	fn step(&mut self, system: &System) {
+	pub fn step(&mut self, system: &System) {
 			let density = system.mass / (system.amount * ideal_gas_constant) * system.pressure / self.temperature;
 			let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), self.mass_fractions.iter().copied())));
 			let mut concentration_rates = vec!(real(0.); concentrations.len());
@@ -198,17 +198,3 @@ impl State {
 pub mod plot;
 
 impl From<State> for (real, Box<[Box<[real]>]>) { fn from(s: State) -> Self { (s.time, box [box [s.temperature] as Box<[_]>, s.mass_fractions] as Box<[_]>) } }
-
-impl Simulation<'_> {
-pub fn plot(&'t mut self) -> plot::Plot<'t, impl plot::Source+'t> {
-	let Self{species, system, state} = self;
-	plot::Plot{
-		keys: box [&["T"] as &[_], species],
-		values: vec!(state.clone().into()),
-		source: std::iter::from_fn(move || {
-			state.step(system);
-			Some(state.clone().into())
-		})
-	}
-}
-}
