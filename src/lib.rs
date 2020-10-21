@@ -197,4 +197,4 @@ impl State {
 
 pub mod plot;
 
-impl From<State> for (real, Box<[Box<[real]>]>) { fn from(s: State) -> Self { (s.time, box [box [s.temperature] as Box<[_]>, s.mass_fractions] as Box<[_]>) } }
+impl From<State> for (real, Box<[Box<[real]>]>) { fn from(s: State) -> Self { (s.time*real(1e9)/*ns*/, box [box [s.temperature] as Box<[_]>, s.mass_fractions] as Box<[_]>) } }
