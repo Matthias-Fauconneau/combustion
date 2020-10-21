@@ -103,7 +103,7 @@ fn rate(reactants: (&[usize], &[u8]), model: &Model, T: real, concentrations: &[
 			let C = real(-0.4)-real(0.67)*log10Fcent;
 			let N = real(0.75)-real(1.27)*log10Fcent;
 			let f1 = (real::log10(Pr) + C)/(N-real(0.14)*(real::log10(Pr) + C));
-			let F = real::exp(real::ln(real(10.))*log10Fcent/(real(1.)+f1*f1));
+			let F = real::exp10(log10Fcent/(real(1.)+f1*f1));
 			k_inf * Pr / (real(1.)+Pr) * F
 		}
 	}
