@@ -4,7 +4,7 @@
 	let system = std::fs::read("H2+O2.ron")?;
 	use combustion::*;
 	let Simulation{species, system, mut state} = Simulation::new(&system)?;
-	let mut app = ui::app::App::new(plot::Plot{keys: box [&["T"] as &[_], &species], values: vec!(state.clone().into())})?;
+	let mut app = ui::app::App::new(plot::Plot::new(box [&["T"] as &[_], &species], vec!(state.clone().into())))?;
 	app.idle = box move |plot| {
 		state.step(&system);
 		plot.values.push(state.clone().into());
