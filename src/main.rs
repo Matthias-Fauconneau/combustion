@@ -6,9 +6,9 @@
 	let Simulation{species, system, mut state} = Simulation::new(&system)?;
 	let mut app = ui::app::App::new(plot::Plot::new(box [&["T"] as &[_], &species], vec!(state.clone().into())))?;
 	app.idle = box move |plot| {
-		state.step(&system);
+		for _ in 0..10000 { state.step(&system); }
 		plot.values.push(state.clone().into());
-		true
+		state.time < num::real(4e-6)
 	};
 	app.run()?
 }
