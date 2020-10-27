@@ -4,12 +4,12 @@ time_step: 0.1e-10,
 phases: [IdealGas(
 	elements: [H, O, Ar],
 	species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],
-	state: (temperature: 1500., pressure: 101325, volume: 1., mole_proportions: {"H2": 2, "O2": 1, "Ar": 0.1})
+	state: (temperature: 1200., pressure: 101325, volume: 1., mole_proportions: {"H2": 1, "O2": 1, "Ar": 2})
 )],
 species: {
 	"H": (
 		composition: {H: 1},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[2.5, 7.5332819e-13, -1.99591964e-15, 2.30081632e-18, -9.27732332e-22, 2.54736599e4, -0.446682853],
@@ -20,7 +20,7 @@ species: {
 	),
 	"H2": (
 		composition: {H: 2},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[2.34433112, 7.98052075e-03, -1.9478151e-05, 2.1572094e-08, -7.37611761e-12, -917.935173, 0.683010238],
@@ -31,7 +31,7 @@ species: {
 	),
 	"O": (
 		composition: {O: 1},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[3.1682671, -3.27931884e-03, 6.64306396e-06, -6.12806624e-09, 2.11265971e-12, 2.91222592e4, 2.5193346],
@@ -42,7 +42,7 @@ species: {
 	),
 	"O2": (
 		composition: {O: 2},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[3.78245636, -2.99673416e-03, 9.84730201e-06, -9.68129509e-09, 3.24372837e-12, -1063.94356, 3.65767573],
@@ -53,7 +53,7 @@ species: {
 	),
 	"OH": (
 		composition: {O: 1, H: 1},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[3.99201543, -2.40131752e-03, 4.61793841e-06, -3.88113333e-09, 1.3641147e-12, 3615.8056, -0.103925458],
@@ -64,7 +64,7 @@ species: {
 	),
 	"H2O": (
 		composition: {H: 2, O: 1},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[4.19864056, -2.364341e-03, 6.52040211e-06, -5.48797062e-09, 1.77197817e-12, -3.2937267e4, -0.849032208],
@@ -75,7 +75,7 @@ species: {
 	),
 	"HO2": (
 		composition: {H: 1, O: 2},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[4.30179801, -4.74912051e-03, 2.11582891e-05, -2.42763894e-08, 9.29225124e-12, 294.80804, 3.71666245],
@@ -86,7 +86,7 @@ species: {
 	),
 	"H2O2": (
 		composition: {H: 2, O: 2},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [200., 1000., 3500.],
 			coefficients: [
 				[4.27611269, -5.42822417e-04, 1.67335701e-05, -2.15770813e-08, 8.62454363e-12, -1.77025821e4, 3.43505074],
@@ -97,7 +97,7 @@ species: {
 	),
 	"Ar": (
 		composition: {Ar: 1},
-		specific_heat: NASA7(
+		thermodynamic: NASA7(
 			temperature_ranges: [300., 5000.],
 			coefficients: [[2.5, 0., 0., 0., 0., -745.375, 4.366]],
 		),

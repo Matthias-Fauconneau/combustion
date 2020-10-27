@@ -36,7 +36,7 @@ use num::real;
 }
 #[derive(Deserialize, Debug)] pub struct Specie {
 	pub composition: Map<Element, u8>,
-	pub specific_heat: NASA7,
+	pub thermodynamic: NASA7,
 	transport: Transport
 }
 
@@ -72,10 +72,20 @@ use num::real;
 use self::ron::*;
 
 impl NASA7 {
-	fn at(&self, T: real) -> real {
+	fn specific_heat_capacity(&self, T: real) -> real {
 		use itertools::Itertools;
 		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
 		ideal_gas_constant * (a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T)
+	}
+	fn specific_enthalpy(&self, T: real) -> real {
+		use itertools::Itertools;
+		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
+		ideal_gas_constant * (a[5]+a[0]*T+a[1]/real(2.)*T*T+a[2]/real(3.)*T*T*T+a[3]/real(4.)*T*T*T*T+a[4]/real(5.)*T*T*T*T*T)
+	}
+	fn specific_entropy(&self, T: real) -> real {
+		use itertools::Itertools;
+		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
+		ideal_gas_constant * (a[6]+a[0]*real::ln(T)+a[1]*T+a[2]/real(2.)*T*T+a[3]/real(3.)*T*T*T+a[4]/real(4.)*T*T*T*T)
 	}
 }
 
@@ -117,7 +127,7 @@ struct Reaction {
 
 pub struct System {
 	molar_masses: Box<[real]>,
-	specific_heats: Box<[NASA7]>,
+	thermodynamics: Box<[NASA7]>,
 	reactions: Box<[Reaction]>,
 	time_step: real,
 	amount: real,
@@ -144,10 +154,11 @@ impl Simulation<'t> {
 	let ron::System{species, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
 
 	let standard_atomic_weights : Map<Element, real> = ::ron::de::from_str("#![enable(unwrap_newtypes)] {H: 1.008, O: 15.999, Ar: 39.95}")?;
+	let standard_atomic_weights : Map<_, real> = standard_atomic_weights.into_iter().map(|(e,g)| (e, g*real(1e-3/*kg/g*/))).collect();
 
 	let specie_names = from_iter(species.keys().copied());
 	let molar_masses = from_iter(species.values().map(|Specie{composition,..}| composition.iter().map(|(element, &count)| real(count as f32)*standard_atomic_weights[element]).sum()));
-	let specific_heats = from_iter(species.into_values().map(|Specie{specific_heat,..}| specific_heat));
+	let thermodynamics = from_iter(species.into_values().map(|Specie{thermodynamic,..}| thermodynamic));
 	let species = specie_names;
 
 	let reactions = from_iter(Vec::from(reactions).into_iter().map(|self::ron::Reaction{equation, model}| Reaction{
@@ -161,17 +172,25 @@ impl Simulation<'t> {
 	}));
 
 	let Phase::IdealGas{state, ..} = Vec::from(phases).into_iter().next().unwrap();
-	let InitialState{pressure, volume, temperature, mole_proportions} = state;
+	let InitialState{mole_proportions, temperature, pressure, volume} = state;
 	let mole_proportions = from_iter(species.iter().map(|specie| *mole_proportions.get(specie).unwrap_or(&real(0.))));
-	let amount = pressure * volume / (ideal_gas_constant * temperature);
-	let mole_fractions = scale(real::recip(mole_proportions.iter().sum::<real>()), mole_proportions.iter().copied());
-	let mass_proportions = from_iter(mul(mole_fractions, molar_masses.iter().copied()));
+	let mole_fractions = from_iter(scale(real::recip(mole_proportions.iter().sum::<real>()), mole_proportions.iter().copied()));
+	let mass_proportions = from_iter(mul(mole_fractions.iter().copied(), molar_masses.iter().copied()));
 	let average_molar_mass = mass_proportions.iter().sum::<real>();
+	let mass_fractions = from_iter(scale(real::recip(average_molar_mass), mass_proportions.iter().copied()));
+	let specific_enthalpy : real = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_enthalpy(temperature))).sum();
+	dbg!(specific_enthalpy);
+	let specific_entropy : real = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_entropy(temperature))).sum();
+	dbg!(specific_entropy);
+	let specific_heat_capacity : real = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(temperature))).sum();
+	dbg!(specific_heat_capacity);
+	let amount = pressure * volume / (ideal_gas_constant * temperature);
+	let mass = amount * average_molar_mass;
 
 	Self{
 		species,
-		system: System{molar_masses, specific_heats, reactions, time_step, amount, mass: amount * average_molar_mass, pressure},
-		state: State{time: real(0.), temperature, mass_fractions: from_iter(scale(real::recip(average_molar_mass), mass_proportions.iter().copied()))}
+		system: System{molar_masses, thermodynamics, reactions, time_step, amount, mass, pressure},
+		state: State{time: real(0.), temperature, mass_fractions}
 	}
 }
 }
@@ -179,6 +198,7 @@ impl Simulation<'t> {
 impl State {
 	pub fn step(&mut self, system: &System) {
 			let density = system.mass / (system.amount * ideal_gas_constant) * system.pressure / self.temperature;
+			dbg!(density);
 			let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), self.mass_fractions.iter().copied())));
 			let mut concentration_rates = vec!(real(0.); concentrations.len());
 			for Reaction{equation, model, specie_net_coefficients} in system.reactions.iter() {
@@ -188,13 +208,11 @@ impl State {
 			}
 			let mass_fraction_rates = from_iter(scale(real::recip(density), mul(system.molar_masses.iter().copied(), concentration_rates.iter().copied())));
 			acc(&mut self.mass_fractions, scale(system.time_step, mass_fraction_rates.iter().copied()));
-			let specific_heat_capacities = from_iter(system.specific_heats.iter().map(|specific_heat| specific_heat.at(self.temperature)));
+			let specific_heat_capacities = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(self.temperature)));
 			let specific_heat_capacity = dot(&self.mass_fractions, &specific_heat_capacities);
 			self.temperature += system.time_step * dot(&specific_heat_capacities, &mass_fraction_rates) / specific_heat_capacity * self.temperature;
 			self.time += system.time_step;
 		}
 }
-
-pub mod plot;
 
 impl From<State> for (real, Box<[Box<[real]>]>) { fn from(s: State) -> Self { (s.time*real(1e9)/*ns*/, box [box [s.temperature] as Box<[_]>, s.mass_fractions] as Box<[_]>) } }
