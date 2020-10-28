@@ -8,7 +8,7 @@
 	app.idle = box move |plot| {
 		for _ in 0..100000 { state.step(&system); }
 		plot.values.push(state.clone().into());
-		let density = system.mass / (system.amount * ideal_gas_constant) * system.pressure / state.temperature;
+		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
 		use iter::from_iter;
 		let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), state.mass_fractions.iter().copied())));
 		for Reaction{equation,model,..} in system.reactions.iter() {

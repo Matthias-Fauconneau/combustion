@@ -14,7 +14,7 @@ mod ron {
 use serde::Deserialize;
 pub use std::collections::BTreeMap as Map;
 #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, Ar }
-#[derive(Deserialize, Debug)] pub struct InitialState<'t> { pub temperature: f64, pub pressure: f64, pub volume: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64>}
+#[derive(Deserialize, Debug)] pub struct InitialState<'t> { pub temperature: f64, pub pressure: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64>}
 #[derive(Deserialize, Debug)] pub enum Phase<'t> {
 	IdealGas {
 		elements: Box<[Element]>,
@@ -130,9 +130,8 @@ pub struct System {
 	pub molar_masses: Box<[f64]>,
 	pub thermodynamics: Box<[NASA7]>,
 	pub reactions: Box<[Reaction]>,
+	pub average_molar_mass: f64,
 	time_step: f64,
-	pub amount: f64,
-	pub mass: f64,
 	pub pressure: f64,
 }
 
@@ -173,24 +172,22 @@ impl Simulation<'t> {
 	}));
 
 	let Phase::IdealGas{state, ..} = Vec::from(phases).into_iter().next().unwrap();
-	let InitialState{mole_proportions, temperature, pressure, volume} = state;
+	let InitialState{mole_proportions, temperature, pressure, ..} = state;
 	let mole_proportions = from_iter(species.iter().map(|specie| *mole_proportions.get(specie).unwrap_or(&0.)));
 	let mole_fractions = from_iter(scale(f64::recip(mole_proportions.iter().sum::<f64>()), mole_proportions.iter().copied()));
 	let mass_proportions = from_iter(mul(mole_fractions.iter().copied(), molar_masses.iter().copied()));
-	let average_molar_mass = mass_proportions.iter().sum::<f64>();
-	let mass_fractions = from_iter(scale(f64::recip(average_molar_mass), mass_proportions.iter().copied()));
-	let specific_enthalpy : f64 = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_enthalpy(temperature))).sum();
+	let mass_fractions = from_iter(scale(f64::recip(mass_proportions.iter().sum::<f64>()), mass_proportions.iter().copied()));
+	let specific_enthalpy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_enthalpy(temperature))).sum();
 	dbg!(specific_enthalpy);
-	let specific_entropy : f64 = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_entropy(temperature))).sum();
+	let specific_entropy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_entropy(temperature))).sum();
 	dbg!(specific_entropy);
-	let specific_heat_capacity : f64 = mul(mole_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(temperature))).sum();
+	let specific_heat_capacity : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(temperature))).sum();
 	dbg!(specific_heat_capacity);
-	let amount = pressure * volume / (ideal_gas_constant * temperature);
-	let mass = amount * average_molar_mass;
+	let average_molar_mass = f64::recip(mul(mass_fractions.iter().copied(), molar_masses.iter().copied()).sum());
 
 	Self{
 		species,
-		system: System{molar_masses, thermodynamics, reactions, time_step, amount, mass, pressure},
+		system: System{molar_masses, thermodynamics, reactions, average_molar_mass, time_step, pressure},
 		state: State{time: 0., temperature, mass_fractions}
 	}
 }
@@ -198,23 +195,23 @@ impl Simulation<'t> {
 
 impl State {
 	pub fn step(&mut self, system: &System) {
-			let density = system.mass / (system.amount * ideal_gas_constant) * system.pressure / self.temperature;
-			let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), self.mass_fractions.iter().copied())));
-			let specie_count = concentrations.len();
-			let mut concentration_rates = vec!(0.; specie_count-1); // Skips most abundant specie (last index) (will be deduced from mass conservation)
-			for Reaction{equation, model, specie_net_coefficients} in system.reactions.iter() {
-					let v = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, self.temperature, &concentrations)));
-					let v = v[0] - v[1];
-					for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { concentration_rates[specie] += net_coefficient * v; }
-			}
-			let mass_fraction_rates = from_iter(scale(f64::recip(density), mul(system.molar_masses.iter().copied(), concentration_rates.iter().copied())));
-			acc(&mut self.mass_fractions, scale(system.time_step, mass_fraction_rates.iter().copied()));
-			self.mass_fractions[specie_count-1] = 1. - self.mass_fractions[..specie_count-1].iter().sum::<f64>(); // Enforces mass conservation constraint by rescaling most abundant specie (last index)
-			let specific_heat_capacities = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(self.temperature)));
-			let specific_heat_capacity = dot(&self.mass_fractions, &specific_heat_capacities);
-			self.temperature += system.time_step * dot(&specific_heat_capacities, &mass_fraction_rates) / specific_heat_capacity * self.temperature;
-			self.time += system.time_step;
+		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * self.temperature);
+		let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), self.mass_fractions.iter().copied())));
+		let specie_count = concentrations.len();
+		let mut concentration_rates = vec!(0.; specie_count-1); // Skips most abundant specie (last index) (will be deduced from mass conservation)
+		for Reaction{equation, model, specie_net_coefficients} in system.reactions.iter() {
+				let v = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, self.temperature, &concentrations)));
+				let v = v[0] - v[1];
+				for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { concentration_rates[specie] += net_coefficient * v; }
 		}
+		let mass_fraction_rates = from_iter(scale(f64::recip(density), mul(system.molar_masses.iter().copied(), concentration_rates.iter().copied())));
+		acc(&mut self.mass_fractions, scale(system.time_step, mass_fraction_rates.iter().copied()));
+		self.mass_fractions[specie_count-1] = 1. - self.mass_fractions[..specie_count-1].iter().sum::<f64>(); // Enforces mass conservation constraint by rescaling most abundant specie (last index)
+		let specific_heat_capacities = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(self.temperature)));
+		let specific_heat_capacity = dot(&self.mass_fractions, &specific_heat_capacities);
+		self.temperature += system.time_step * dot(&specific_heat_capacities, &mass_fraction_rates) / specific_heat_capacity * self.temperature;
+		self.time += system.time_step;
+	}
 }
 
 impl From<State> for (f64, Box<[Box<[f64]>]>) { fn from(s: State) -> Self { (s.time*1e9/*ns*/, box [box [s.temperature] as Box<[_]>, s.mass_fractions] as Box<[_]>) } }
