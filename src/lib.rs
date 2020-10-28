@@ -3,12 +3,18 @@
 #![feature(box_syntax)]
 #![feature(map_into_keys_values)]
 #![allow(non_snake_case)]
-
-pub fn scale(s: f64, v: impl Iterator<Item=f64>+'t) -> impl Iterator<Item=f64>+'t { v.map(move |v| s*v) }
-pub fn recip(x: &'t [f64]) -> impl Iterator<Item=f64>+'t { x.iter().map(|&x| f64::recip(x)) }
-pub fn mul(a: impl Iterator<Item=f64>+'t, b: impl Iterator<Item=f64>+'t) -> impl Iterator<Item=f64>+'t { a.zip(b).map(|(a,b)| a*b) }
-pub fn dot(a: &[f64], b: &[f64]) -> f64 { a.iter().zip(b.iter()).map(|(&a,&b)| a*b).sum() }
-pub fn acc(a: &mut [f64], b: impl Iterator<Item=f64>) { for (a,b) in a.iter_mut().zip(b) { *a += b; } }
+#![feature(associated_type_bounds)]
+pub fn scale(s: f64, v: impl IntoIterator<Item=f64,IntoIter:'t>) -> impl Iterator<Item=f64>+'t { v.into_iter().map(move |v| s*v) }
+pub fn recip(x: impl IntoIterator<Item=f64,IntoIter:'t>) -> impl Iterator<Item=f64>+'t { x.into_iter().map(|x| f64::recip(x)) }
+//trait Captures<'t> {}
+//impl<'t, T: ?Sized> Captures<'t> for T {}
+//+Captures<'a>+Captures<'b>
+//pub fn mul<'a:'t,'b:'t,'t>(a: impl IntoIterator<Item=f64,IntoIter:'a>, b: impl IntoIterator<Item=f64,IntoIter:'b>) -> impl Iterator<Item=f64>+'t {
+pub fn mul(a: impl IntoIterator<Item=f64,IntoIter:'t>, b: impl IntoIterator<Item=f64,IntoIter:'t>) -> impl Iterator<Item=f64>+'t {
+	a.into_iter().zip(b.into_iter()).map(|(a,b)| a*b)
+}
+pub fn dot(a: impl IntoIterator<Item=f64,IntoIter:'t>, b: impl IntoIterator<Item=f64,IntoIter:'t>) -> f64 { mul(a.into_iter(), b.into_iter()).sum() }
+pub fn acc(a: &mut [f64], b: impl IntoIterator<Item=f64>) { for (a,b) in a.iter_mut().zip(b.into_iter()) { *a += b; } }
 
 mod ron {
 use serde::Deserialize;
@@ -105,10 +111,10 @@ pub fn rate(reactants: (&[usize], &[u8]), model: &Model, T: f64, concentrations:
 	use self::Model::*;
 	reactants * match model {
 		Elementary{rate_constants} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>(),
-		ThreeBody{rate_constants, efficiencies} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T) * reactants).sum::<f64>() * dot(efficiencies, concentrations),
+		ThreeBody{rate_constants, efficiencies} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>() * dot(efficiencies.iter().copied(), concentrations.iter().copied()),
 		Falloff{k_inf, k0, efficiencies, troe: Troe{A, T3, T1, T2}} => {
 			let k_inf = arrhenius(k_inf, T);
-			let Pr = arrhenius(k0, T) / k_inf * dot(efficiencies, concentrations);
+			let Pr = arrhenius(k0, T) / k_inf * dot(efficiencies.iter().copied(), concentrations.iter().copied());
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
 			let log10Fcent = f64::log10(Fcent);
 			let C = -0.4-0.67*log10Fcent;
@@ -177,14 +183,15 @@ impl Simulation<'t> {
 	let mole_fractions = from_iter(scale(f64::recip(mole_proportions.iter().sum::<f64>()), mole_proportions.iter().copied()));
 	let mass_proportions = from_iter(mul(mole_fractions.iter().copied(), molar_masses.iter().copied()));
 	let mass_fractions = from_iter(scale(f64::recip(mass_proportions.iter().sum::<f64>()), mass_proportions.iter().copied()));
-	let specific_enthalpy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_enthalpy(temperature))).sum();
-	dbg!(specific_enthalpy);
-	let specific_entropy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_entropy(temperature))).sum();
-	dbg!(specific_entropy);
-	let specific_heat_capacity : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(temperature))).sum();
-	dbg!(specific_heat_capacity);
-	let average_molar_mass = f64::recip(mul(mass_fractions.iter().copied(), molar_masses.iter().copied()).sum());
-
+	let average_molar_mass = f64::recip(mul(mass_fractions.iter().copied(), recip(molar_masses.iter().copied())).sum());
+	{
+		let specific_enthalpy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_enthalpy(temperature) / molar_mass)).sum();
+		dbg!(specific_enthalpy);
+		let specific_entropy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_entropy(temperature) / molar_mass)).sum();
+		dbg!(specific_entropy);
+		let specific_heat_capacity : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(temperature) / molar_mass)).sum();
+		dbg!(specific_heat_capacity);
+	}
 	Self{
 		species,
 		system: System{molar_masses, thermodynamics, reactions, average_molar_mass, time_step, pressure},
@@ -196,20 +203,20 @@ impl Simulation<'t> {
 impl State {
 	pub fn step(&mut self, system: &System) {
 		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * self.temperature);
-		let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), self.mass_fractions.iter().copied())));
+		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), self.mass_fractions.iter().copied())));
 		let specie_count = concentrations.len();
-		let mut concentration_rates = vec!(0.; specie_count-1); // Skips most abundant specie (last index) (will be deduced from mass conservation)
+		let mut production_rates = vec!(0.; specie_count-1); // Skips most abundant specie (last index) (will be deduced from mass conservation)
 		for Reaction{equation, model, specie_net_coefficients} in system.reactions.iter() {
 				let v = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, self.temperature, &concentrations)));
 				let v = v[0] - v[1];
-				for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { concentration_rates[specie] += net_coefficient * v; }
+				for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { production_rates[specie] += net_coefficient * v; }
 		}
-		let mass_fraction_rates = from_iter(scale(f64::recip(density), mul(system.molar_masses.iter().copied(), concentration_rates.iter().copied())));
+		let mass_fraction_rates = from_iter(scale(f64::recip(density), mul(system.molar_masses.iter().copied(), production_rates.iter().copied())));
 		acc(&mut self.mass_fractions, scale(system.time_step, mass_fraction_rates.iter().copied()));
 		self.mass_fractions[specie_count-1] = 1. - self.mass_fractions[..specie_count-1].iter().sum::<f64>(); // Enforces mass conservation constraint by rescaling most abundant specie (last index)
-		let specific_heat_capacities = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.specific_heat_capacity(self.temperature)));
-		let specific_heat_capacity = dot(&self.mass_fractions, &specific_heat_capacities);
-		self.temperature += system.time_step * dot(&specific_heat_capacities, &mass_fraction_rates) / specific_heat_capacity * self.temperature;
+		let specific_heat_capacities = from_iter(system.thermodynamics.iter().zip(system.molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(self.temperature) / molar_mass));
+		let specific_heat_capacity = dot(self.mass_fractions.iter().copied(), specific_heat_capacities.iter().copied());
+		self.temperature += system.time_step * dot(specific_heat_capacities.iter().copied(), mass_fraction_rates.iter().copied()) / specific_heat_capacity;
 		self.time += system.time_step;
 	}
 }

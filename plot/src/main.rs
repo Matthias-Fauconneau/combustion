@@ -10,7 +10,7 @@
 		plot.values.push(state.clone().into());
 		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
 		use iter::from_iter;
-		let concentrations = from_iter(scale(density, mul(recip(&system.molar_masses), state.mass_fractions.iter().copied())));
+		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), state.mass_fractions.iter().copied())));
 		for Reaction{equation,model,..} in system.reactions.iter() {
 			let [forward, reverse] = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, state.temperature, &concentrations)));
 			let net = forward - reverse;
