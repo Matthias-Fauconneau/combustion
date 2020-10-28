@@ -1,6 +1,6 @@
 #![enable(unwrap_newtypes)]
 (
-time_step: 0.1e-10,
+time_step: 1e-8,
 phases: [IdealGas(
 	elements: [H, O, Ar],
 	species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],

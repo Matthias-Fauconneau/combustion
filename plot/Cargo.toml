@@ -1,5 +1,5 @@
 [package]
-name = "combustion plot"
+name = "combustion-plot"
 version = "0.0.0"
 authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 fehler = ''
 anyhow = ''
-combustion = {path='../ui'}
-ui = {path='../ui'}
+iter = {path='../../iter'}
+combustion = {path='..'}
+ui = {path='../../ui', features=['plot']}
