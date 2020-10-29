@@ -4,6 +4,7 @@
 #![feature(map_into_keys_values)]
 #![allow(non_snake_case)]
 #![feature(associated_type_bounds)]
+#![feature(bindings_after_at)]
 pub fn scale(s: f64, v: impl IntoIterator<Item=f64,IntoIter:'t>) -> impl Iterator<Item=f64>+'t { v.into_iter().map(move |v| s*v) }
 pub fn recip(x: impl IntoIterator<Item=f64,IntoIter:'t>) -> impl Iterator<Item=f64>+'t { x.into_iter().map(|x| f64::recip(x)) }
 //trait Captures<'t> {}
@@ -14,7 +15,6 @@ pub fn mul(a: impl IntoIterator<Item=f64,IntoIter:'t>, b: impl IntoIterator<Item
 	a.into_iter().zip(b.into_iter()).map(|(a,b)| a*b)
 }
 pub fn dot(a: impl IntoIterator<Item=f64,IntoIter:'t>, b: impl IntoIterator<Item=f64,IntoIter:'t>) -> f64 { mul(a.into_iter(), b.into_iter()).sum() }
-pub fn acc(a: &mut [f64], b: impl IntoIterator<Item=f64>) { for (a,b) in a.iter_mut().zip(b.into_iter()) { *a += b; } }
 
 mod ron {
 use serde::Deserialize;
@@ -79,20 +79,22 @@ impl NASA7 {
 	pub fn specific_heat_capacity(&self, T: f64) -> f64 {
 		use itertools::Itertools;
 		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
-		let T = T as f64;
-		(ideal_gas_constant * (a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T)) as f64
+		ideal_gas_constant * (a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T)
 	}
 	pub fn specific_enthalpy(&self, T: f64) -> f64 {
 		use itertools::Itertools;
 		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
-		let T = T as f64;
-		(ideal_gas_constant * (a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T)) as f64
+		ideal_gas_constant * (a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T)
 	}
 	pub fn specific_entropy(&self, T: f64) -> f64 {
 		use itertools::Itertools;
 		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
-		let T = T as f64;
-		(ideal_gas_constant * (a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T)) as f64
+		ideal_gas_constant * (a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T)
+	}
+	pub fn b(&self, T: f64) -> f64 { // S/R - H/RT
+		use itertools::Itertools;
+		let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
+		a[6] - a[0] + (a[0]-1.)*f64::ln(T) + a[1]/2.*T + a[2]/6.*T*T + a[3]/12.*T*T*T + a[4]/20.*T*T*T*T - a[5]/T
 	}
 }
 
@@ -106,13 +108,17 @@ pub fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, acti
 	Falloff { k0: RateConstant, k_inf: RateConstant, efficiencies: Box<[f64]>, troe: Troe },
 }
 
-pub fn rate(reactants: (&[usize], &[u8]), model: &Model, T: f64, concentrations: &[f64]) -> f64 {
-	let reactants : f64 = reactants.0.iter().zip(reactants.1.iter()).map(|(&specie, &coefficient)| concentrations[specie].powi(coefficient as i32)).product();
-	use self::Model::*;
-	reactants * match model {
-		Elementary{rate_constants} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>(),
-		ThreeBody{rate_constants, efficiencies} => rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>() * dot(efficiencies.iter().copied(), concentrations.iter().copied()),
-		Falloff{k_inf, k0, efficiencies, troe: Troe{A, T3, T1, T2}} => {
+struct Coefficient { forward_rate_coefficient: f64, efficiency: f64 }
+impl Model {
+fn forward_rate_coefficient(&self, T: f64, concentrations: &[f64]) -> Coefficient {
+	match self {
+		Self::Elementary{rate_constants} => Coefficient{forward_rate_coefficient: rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>(), efficiency: 1.},
+		Self::ThreeBody{rate_constants, efficiencies} => {
+			let third_body = dot(efficiencies.iter().copied(), concentrations.iter().copied());
+			assert!(third_body> 0., "{} {:?} {:?}", third_body, efficiencies, concentrations);
+			Coefficient{forward_rate_coefficient: rate_constants.iter().map(|rate_constant| arrhenius(rate_constant, T)).sum::<f64>(), efficiency: third_body}
+		},
+		Self::Falloff{k_inf, k0, efficiencies, troe: Troe{A, T3, T1, T2}} => {
 			let k_inf = arrhenius(k_inf, T);
 			let Pr = arrhenius(k0, T) / k_inf * dot(efficiencies.iter().copied(), concentrations.iter().copied());
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
@@ -121,15 +127,34 @@ pub fn rate(reactants: (&[usize], &[u8]), model: &Model, T: f64, concentrations:
 			let N = 0.75-1.27*log10Fcent;
 			let f1 = (f64::log10(Pr) + C)/(N-0.14*(f64::log10(Pr) + C));
 			let F = num::exp10(log10Fcent/(1.+f1*f1));
-			k_inf * Pr / (1.+Pr) * F
+			let pressure_modification = Pr / (1.+Pr) * F; // Chemically activated bimolecular reaction
+			assert!(pressure_modification > 0.);
+			Coefficient{forward_rate_coefficient: k_inf, efficiency: pressure_modification}
 		}
 	}
+}
 }
 
 pub struct Reaction {
 	pub equation: [(Box<[usize]>, Box<[u8]>); 2],
 	pub model: Model,
 	specie_net_coefficients: Box<[f64]>
+}
+
+pub struct Rate { pub forward_base_rate: f64, pub reverse_base_rate: f64, pub efficiency: f64 }
+impl Reaction {
+	pub fn rate(&self, temperature: f64, B: &[f64], concentrations: &[f64]) -> Rate {
+		let Reaction{equation, model, specie_net_coefficients} = self;
+		let atmospheric_pressure = 101325.;
+		let equilibrium_constant = f64::powf(atmospheric_pressure / ideal_gas_constant, specie_net_coefficients.iter().sum()) * f64::exp(specie_net_coefficients.iter().zip(B.iter()).map(|(net_coefficient, b)| net_coefficient * b).sum());
+		let Coefficient{forward_rate_coefficient, efficiency} = model.forward_rate_coefficient(temperature, &concentrations);
+		let reverse_rate_coefficient = forward_rate_coefficient / equilibrium_constant;
+		let [forward_base_rate, reverse_base_rate] = iter::array::Iterator::collect::<[_;2]>(equation.iter().zip(&[forward_rate_coefficient, reverse_rate_coefficient]).map(|((species, coefficients), rate)|
+			rate * species.iter().zip(coefficients.iter()).map(|(&specie, &coefficient)| concentrations[specie].powi(coefficient as i32)).product::<f64>()
+		));
+		//dbg!(equilibrium_constant, forward_rate_coefficient, efficiency, reverse_rate_coefficient, forward_base_rate, reverse_base_rate);
+		Rate{forward_base_rate, reverse_base_rate, efficiency}
+	}
 }
 
 pub struct System {
@@ -203,17 +228,20 @@ impl Simulation<'t> {
 impl State {
 	pub fn step(&mut self, system: &System) {
 		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * self.temperature);
+		let B = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.b(self.temperature)));
 		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), self.mass_fractions.iter().copied())));
 		let specie_count = concentrations.len();
 		let mut production_rates = vec!(0.; specie_count-1); // Skips most abundant specie (last index) (will be deduced from mass conservation)
-		for Reaction{equation, model, specie_net_coefficients} in system.reactions.iter() {
-				let v = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, self.temperature, &concentrations)));
-				let v = v[0] - v[1];
-				for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { production_rates[specie] += net_coefficient * v; }
+		for reaction@Reaction{specie_net_coefficients,..} in system.reactions.iter() {
+			let Rate{forward_base_rate, reverse_base_rate, efficiency} = reaction.rate(self.temperature, &B, &concentrations);
+			let base_rate = forward_base_rate - reverse_base_rate;
+			let net_rate = efficiency * base_rate;
+			for (specie, net_coefficient) in specie_net_coefficients[..specie_count-1].iter().enumerate() { production_rates[specie] += net_coefficient * net_rate; }
 		}
 		let mass_fraction_rates = from_iter(scale(f64::recip(density), mul(system.molar_masses.iter().copied(), production_rates.iter().copied())));
-		acc(&mut self.mass_fractions, scale(system.time_step, mass_fraction_rates.iter().copied()));
-		self.mass_fractions[specie_count-1] = 1. - self.mass_fractions[..specie_count-1].iter().sum::<f64>(); // Enforces mass conservation constraint by rescaling most abundant specie (last index)
+		for (state, rate) in self.mass_fractions[..specie_count-1].iter_mut().zip(mass_fraction_rates.iter()) { *state = 0f64.max(*state + system.time_step * rate); }
+		self.mass_fractions[specie_count-1] = 0f64.max(1. - self.mass_fractions[..specie_count-1].iter().sum::<f64>()); // Enforces mass conservation constraint by rescaling most abundant specie (last index)
+		for &mass_fraction in self.mass_fractions.iter() { assert!(mass_fraction >= 0. && mass_fraction < 1.,"{} {:?}", mass_fraction, &self.mass_fractions); }
 		let specific_heat_capacities = from_iter(system.thermodynamics.iter().zip(system.molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(self.temperature) / molar_mass));
 		let specific_heat_capacity = dot(self.mass_fractions.iter().copied(), specific_heat_capacities.iter().copied());
 		self.temperature += system.time_step * dot(specific_heat_capacities.iter().copied(), mass_fraction_rates.iter().copied()) / specific_heat_capacity;

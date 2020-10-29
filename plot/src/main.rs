@@ -10,11 +10,14 @@
 		plot.values.push(state.clone().into());
 		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
 		use iter::from_iter;
+		#[allow(non_snake_case)] let B = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.b(state.temperature)));
 		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), state.mass_fractions.iter().copied())));
-		for Reaction{equation,model,..} in system.reactions.iter() {
-			let [forward, reverse] = iter::array::Iterator::collect::<[_;2]>(equation.iter().map(|(species, coefficients)| rate((&species, &coefficients), model, state.temperature, &concentrations)));
-			let net = forward - reverse;
-			if net > 1e-5/*13*/ { println!("{:e}", net); return true; }
+		for reaction in system.reactions.iter() {
+			let Rate{forward_base_rate, reverse_base_rate, efficiency} = reaction.rate(state.temperature, &B, &concentrations);
+			let base_rate = forward_base_rate - reverse_base_rate;
+			let net_rate = efficiency * base_rate;
+			//println!("{:e}", net_rate);
+			if net_rate > 1e-20 { /*println!("{:e}", net_rate);*/ return true; }
 		}
 		false
 	};
