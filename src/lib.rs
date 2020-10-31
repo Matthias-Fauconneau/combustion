@@ -124,9 +124,12 @@ fn forward_rate_coefficient(&self, T: f64, concentrations: &[f64]) -> Coefficien
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
 			let log10Fcent = f64::log10(Fcent);
 			let C = -0.4-0.67*log10Fcent;
-			let N = 0.75-1.27*log10Fcent;
+			/*let N = 0.75-1.27*log10Fcent;
 			let f1 = (f64::log10(Pr) + C)/(N-0.14*(f64::log10(Pr) + C));
-			let F = num::exp10(log10Fcent/(1.+f1*f1));
+			let F = num::exp10(log10Fcent/(1.+f1*f1));*/
+			let ATroe = f64::log10(Pr) + C;
+			let BTroe = 0.806 - 1.1762*log10Fcent - 0.14*f64::log10(Pr);
+			let F = f64::powf(Fcent, f64::recip(1.+num::sq(ATroe/BTroe)));
 			let pressure_modification = Pr / (1.+Pr) * F; // Chemically activated bimolecular reaction
 			assert!(pressure_modification > 0.);
 			Coefficient{forward_rate_coefficient: k_inf, efficiency: pressure_modification}
@@ -210,11 +213,13 @@ impl Simulation<'t> {
 	let mass_fractions = from_iter(scale(f64::recip(mass_proportions.iter().sum::<f64>()), mass_proportions.iter().copied()));
 	let average_molar_mass = f64::recip(mul(mass_fractions.iter().copied(), recip(molar_masses.iter().copied())).sum());
 	{
-		let specific_enthalpy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_enthalpy(temperature) / molar_mass)).sum();
+		let density = average_molar_mass * pressure / (ideal_gas_constant * temperature);
+		dbg!(density);
+		let specific_enthalpy = average_molar_mass * mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_enthalpy(temperature) / molar_mass)).sum::<f64>();
 		dbg!(specific_enthalpy);
-		let specific_entropy : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_entropy(temperature) / molar_mass)).sum();
+		let specific_entropy = average_molar_mass * mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_entropy(temperature) / molar_mass)).sum::<f64>();
 		dbg!(specific_entropy);
-		let specific_heat_capacity : f64 = mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(temperature) / molar_mass)).sum();
+		let specific_heat_capacity = average_molar_mass * mul(mass_fractions.iter().copied(), thermodynamics.iter().zip(molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(temperature) / molar_mass)).sum::<f64>();
 		dbg!(specific_heat_capacity);
 	}
 	Self{
@@ -244,7 +249,8 @@ impl State {
 		for &mass_fraction in self.mass_fractions.iter() { assert!(mass_fraction >= 0. && mass_fraction < 1.,"{} {:?}", mass_fraction, &self.mass_fractions); }
 		let specific_heat_capacities = from_iter(system.thermodynamics.iter().zip(system.molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_heat_capacity(self.temperature) / molar_mass));
 		let specific_heat_capacity = dot(self.mass_fractions.iter().copied(), specific_heat_capacities.iter().copied());
-		self.temperature += system.time_step * dot(specific_heat_capacities.iter().copied(), mass_fraction_rates.iter().copied()) / specific_heat_capacity;
+		let enthalpies = from_iter(system.thermodynamics.iter().zip(system.molar_masses.iter()).map(|(thermodynamic, molar_mass)| thermodynamic.specific_enthalpy(self.temperature) / molar_mass));
+		self.temperature -= system.time_step * f64::recip(specific_heat_capacity) * dot(enthalpies.iter().copied(), mass_fraction_rates.iter().copied()) ;
 		self.time += system.time_step;
 	}
 }
