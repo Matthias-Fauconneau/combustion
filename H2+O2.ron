@@ -1,10 +1,10 @@
 #![enable(unwrap_newtypes)]
 (
-time_step: 1e-11,
+time_step: 1e-13,
 phases: [IdealGas(
 	elements: [H, O, Ar],
 	species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],
-	state: (temperature: 1200., pressure: 101325, mole_proportions: {"H2": 1, "O2": 1, "Ar": 2})
+	state: (temperature: 1200., pressure: 101325, mole_proportions: {"H2": 1, "O2": 1, "Ar": 2}, volume: 1)
 )],
 species: {
 	"H": (

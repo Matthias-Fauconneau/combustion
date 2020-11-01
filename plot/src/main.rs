@@ -8,7 +8,7 @@
 	app.idle = box move |plot| {
 		for _ in 0..100000 { state.step(&system); }
 		plot.values.push(state.clone().into());
-		let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
+		/*let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
 		use iter::from_iter;
 		#[allow(non_snake_case)] let B = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.b(state.temperature)));
 		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), state.mass_fractions.iter().copied())));
@@ -19,7 +19,8 @@
 			//println!("{:e}", net_rate);
 			if net_rate > 1e-20 { /*println!("{:e}", net_rate);*/ return true; }
 		}
-		false
+		false*/
+		true
 	};
 	app.run()?
 }
