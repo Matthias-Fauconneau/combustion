@@ -7,8 +7,9 @@ edition = "2018"
 [dependencies]
 fehler = ''
 anyhow = ''
-iter = { path='../iter' }
+iter = {path='../iter'}
 itertools = ''
 serde = ''
 num = {path='../num'}
 ron = ''
+nalgebra = ''

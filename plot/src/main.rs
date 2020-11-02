@@ -5,9 +5,10 @@
 	use combustion::*;
 	let Simulation{species, system, mut state} = Simulation::new(&system)?;
 	let mut app = ui::app::App::new(ui::plot::Plot::new(box [&["T"] as &[_], &species], vec!(state.clone().into())))?;
+	let mut time = 0.;
 	app.idle = box move |plot| {
-		for _ in 0..100000 { state.step(&system); }
-		plot.values.push(state.clone().into());
+		for _ in 0..100000 { state.step(&system); time += system.time_step; }
+		plot.values.push( (time*1e9/*ns*/, state.clone().into()) );
 		/*let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
 		use iter::from_iter;
 		#[allow(non_snake_case)] let B = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.b(state.temperature)));
