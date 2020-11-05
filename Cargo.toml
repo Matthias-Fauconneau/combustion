@@ -12,4 +12,3 @@ itertools = ''
 serde = ''
 num = {path='../num'}
 ron = ''
-nalgebra = ''

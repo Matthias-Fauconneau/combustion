@@ -3,8 +3,19 @@
 #[fehler::throws(anyhow::Error)] fn main() {
 	let system = std::fs::read("H2+O2.ron")?;
 	use combustion::*;
-	let Simulation{species: specie_names, system, mut state} = Simulation::new(&system)?;
-	while state.time < 4e-6 {
+	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::<S>::new(&system)?;
+	let len = 1;//00000;
+  let constants = vec!(pressure; len);
+	let mut states = iter::array::from_iter([temperature,volume].iter().chain(n.iter()).map(|&v| vec!(v; len) ));
+  for i in 0..len {
+		let constant = constants[i];
+		let mut state = iter::array::map(&states, |states| states[i]);
+		system.integrate(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, &mut state);
+		use itertools::izip;
+		for (states, &state) in izip!(&mut states, &state) { states[i] = state; }
+	}
+
+	/*while state.time < 4e-6 {
 		for _ in 0..10000 { state.step(&system); }
 	}
 	dbg!(state.temperature);
@@ -28,5 +39,5 @@
 		let net_rate = forward_rate - reverse_rate;
 		print!("{:14.5e}{:14.5e}{:14.5e} {:32}", forward_rate, reverse_rate, net_rate);*/
 		println!("{:?} = {:?}", left, right);
-	}
+	}*/
 }
