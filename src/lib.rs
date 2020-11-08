@@ -1,15 +1,14 @@
 #![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,type_ascription,clamp,array_map,map_into_keys_values)]
 #![allow(non_snake_case,confusable_idents,non_upper_case_globals)]
 mod ron;
-use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box}, num::norm, self::ron::*};
-pub const ideal_gas_constant : f64 = 8.31446261815324;
+use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box, Suffix}, num::norm, self::ron::*};
 pub fn ssq(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
 	let iter = iter.into_iter();
 	let len = std::iter::ExactSizeIterator::len(&iter);
 	f64::sqrt(std::iter::Iterator::sum::<f64>(std::iter::Iterator::map(iter, num::sq)) / len as f64)
 }
-pub trait Suffix<T> { fn suffix<const S: usize>(&self) -> &[T; S]; }
-impl<T, const N: usize> Suffix<T> for [T; N] { fn suffix<const S: usize>(&self) -> &[T; S] { (&self[N-S..]).try_into().unwrap() } }
+
+pub const ideal_gas_constant : f64 = 8.31446261815324;
 
 pub struct NASA7([[f64; 7]; 2]);
 impl NASA7 {
@@ -53,24 +52,24 @@ fn efficiency(&self, T: f64, concentrations: &[f64; S], k_inf: f64) -> f64 {
 }
 }
 
-pub struct Reaction<const S: usize> {
+pub struct Reaction<const S: usize, const S1: usize> {
 	pub equation: [Zip<Box<[usize]>, Box<[u8]>>; 2],
 	rate_constant: RateConstant,
 	pub model: Model<S>,
-	specie_net_coefficients: [f64; S],
+	specie_net_coefficients: [f64; S1],
 	//Σνf: f64,
 	//Σνr: f64,
 	PRν: f64,
 }
 
-pub struct System<const S: usize> {
+pub struct System<const S: usize, const S1: usize, const N: usize> {
 	pub molar_masses: [f64; S],
 	pub thermodynamics: [NASA7; S],
-	pub reactions: Box<[Reaction<S>]>,
+	pub reactions: Box<[Reaction<S,S1>]>,
 }
 
-impl<const S: usize> System<S> {
-fn dt(&self, P: f64, y: &[f64; S]) -> [f64; S] {
+impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
+fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 
 	let (T, V, n) = (y[0], y[1], y.suffix());
@@ -78,12 +77,12 @@ fn dt(&self, P: f64, y: &[f64; S]) -> [f64; S] {
 	let B = eval!(species; |s| s.b(T));
 	let V = V.max(0.);
 	let recipV = 1. / V;
-	let concentrations : [_; /*S-1*/8] = eval!(n; |n| recipV * n.max(0.));
+	let concentrations : [_; /*S-1*/S1] = eval!(n; |n| recipV * n.max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation)
 	let C = P / (ideal_gas_constant * T);
 	let concentrations : [_; S] = collect(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
 
 	let a = S-1;
-	let ref mut dtω = [0.; S][..S-1]; // Skips most abundant specie (last index) (will be deduced from conservation)
+	let ref mut dtω = [0.; /*S-1*/S1]; //][..S-1];
 	for Reaction{equation, rate_constant, model, specie_net_coefficients: ν, PRν, ..} in reactions.iter() {
 		let equilibrium_constant = PRν * f64::exp(ν.dot(&B));
 		let kf = arrhenius(rate_constant, T);
@@ -109,7 +108,7 @@ fn dt(&self, P: f64, y: &[f64; S]) -> [f64; S] {
 }
 
 // Estimate principal eigenvector/value of dyF|y
-fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; S], dty: &[f64; S], v: &[f64; S]) -> ([f64; S], f64) {
+fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[f64; N]) -> ([f64; N], f64) {
 	let [norm_y, norm_v] = [y,v].map(norm);
 	assert!(norm_y > 0.);
 	let ε = norm_y * f64::EPSILON.sqrt();
@@ -129,7 +128,7 @@ fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; S], dty: &[f64; S], v: &[
 	(yεv.sub(y), ρ * 1.2)
 }
 
-pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; S]) -> [f64; S] {
+pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> [f64; N] {
 	let max_steps = ((rtol / (10. * f64::EPSILON)).sqrt().round() as usize).max(2);
 	let mut nstep = 0;
 	let mut t = 0.;
@@ -208,14 +207,10 @@ pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; S]) -> 
 	//pub volume: f64,
 	pub amounts: [f64; S]
 }
-impl<const S: usize> State<S> {
-	pub const S: usize = S;
-}
 
-pub struct Simulation<'t, const S: usize> {
+pub struct Simulation<'t, const S: usize, const S1: usize, const N: usize> {
 	pub species: [&'t str; S],
-	pub system: System<S>,
-	pub amount: f64,
+	pub system: System<S,S1,N>,
 	pub time_step: f64,
 	pub pressure: f64,
 	pub volume: f64,
@@ -227,15 +222,16 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 	Iterator::collect((::ron::de::from_str("#![enable(unwrap_newtypes)] {H: 1.008, O: 15.999, Ar: 39.95}").unwrap():Map<Element, f64>).into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)))
 });
 
-impl<const S: usize> Simulation<'t, S> {
+impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 #[fehler::throws(anyhow::Error)] pub fn new(system: &'b [u8]) -> Self where 'b: 't {
 	let ron::System{species, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
 
 	let specie_names : [_; S] = collect(species.keys().copied());
 	let molar_masses = collect(species.values().map(|Specie{composition,..}| composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum()));
-	let thermodynamics = collect(species.into_values().map(|Specie{thermodynamic:ron::NASA7{temperature_ranges,coefficients},..}| {
-		assert!(matches!(temperature_ranges[..], [_,Tsplit,_] if Tsplit == NASA7::T_split));
-		NASA7(coefficients[..].try_into().unwrap())
+	let thermodynamics = collect(species.into_values().map(|Specie{thermodynamic:ron::NASA7{temperature_ranges,coefficients},..}| match temperature_ranges[..] {
+		[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(coefficients[..].try_into().unwrap()),
+		[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([coefficients[0]; 2]),
+		ref ranges => panic!("{:?}", ranges),
 	}));
 	let species = specie_names;
 
@@ -270,7 +266,7 @@ impl<const S: usize> Simulation<'t, S> {
 	Self{
 		species,
 		system: System{molar_masses, thermodynamics, reactions},
-		amount, time_step, pressure, volume,
+		time_step, pressure, volume,
 		state: State{temperature, /*volume,*/ amounts}
 	}
 }

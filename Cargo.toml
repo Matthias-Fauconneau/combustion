@@ -5,10 +5,9 @@ authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+iter = {path='../iter'}
+num = {path='../num'}
+serde = ''
+ron = ''
 fehler = ''
 anyhow = ''
-iter = {path='../iter'}
-itertools = ''
-serde = ''
-num = {path='../num'}
-ron = ''

@@ -1,19 +1,18 @@
-#![feature(type_ascription, array_map)]
+#![feature(type_ascription, array_map)] use {std::convert::TryInto, iter::{IntoChain, collect, eval, zip}, combustion::*};
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	let system = std::fs::read("H2+O2.ron")?;
-	use combustion::*;
-	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::new(&system)?;
+	pub const S : usize = 9; // Total number of species
+	pub const N : usize = 2/*T, V*/+S-1; // Skips most abundant specie (last index) (will be deduced from conservation)
+	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::<S,{S-1},N>::new(&system)?;
 	let len = 1;//00000;
   let constants = vec!(pressure; len);
-  use iter::{IntoChain, collect, eval};
-  let mut states_components : [_; 9] = collect([temperature,volume].chain(n).map(|v| vec!(v; len)));
+  let mut states_components : [_; N] = collect([temperature,volume].chain(n[..S-1].try_into().unwrap():[_;S-1]).map(|v| vec!(v; len)));
   for i in 0..len {
 		let constant = constants[i];
 		let state = eval!(&states_components; |c| c[i]);
 		let state = system.step(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, state);
-		use itertools::izip;
-		for (states_components, &state) in izip!(&mut states_components, &state) { states_components[i] = state; }
+		for (states_components, &state) in zip!(&mut states_components, &state) { states_components[i] = state; }
 	}
 
 	/*while state.time < 4e-6 {
