@@ -1,18 +1,19 @@
-#![feature(bindings_after_at)]
+#![feature(type_ascription, array_map)]
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	let system = std::fs::read("H2+O2.ron")?;
 	use combustion::*;
-	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::<S>::new(&system)?;
+	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::new(&system)?;
 	let len = 1;//00000;
   let constants = vec!(pressure; len);
-	let mut states = iter::array::from_iter([temperature,volume].iter().chain(n.iter()).map(|&v| vec!(v; len) ));
+  use iter::{IntoChain, collect, eval};
+  let mut states_components : [_; 9] = collect([temperature,volume].chain(n).map(|v| vec!(v; len)));
   for i in 0..len {
 		let constant = constants[i];
-		let mut state = iter::array::map(&states, |states| states[i]);
-		system.integrate(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, &mut state);
+		let state = eval!(&states_components; |c| c[i]);
+		let state = system.step(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, state);
 		use itertools::izip;
-		for (states, &state) in izip!(&mut states, &state) { states[i] = state; }
+		for (states_components, &state) in izip!(&mut states_components, &state) { states_components[i] = state; }
 	}
 
 	/*while state.time < 4e-6 {
