@@ -1,13 +1,11 @@
-#![allow(incomplete_features,non_snake_case,confusable_idents)]
-#![feature(in_band_lifetimes,trait_alias,box_syntax,map_into_keys_values,associated_type_bounds,bindings_after_at,non_ascii_idents,min_const_generics,clamp,array_value_iter,type_ascription,array_map,once_cell)]
-#![no_implicit_prelude]
-#![allow(non_upper_case_globals)]
-//mod array;
+#![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,type_ascription,clamp,array_map,map_into_keys_values)]
+#![allow(non_snake_case,confusable_idents,non_upper_case_globals)]
+
 mod ron;
 pub const ideal_gas_constant : f64 = 8.31446261815324;
 extern crate fehler; extern crate anyhow;
 extern crate iter; use iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box};
-extern crate std; use std::{convert::{From, TryInto}, iter::{IntoIterator, Iterator}, panic, boxed::Box, cmp::Ord, matches};
+extern crate std; use std::{convert::TryInto, iter::{IntoIterator, Iterator}, panic, boxed::Box, cmp::Ord, matches};
 extern crate num; use num::norm;
 pub fn ssq(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
 	let iter = iter.into_iter();
@@ -88,7 +86,7 @@ fn dt(&self, P: f64, y: &[f64; S]) -> [f64; S] {
 	let recipV = 1. / V;
 	let concentrations : [_; /*S-1*/8] = eval!(n; |n| recipV * n.max(0.));
 	let C = P / (ideal_gas_constant * T);
-	let concentrations : [_; S] = collect(concentrations.chain([C - concentrations.iter().sum():f64]));
+	let concentrations : [_; S] = collect(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
 
 	let a = S-1;
 	let ref mut dtω = [0.; S][..S-1]; // Skips most abundant specie (last index) (will be deduced from conservation)
@@ -284,4 +282,4 @@ impl<const S: usize> Simulation<'t, S> {
 }
 }
 
-impl<const S: usize> From<State<S>> for Box<[Box<[f64]>]> { fn from(s: State<S>) -> Self { box [box [s.temperature] as Box<[_]>, box s.amounts] as Box<[_]> } }
+//impl<const S: usize> std::convert::From<State<S>> for Box<[Box<[f64]>]> { fn from(s: State<S>) -> Self { box [box [s.temperature] as Box<[_]>, box s.amounts] as Box<[_]> } }
