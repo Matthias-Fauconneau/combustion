@@ -1,21 +1,15 @@
 #![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,type_ascription,clamp,array_map,map_into_keys_values)]
 #![allow(non_snake_case,confusable_idents,non_upper_case_globals)]
-
 mod ron;
+use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box}, num::norm, self::ron::*};
 pub const ideal_gas_constant : f64 = 8.31446261815324;
-extern crate fehler; extern crate anyhow;
-extern crate iter; use iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box};
-extern crate std; use std::{convert::TryInto, iter::{IntoIterator, Iterator}, panic, boxed::Box, cmp::Ord, matches};
-extern crate num; use num::norm;
 pub fn ssq(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
 	let iter = iter.into_iter();
 	let len = std::iter::ExactSizeIterator::len(&iter);
 	f64::sqrt(std::iter::Iterator::sum::<f64>(std::iter::Iterator::map(iter, num::sq)) / len as f64)
 }
 pub trait Suffix<T> { fn suffix<const S: usize>(&self) -> &[T; S]; }
-impl<T, const N: usize> Suffix<T> for [T; N] { fn suffix<const S: usize>(&self) -> &[T; S] { std::convert::TryFrom::try_from(&self[N-S..]).unwrap() } }
-//use array::{Suffix}; //Array;
-use self::ron::*;
+impl<T, const N: usize> Suffix<T> for [T; N] { fn suffix<const S: usize>(&self) -> &[T; S] { (&self[N-S..]).try_into().unwrap() } }
 
 pub struct NASA7([[f64; 7]; 2]);
 impl NASA7 {
