@@ -1,11 +1,11 @@
 #![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,type_ascription,clamp,array_map,map_into_keys_values)]
 #![allow(non_snake_case,confusable_idents,non_upper_case_globals)]
 mod ron;
-use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box, Suffix}, num::norm, self::ron::*};
-pub fn ssq(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
+use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box, Suffix}, num::{ssq, norm}, self::ron::*};
+pub fn error(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
 	let iter = iter.into_iter();
 	let len = std::iter::ExactSizeIterator::len(&iter);
-	f64::sqrt(std::iter::Iterator::sum::<f64>(std::iter::Iterator::map(iter, num::sq)) / len as f64)
+	(ssq(iter) / len as f64).sqrt()
 }
 
 pub const ideal_gas_constant : f64 = 8.31446261815324;
@@ -68,20 +68,20 @@ pub struct System<const S: usize, const S1: usize, const N: usize> {
 	pub reactions: Box<[Reaction<S,S1>]>,
 }
 
+extern "C" { fn cantera(rtol: f64, atol: f64, T: f64, P: f64, X: *const std::os::raw::c_char, len: &mut usize, species: &mut *const *const std::os::raw::c_char, dtw: &mut *const f64); }
+
 impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
 fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	let T = T.clamp(100., 10000.0);
-	let B = eval!(species; |s| s.b(T));
 	let V = V.max(0.);
 	let recipV = 1. / V;
 	let concentrations : [_; /*S-1*/S1] = eval!(n; |n| recipV * n.max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation)
 	let C = P / (ideal_gas_constant * T);
 	let concentrations : [_; S] = collect(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
 
-	let a = S-1;
+	let B = eval!(species; |s| s.b(T));
 	let ref mut dtω = [0.; /*S-1*/S1]; //][..S-1];
 	for Reaction{equation, rate_constant, model, specie_net_coefficients: ν, PRν, ..} in reactions.iter() {
 		let equilibrium_constant = PRν * f64::exp(ν.dot(&B));
@@ -96,12 +96,27 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 		for (specie, ν) in ν.enumerate() { dtω[specie] += ν * cR; }
 	}
 	let ref dtω = *dtω;
+
+	{
+		let specie = |name| ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"].iter().position(|key|key==&name).unwrap();
+		let (species, dtw) = {
+			let X = std::ffi::CString::new(format!("H2:{}, O2:{}, AR:{}", concentrations[specie("H2")]*W[specie("H2")], concentrations[specie("O2")]*W[specie("O2")], C*W[specie("Ar")])).unwrap();
+			let (mut len, mut species, mut dtw) = (0, std::ptr::null(), std::ptr::null());
+			unsafe {
+				cantera(/*rtol:*/ 1e-4, /*atol:*/ 1e-14, T, P, X.as_ptr(), &mut len, &mut species, &mut dtw);
+				let species = std::slice::from_raw_parts(species, len);
+				let dtw = std::slice::from_raw_parts(dtw, len);
+				(species.iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()).collect::<Box<_>>(), dtw)
+			}
+		};
+		println!("{:?}", itertools::Itertools::format(species.iter().zip(dtw).zip(species.iter().map(|s| dtω[specie(s)]))," "));
+	}
+
 	let Cp = map!(species; |s| s.specific_heat_capacity(T));
 	let rcp_ΣCCp = 1./concentrations.dot(Cp);
 	let H = map!(species; |s| s.specific_enthalpy(T));
 	let dtT = - rcp_ΣCCp * dtω.dot(H);
-	let Wa = W[a];
-	let dtE = W.map(|W| 1.-W/Wa).dot(dtω);
+	let dtE = W.map(|w| 1.-w/W[S-1]).dot(dtω);
 	let dtV = V * (dtT / T + T * ideal_gas_constant / P * dtE);
 	let dtn = map!(dtω; |dtω| V*dtω);
 	collect([dtT, dtV].chain(dtn))
@@ -111,7 +126,7 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[f64; N]) -> ([f64; N], f64) {
 	let [norm_y, norm_v] = [y,v].map(norm);
 	assert!(norm_y > 0.);
-	let ε = norm_y * f64::EPSILON.sqrt();
+	let ε = norm_y * 1./2.; //f64::EPSILON.sqrt()
 	assert!(norm_v > 0.);
 	let ref mut yεv = eval!(y, v; |y, v| y + ε * v / norm_v);
 	let mut ρ = 0.;
@@ -121,10 +136,10 @@ fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[
 		assert!(norm_dtεv > 0.);
 		let previous_ρ = ρ;
 		ρ = norm_dtεv / ε;
-		if i >= 2 && f64::abs(ρ - previous_ρ) <= 0.01*ρ.max(1./tmax) { break; } // Early exit
+		if i >= 2 && f64::abs(ρ - previous_ρ) <= 0.01*ρ.max(1./tmax) { dbg!(i); break; } // Early exit
 		*yεv = eval!(y, dtεv; |y, dtεv| y + (ε / norm_dtεv) * dtεv);
-		//yεv = y.zip(&dtεv).map(|(y, dtεv)| y + (ε / norm_dtεv) * dtεv);
 	}
+	dbg!(ρ);
 	(yεv.sub(y), ρ * 1.2)
 }
 
@@ -137,7 +152,7 @@ pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> 
 	let mut dt = {
 		let dt = (1./jacobian_spectral_radius).min(tmax);
 		let ref dty1 = self.dt(P, &eval!(&y, &*dty; |y, dty| y + dt * dty));
-		(dt/(dt*ssq(map!(&*dty, dty1, &y; |dty, dty1, y| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
+		(dt/(dt*error(map!(&*dty, dty1, &y; |dty, dty1, y| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
 	};
 	let (mut previous_error, mut previous_dt) = (0., 0.);
 	loop {
@@ -181,7 +196,7 @@ pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> 
 			ddZ = [ddz, ddZ[0]];
 		}
 		let ref dty1 = self.dt(P, &y1);
-		let error = ssq(map!(&y,&y1,&*dty,dty1; |y,y1,dty,dty1| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs()))).powi(2)));
+		let error = error(map!(&y,&y1,&*dty,dty1; |y,y1,dty,dty1| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
 		if error > 1. { // error too large, step is rejected
 			dt *= 0.8 / error.powf(1./3.);
 			assert!(dt >= f64::EPSILON);
