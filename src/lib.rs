@@ -75,7 +75,7 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	let V = V.max(0.);
+	//let V = V.max(0.);
 	let recipV = 1. / V;
 	let concentrations : [_; /*S-1*/S1] = eval!(n; |n| recipV * n.max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation)
 	let C = P / (ideal_gas_constant * T);
@@ -98,9 +98,9 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let ref dtω = *dtω;
 
 	{
-		let specie = |name| ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"].iter().position(|key|key==&name).unwrap();
+		let specie = |name| ["H","H2","O","OH","H2O","O2","HO2","H2O2","AR"].iter().position(|key|key==&name);
 		let (species, dtw) = {
-			let X = std::ffi::CString::new(format!("H2:{}, O2:{}, AR:{}", concentrations[specie("H2")]*W[specie("H2")], concentrations[specie("O2")]*W[specie("O2")], C*W[specie("Ar")])).unwrap();
+			let X = std::ffi::CString::new(format!("H2:{}, O2:{}, AR:{}", concentrations[specie("H2").unwrap()]*W[specie("H2").unwrap()], concentrations[specie("O2").unwrap()]*W[specie("O2").unwrap()], C*W[specie("AR").unwrap()])).unwrap();
 			let (mut len, mut species, mut dtw) = (0, std::ptr::null(), std::ptr::null());
 			unsafe {
 				cantera(/*rtol:*/ 1e-4, /*atol:*/ 1e-14, T, P, X.as_ptr(), &mut len, &mut species, &mut dtw);
@@ -109,17 +109,17 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 				(species.iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()).collect::<Box<_>>(), dtw)
 			}
 		};
-		println!("{:?}", itertools::Itertools::format(species.iter().zip(dtw).zip(species.iter().map(|s| dtω[specie(s)]))," "));
+		panic!("{}", itertools::Itertools::format(species.iter().zip(dtw.iter().zip(species.iter().map(|s| specie(s).map(|k| dtω.get(k)).flatten()))).filter_map(|(k,(x,y))| y.map(|y| (k,x,y))).map(|(k,x,y)| format!("{} {:.1e} {:.1e}",k,x,y)), " "));
 	}
 
-	let Cp = map!(species; |s| s.specific_heat_capacity(T));
+	/*let Cp = map!(species; |s| s.specific_heat_capacity(T));
 	let rcp_ΣCCp = 1./concentrations.dot(Cp);
 	let H = map!(species; |s| s.specific_enthalpy(T));
 	let dtT = - rcp_ΣCCp * dtω.dot(H);
 	let dtE = W.map(|w| 1.-w/W[S-1]).dot(dtω);
 	let dtV = V * (dtT / T + T * ideal_gas_constant / P * dtE);
 	let dtn = map!(dtω; |dtω| V*dtω);
-	collect([dtT, dtV].chain(dtn))
+	collect([dtT, dtV].chain(dtn))*/
 }
 
 // Estimate principal eigenvector/value of dyF|y
