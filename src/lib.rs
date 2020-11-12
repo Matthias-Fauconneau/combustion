@@ -1,14 +1,27 @@
-#![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,type_ascription,clamp,array_map,map_into_keys_values)]
+#![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,clamp,array_map,map_into_keys_values)]
 #![allow(non_snake_case,confusable_idents,non_upper_case_globals)]
-mod ron;
-use {std::convert::TryInto, iter::{map, eval, zip, Zip, IntoChain, Dot, IntoEnumerate, Sub, generate, collect, r#box, Suffix}, num::{ssq, norm}, self::ron::*};
-pub fn error(iter: impl iter::IntoExactSizeIterator+IntoIterator<Item=f64>) -> f64 {
-	let iter = iter.into_iter();
-	let len = std::iter::ExactSizeIterator::len(&iter);
+pub mod ron;
+use {std::convert::TryInto,
+				iter::{IntoIterator, array_from_iter as from_iter, collect_sized as collect, box_collect, into::{Collect, Enumerate, IntoChain, Zip, IntoZip, IntoMap, map, Find, FilterMap, Product}, zip, eval,
+				vec::{eval, generate, Sub, Dot, Suffix}},
+				num::{ssq, norm}};
+trait IntoFormat : IntoIterator+Sized {
+	fn format(self, sep: &str) -> itertools::Format<'_, Self::IntoIter> { itertools::Itertools::format(self.into_iter(), sep) }
+	fn format_with<F: FnMut(Self::Item, &mut dyn FnMut(&dyn std::fmt::Display) -> std::fmt::Result) -> std::fmt::Result>(self, sep: &str, format: F) -> itertools::FormatWith<'_, Self::IntoIter, F> {
+		itertools::Itertools::format_with(self.into_iter(), sep, format)
+	}
+}
+impl<I:IntoIterator> IntoFormat for I {}
+
+pub fn error<I:iter::IntoExactSizeIterator+iter::IntoIterator<Item=f64>>(iter: I) -> f64 {
+	let iter = iter::IntoIterator::into_iter(iter);
+	let len = iter.len();
 	(ssq(iter) / len as f64).sqrt()
 }
 
 pub const ideal_gas_constant : f64 = 8.31446261815324;
+
+pub use self::ron::*;
 
 pub struct NASA7([[f64; 7]; 2]);
 impl NASA7 {
@@ -72,34 +85,35 @@ extern "C" { fn cantera(rtol: f64, atol: f64, T: f64, P: f64, X: *const std::os:
 
 impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
 fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
+	let specie_names = ["H","H2","O","OH","H2O","O2","HO2","H2O2","AR"]; let specie = |name:&str| specie_names.iter().position(|key|key==&name); use itertools::Itertools; // DEBUG
 	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	//let V = V.max(0.);
 	let recipV = 1. / V;
-	let concentrations : [_; /*S-1*/S1] = eval!(n; |n| recipV * n.max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation)
+	let concentrations : [_; /*S-1*/S1] = eval(n, |n| recipV * n.max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation)
 	let C = P / (ideal_gas_constant * T);
-	let concentrations : [_; S] = collect(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
+	let concentrations : [_; S] = from_iter(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
 
-	let B = eval!(species; |s| s.b(T));
+	let B = eval(species, |s| s.b(T));
 	let ref mut dtω = [0.; /*S-1*/S1]; //][..S-1];
 	for Reaction{equation, rate_constant, model, specie_net_coefficients: ν, PRν, ..} in reactions.iter() {
 		let equilibrium_constant = PRν * f64::exp(ν.dot(&B));
 		let kf = arrhenius(rate_constant, T);
 		let kr = kf / equilibrium_constant;
-		let [ΠCνf, ΠCνr] : [f64;2] = eval!(equation; |side| side.a.into_iter().zip(side.b.into_iter()).map(|(specie, ν)| concentrations[*specie].powi(*ν as i32)).product());
+		let [ΠCνf, ΠCνr] : [f64;2] = eval(equation, |side| map(side, |(&specie, &ν)| f64::powi(concentrations[specie], ν as i32)).product());
 		let Rf = kf * ΠCνf;
 		let Rr = kr * ΠCνr;
 		let c = model.efficiency(T, &concentrations, kf);
 		let R = Rf - Rr;
 		let cR = c * R;
+		println!("{}, {}", equation.format_with(" = ", |side, f| f(&side.format_with(" + ", |(&specie, ν), f| f(&format_args!("{} {}",ν,specie_names[specie]))))), cR);
+
 		for (specie, ν) in ν.enumerate() { dtω[specie] += ν * cR; }
 	}
 	let ref dtω = *dtω;
 
 	{
-		let specie = |name| ["H","H2","O","OH","H2O","O2","HO2","H2O2","AR"].iter().position(|key|key==&name);
-		let (species, dtw) = {
+		let (ref species, dtw) = {
 			let X = std::ffi::CString::new(format!("H2:{}, O2:{}, AR:{}", concentrations[specie("H2").unwrap()]*W[specie("H2").unwrap()], concentrations[specie("O2").unwrap()]*W[specie("O2").unwrap()], C*W[specie("AR").unwrap()])).unwrap();
 			let (mut len, mut species, mut dtw) = (0, std::ptr::null(), std::ptr::null());
 			unsafe {
@@ -109,7 +123,9 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 				(species.iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()).collect::<Box<_>>(), dtw)
 			}
 		};
-		panic!("{}", itertools::Itertools::format(species.iter().zip(dtw.iter().zip(species.iter().map(|s| specie(s).map(|k| dtω.get(k)).flatten()))).filter_map(|(k,(x,y))| y.map(|y| (k,x,y))).map(|(k,x,y)| format!("{} {:.1e} {:.1e}",k,x,y)), " "));
+		print!("{}", species.zip(dtw.zip(species.map(|&s| specie(s).map(|k| dtω.get(k)).flatten()))).filter_map(|(k,(x,y))| y.map(|y| (k,x,y))).map(|(k,x,y)| format!("{} {:.1e} {:.1e}",k,x,y)).format(" "));
+		std::io::Write::flush(&mut std::io::stdout()).unwrap();
+		std::process::abort();
 	}
 
 	/*let Cp = map!(species; |s| s.specific_heat_capacity(T));
@@ -126,7 +142,7 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[f64; N]) -> ([f64; N], f64) {
 	let [norm_y, norm_v] = [y,v].map(norm);
 	assert!(norm_y > 0.);
-	let ε = norm_y * 1./2.; //f64::EPSILON.sqrt()
+	let ε = norm_y * f64::EPSILON.sqrt();
 	assert!(norm_v > 0.);
 	let ref mut yεv = eval!(y, v; |y, v| y + ε * v / norm_v);
 	let mut ρ = 0.;
@@ -152,7 +168,8 @@ pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> 
 	let mut dt = {
 		let dt = (1./jacobian_spectral_radius).min(tmax);
 		let ref dty1 = self.dt(P, &eval!(&y, &*dty; |y, dty| y + dt * dty));
-		(dt/(dt*error(map!(&*dty, dty1, &y; |dty, dty1, y| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
+		//(dt/(dt*error(iter::map!(&*dty, dty1, &y; |dty, dty1, y| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
+		(dt/(dt*error(zip!(&*dty, dty1, &y).map(|(dty, dty1, y):(&f64,&f64,&f64)| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
 	};
 	let (mut previous_error, mut previous_dt) = (0., 0.);
 	loop {
@@ -196,7 +213,8 @@ pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> 
 			ddZ = [ddz, ddZ[0]];
 		}
 		let ref dty1 = self.dt(P, &y1);
-		let error = error(map!(&y,&y1,&*dty,dty1; |y,y1,dty,dty1| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
+		//let error = error(map!(&y,&y1,&*dty,dty1; |y,y1,dty,dty1| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
+		let error = error(zip!(&y,&y1,&*dty,dty1).map(|(y,y1,dty,dty1):(&f64,&f64,&f64,&f64)| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
 		if error > 1. { // error too large, step is rejected
 			dt *= 0.8 / error.powf(1./3.);
 			assert!(dt >= f64::EPSILON);
@@ -233,8 +251,8 @@ pub struct Simulation<'t, const S: usize, const S1: usize, const N: usize> {
 }
 
 use std::lazy::SyncLazy;
-static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
-	Iterator::collect((::ron::de::from_str("#![enable(unwrap_newtypes)] {H: 1.008, O: 15.999, Ar: 39.95}").unwrap():Map<Element, f64>).into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)))
+pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
+	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, O: 15.999, Ar: 39.95}").unwrap().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
 impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
@@ -250,33 +268,33 @@ impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 	}));
 	let species = specie_names;
 
-	let reactions = r#box::collect(reactions.into_vec().into_iter().map(|self::ron::Reaction{ref equation, rate_constant, model}| {
+	let reactions = reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
 		let atmospheric_pressure = 101325.;
-		let equation = eval!(equation; |e| iter::IntoZip::zip(r#box::collect(e.keys().map(|&key| species.iter().position(|&k| k==key).expect(key))), r#box::collect(e.values().copied())));
+		let equation = eval(equation, |e| box_collect(e.keys().map(|&key| species.iter().position(|&k| k==key).expect(key))).zip(box_collect(e.values().copied())));
 		let specie_net_coefficients = generate(|specie| {
-			let [reactant, product]:[_;2] = collect(equation.iter().map(|side| side.a.into_iter().zip(side.b.into_iter()).find(|(&s,_)| s==specie).map(|(_,&ν)| ν as i8).unwrap_or(0)));
+			let [reactant, product]:[_;2] = eval(&equation, |side| side.find(|(&s,_)| s==specie).map(|(_,&ν)| ν as i8).unwrap_or(0));
 			(product-reactant) as f64
 		});
 		let PRν = f64::powf(atmospheric_pressure / ideal_gas_constant, specie_net_coefficients.iter().sum());
 		Reaction{
 			equation,
 			rate_constant,
-			model: {use {iter::VectorCollect, self::ron::Model::*}; match model {
+			model: {use self::ron::Model::*; match model {
 				Elementary => Model::Elementary,
-				ThreeBody{efficiencies} => Model::ThreeBody{efficiencies: iter::IntoMap::map(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.)).collect()},
-				Falloff{efficiencies, k0, troe} => Model::Falloff{efficiencies: iter::IntoMap::map(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.)).collect(), k0, troe},
+				ThreeBody{efficiencies} => Model::ThreeBody{efficiencies: eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.))},
+				Falloff{efficiencies, k0, troe} => Model::Falloff{efficiencies: eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.)), k0, troe},
 			}},
 			specie_net_coefficients,
 			//Σνf, Σνr,
 			PRν
 		}
-	}));
+	}).collect();
 
 	let Phase::IdealGas{state, ..} = phases.into_vec().into_iter().next().unwrap();
 	let InitialState{temperature, pressure, mole_proportions, volume} = state;
-	let mole_proportions = eval!(&species; |specie| *mole_proportions.get(specie).unwrap_or(&0.));
+	let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 	let amount = pressure * volume / (ideal_gas_constant * temperature);
-	let amounts = eval!(&mole_proportions; |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
+	let amounts = eval(&mole_proportions, |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
 
 	Self{
 		species,
