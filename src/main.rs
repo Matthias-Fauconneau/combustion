@@ -4,13 +4,14 @@
 	let system = std::fs::read("H2+O2.ron")?;
 	pub const S : usize = 9; // Total number of species
 	pub const N : usize = 2/*T, V*/+S-1; // Skips most abundant specie (last index) (will be deduced from conservation)
-	let Simulation{system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::<S,{S-1},N>::new(&system)?;
+	let Simulation{species: _, system, state: State{temperature, amounts: n}, volume, pressure, time_step, ..} = Simulation::<S,{S-1},N>::new(&system)?;
 	let len = 1;//00000;
   let constants = vec!(pressure; len);
   let mut states_components : [_; N] = from_iter([temperature,volume].chain(n[..S-1].try_into().unwrap():[_;S-1]).map(|v| vec!(v; len)));
   for i in 0..len {
 		let constant = constants[i];
 		let state = eval(&states_components, |c| c[i]);
+		//dbg!(species, state);
 		let state = system.step(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, state);
 		for (states_components, &state) in zip!(&mut states_components, &state) { states_components[i] = state; }
 	}
