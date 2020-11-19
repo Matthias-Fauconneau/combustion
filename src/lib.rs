@@ -31,11 +31,6 @@ impl NASA7 {
 	pub fn dimensionless_specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T }
 	pub fn dimensionless_specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T }
 	pub fn dimensionless_specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T }
-	/*//pub fn minus_dimensionless_gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); a[6] - a[0] + (a[0]-1.)*f64::ln(T) + a[1]/2.*T + a[2]/6.*T*T + a[3]/12.*T*T*T + a[4]/20.*T*T*T*T - a[5]/T } // S/R - H/RT
-	pub fn minus_dimensionless_gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); let g_RT = a[6] - a[0] + (a[0]-1.)*f64::ln(T) + a[1]/2.*T + a[2]/6.*T*T + a[3]/12.*T*T*T + a[4]/20.*T*T*T*T - a[5]/T;
-		assert_eq!(g_RT, self.specific_entropy(T)/ideal_gas_constant - self.specific_enthalpy(T) / (ideal_gas_constant*T));
-		g_RT
-	}*/
 }
 
 pub const ideal_gas_constant : f64 = 8.31446261815324; // J⋅K−1⋅mol−1
@@ -88,24 +83,21 @@ pub struct System<const S: usize, const S1: usize, const N: usize> {
 	pub reactions: Box<[Reaction<S,S1>]>,
 }
 
-extern "C" {
-	fn cantera(rtol: f64, atol: f64, T: f64, P: f64, X: *const std::os::raw::c_char,
-										species_len: &mut usize, species: &mut *const *const std::os::raw::c_char, concentrations: &mut *const f64, standard_chemical_potentials: &mut *const f64, dtw: &mut *const f64,
-										reactions_len: &mut usize, equations: &mut *const *const std::os::raw::c_char, equilibrium_constants: &mut *const f64, forward: &mut *const f64, reverse: &mut *const f64);
-}
-
 impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
-fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
+pub fn state(P: f64, y: &[f64; N]) -> (f64, f64, [f64; S]) {
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
-	let recipV = 1. / V;
-	let concentrations : [_; /*S-1*/S1] = eval(n, |n| recipV * n); // Skips most abundant specie (last index) (will be deduced from conservation)
+	let concentrations : [_; /*S-1*/S1] = eval(n, |n| n / V); // Skips most abundant specie (last index) (will be deduced from conservation)
 	let C = P / (ideal_gas_constant * T);
-	let concentrations : [_; S] = from_iter(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
+	let concentrations = from_iter(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
+	(T, V, concentrations)
+}
+fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
+	let (T, V, concentrations) = Self::state(P, y);
+	let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
 
 	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 	let ref H_T = eval(species, |s| s.dimensionless_specific_enthalpy_T(T));
-	let ref G = eval!(species, H_T; |s,h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
+	let ref G = eval!(species, H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
 	let net_rates = reactions.iter().map(|Reaction{equation, rate_constant, model, specie_net_coefficients: ν, sum_net_coefficients, ..}| {
 		let recip_equilibrium_constant = f64::exp(ν.dot(G) - sum_net_coefficients*logP0_RT);
 		let kf = arrhenius(rate_constant, T);
@@ -118,63 +110,6 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let ref mut dtω = [0.; /*S-1*/S1]; //][..S-1];
 	for (Reaction{specie_net_coefficients: ν, ..}, net_rate) in reactions.iter().zip(net_rates) { for (specie, ν) in ν.enumerate() { dtω[specie] += ν * net_rate; } }
 	let ref dtω = *dtω;
-
-	if false {
-		let specie_names = ["H","H2","O","OH","H2O","O2","HO2","H2O2","AR"]; let specie = |name:&str| specie_names.iter().position(|key|key==&name); // DEBUG
-		//println!("{} K {} Pa {}", T, P, specie_names.iter().zip(concentrations.iter()).map(|(k,c)| format!("{} {}",k,c)).format(" "));
-		let (ref species, _concentrations, _standard_chemical_potentials, dtw, _equations, _equilibrium_constants, _rates) = {
-			let X = format!("H2:{}, O2:{}, AR:{}", concentrations[specie("H2").unwrap()], concentrations[specie("O2").unwrap()], concentrations[specie("AR").unwrap()]); // Mole proportions
-			println!("{}", X);
-			let X = std::ffi::CString::new(X).unwrap();
-			use std::ptr::null;
-			let (mut species_len, mut species, mut concentrations, mut standard_chemical_potentials, mut dtw, mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse]) =
-						(0, null(), null(), null(), null(), 0, null(), null(), [null(); 2]);
-			unsafe {
-				cantera(/*rtol:*/ 1e-4, /*atol:*/ 1e-14, T, P, X.as_ptr(), &mut species_len, &mut species, &mut concentrations, &mut standard_chemical_potentials, &mut dtw,
-																																														&mut reactions_len, &mut equations, &mut equilibrium_constants, &mut forward, &mut reverse);
-				let species = std::slice::from_raw_parts(species, species_len);
-				let concentrations = std::slice::from_raw_parts(concentrations, species_len);
-				let standard_chemical_potentials = std::slice::from_raw_parts(standard_chemical_potentials, species_len);
-				let dtw = std::slice::from_raw_parts(dtw, species_len);
-				let equations = std::slice::from_raw_parts(equations, reactions_len);
-				let equilibrium_constants = std::slice::from_raw_parts(equilibrium_constants, reactions_len);
-				let rates = [forward, reverse].map(|r| std::slice::from_raw_parts(r, reactions_len) );
-				(box_collect(species.iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())), concentrations, standard_chemical_potentials, dtw,
-					box_collect(equations.iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())), equilibrium_constants, rates)
-			}
-		};
-		println!("{}", {use {itertools::Itertools, iter::into::{IntoZip,IntoMap,FilterMap}};
-			species.zip(dtw.zip(species.map(|&s| specie(s).map(|k| dtω.get(k)).flatten()))).filter_map(|(k,(x,y))| y.map(|y| (k,x,y))).map(|(k,x,y)| format!("{} {:.1e} {:.1e}",k,x,y*1000.)).format(" ")
-		});
-		//println!("{:?}", {use {itertools::Itertools, iter::into::{IntoZip, Filter}}; species.zip(concentrations).filter(|(_,&c)| c != 0.).map(|(k,c)| (k,c*1000.)).format(" ")});
-		/*for (specie, g) in specie_names.iter().zip(H_T) {
-			let μ = standard_chemical_potentials[species.iter().position(|s| s==specie).unwrap()];
-			println!("{} {} {}", specie, g/*+f64::ln(P/NASA7::reference_pressure)*/, μ); //(ideal_gas_constant*1000.*T)
-		}*/
-		/*let equation = |Reaction{equation, model, ..}:&_| format!("{}", equation.format_with(" <=> ", |side, f| {
-			f(&side.format_with(" + ", |(&specie, &ν), f| if ν > 1 { f(&format_args!("{} {}",ν,specie_names[specie])) } else { f(&specie_names[specie]) }))?;
-			use self::Model::*; match model {
-				Elementary => {},
-				ThreeBody{..} => f(&" + M")?,
-				Falloff{..} => f(&" (+M)")?,
-			};
-			Ok(())
-		}));
-		for (reaction, net_rate) in reactions.iter().zip(net_rates) {
-			if net_rate != 0. {
-				let equation = equation(reaction);
-				let i = equations.iter().position(|&e| e==equation).expect(&format!("{} {:?}",&equation, equations));
-				println!("{:?}", (&equation, net_rate, -rates[1][i]/1000.));
-			}
-		}
-		for reaction@Reaction{specie_net_coefficients: ν, sum_net_coefficients, ..} in reactions.iter() {
-			let equation = equation(reaction);
-			let i = equations.iter().position(|&e| e==equation).expect(&format!("{} {:?}",&equation, equations));
-			let equilibrium_constant = f64::exp(sum_net_coefficients*logP0_RT - ν.dot(G));
-			println!("{:?}", (&equation, equilibrium_constant, equilibrium_constants[i]));
-		}*/
-		std::process::abort();
-	}
 
 	let Cp = species.iter().map(|s| s.dimensionless_specific_heat_capacity(T));
 	let rcp_ΣCCp = 1./concentrations.dot(Cp);
