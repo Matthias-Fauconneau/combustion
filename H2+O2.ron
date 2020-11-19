@@ -7,115 +7,108 @@ phases: [IdealGas(
 	state: (temperature: 1000., pressure: 101325, mole_proportions: {"H2": 2, "O2": 1, "Ar": 2}, volume: 1)
 )],
 species: {
-	"H": (
-		composition: {H: 1},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(2.5, 7.5332819e-13, -1.99591964e-15, 2.30081632e-18, -9.27732332e-22, 2.54736599e4, -0.446682853),
-				(2.5, -2.30842973e-11, 1.61561948e-14, -4.73515235e-18, 4.98197357e-22, 2.54736599e4, -0.446682914)
-			]
-		),
-		transport: Atom(well_depth: 145., diameter: 2.5)
-	),
-	"H2": (
-		composition: {H: 2},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(2.34433112, 7.98052075e-03, -1.9478151e-05, 2.1572094e-08, -7.37611761e-12, -917.935173, 0.683010238),
-				(3.3372792, -4.94024731e-05, 4.99456778e-07, -1.79566394e-10, 2.0255376e-14, -950.158922, -3.20502331)
-			]
-		),
-		transport: Linear(well_depth: 38., diameter: 2.92, polarizability: 0.79, rotational_relaxation: 280.)
-	),
-	"O": (
-		composition: {O: 1},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(3.1682671, -3.27931884e-03, 6.64306396e-06, -6.12806624e-09, 2.11265971e-12, 2.91222592e4, 2.5193346),
-				(2.56942078, -8.59741137e-05, 4.19484589e-08, -1.0177799e-11, 1.22833691e-15, 2.92175791e4, 4.78433864)
-			]
-		),
-		transport: Atom(well_depth: 80., diameter: 2.72)
-	),
-	"O2": (
-		composition: {O: 2},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(3.78245636, -2.99673416e-03, 9.84730201e-06, -9.68129509e-09, 3.24372837e-12, -1063.94356, 3.65767573),
-				(3.28253784, 1.48308754e-03, -7.57966669e-07, 2.9470555e-10, -2.16717794e-14, -1088.45772, 5.45323129)
-			]
-		),
-		transport: Linear(well_depth: 107.4, diameter: 3.458, polarizability: 1.6, rotational_relaxation: 3.8)
-	),
-	"OH": (
-		composition: {O: 1, H: 1},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(3.99201543, -2.40131752e-03, 4.61793841e-06, -3.88113333e-09, 1.3641147e-12, 3615.8056, -0.103925458),
-				(3.9288767, 5.48429716e-04, 1.26505228e-07, -8.79461556e-11, 1.17412376e-14, 3858.657, 4.4766961)
-			]
-		),
-		transport: Linear(well_depth: 80., diameter: 2.75, polarizability: 0., rotational_relaxation: 0.)
-	),
-	"H2O": (
-		composition: {H: 2, O: 1},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(4.19864056, -2.364341e-03, 6.52040211e-06, -5.48797062e-09, 1.77197817e-12, -3.2937267e4, -0.849032208),
-				(3.3399249, 2.17691804e-03, -1.64072518e-07, -9.7041987e-11, 1.68200992e-14, -3.0042971e4, 4.9667701)
-			],
-		),
-		transport: Nonlinear(well_depth: 572.4, diameter: 2.605, dipole: 1.844, rotational_relaxation: 4.),
-	),
-	"HO2": (
-		composition: {H: 1, O: 2},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(4.30179801, -4.74912051e-03, 2.11582891e-05, -2.42763894e-08, 9.29225124e-12, 294.80804, 3.71666245),
-				(4.172109, 2.23982013e-03, -6.3365815e-07, 1.1424637e-10, -1.7908535e-14, 111.856713, 3.78510215)
-			],
-		),
-		transport: Nonlinear(well_depth: 107.4, diameter: 3.458, rotational_relaxation: 1.)
-	),
-	"H2O2": (
-		composition: {H: 2, O: 2},
-		thermodynamic: NASA7(
-			temperature_ranges: [200., 1000., 3500.],
-			coefficients: [
-				(4.27611269, -5.42822417e-04, 1.67335701e-05, -2.15770813e-08, 8.62454363e-12, -1.77025821e4, 3.43505074),
-				(4.16500285, 4.90831694e-03, -1.90139225e-06, 3.71185986e-10, -2.87908305e-14, -1.78617877e4, 2.91615662)
-			],
-		),
-		transport: Nonlinear(well_depth: 107.4, diameter: 3.458, rotational_relaxation: 3.8)
-	),
-	"Ar": (
-		composition: {Ar: 1},
-		thermodynamic: NASA7(
-			temperature_ranges: [300., 5000.],
-			coefficients: [(2.5, 0., 0., 0., 0., -745.375, 4.366)],
-		),
-		transport: Atom(well_depth: 136.5, diameter: 3.33),
-	),
+"H": (
+  composition: {H: 1},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (2.5, 7.053328e-13, -1.99592e-15, 2.300816e-18, -9.27732e-22, 25473.6599, -0.446682853),
+      (2.50000001, -2.30843e-11, 1.615619e-14, -4.73515e-18, 4.981974e-22, 25473.6599, -0.446682914)
+    ],
+  ),
+),
+"H2": (
+  composition: {H: 2},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (2.34433112, 0.0079805207, -1.947815e-5, 2.0157209e-8, -7.37612e-12, -917.935173, 0.683010238),
+      (3.3372792, -4.940247e-5, 4.9945678e-7, -1.79566e-10, 2.002554e-14, -950.158922, -3.20502331)
+    ],
+  ),
+),
+"O": (
+  composition: {O: 1},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (3.1682671, -0.003279319, 6.643064e-6, -6.128066e-9, 2.11266e-12, 29122.2592, 2.05193346),
+      (2.56942078, -8.597411e-5, 4.1948459e-8, -1.00178e-11, 1.228337e-15, 29217.5791, 4.78433864)
+    ],
+  ),
+),
+"O2": (
+  composition: {O: 2},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (3.78245636, -0.002996734, 9.847302e-6, -9.681295e-9, 3.243728e-12, -1063.94356, 3.65767573),
+      (3.28253784, 0.0014830875, -7.579667e-7, 2.094706e-10, -2.16718e-14, -1088.45772, 5.45323129)
+    ],
+  ),
+),
+"OH": (
+  composition: {O: 1, H: 1},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (3.99201543, -0.002401318, 4.6179384e-6, -3.881133e-9, 1.364115e-12, 3615.08056, -0.103925458),
+      (3.09288767, 5.4842972e-4, 1.2650523e-7, -8.79462e-11, 1.174124e-14, 3858.657, 4.4766961)
+    ],
+  ),
+),
+"H2O": (
+  composition: {H: 2, O: 1},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (4.19864056, -0.002036434, 6.5204021e-6, -5.487971e-9, 1.771978e-12, -30293.7267, -0.849032208),
+      (3.03399249, 0.002176918, -1.640725e-7, -9.7042e-11, 1.68201e-14, -30004.2971, 4.9667701)
+    ],
+  ),
+),
+"HO2": (
+  composition: {H: 1, O: 2},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (4.30179801, -0.004749121, 2.1158289e-5, -2.427639e-8, 9.292251e-12, 294.80804, 3.71666245),
+      (4.0172109, 0.0022398201, -6.336581e-7, 1.142464e-10, -1.07909e-14, 111.856713, 3.78510215)
+    ],
+  ),
+),
+"H2O2": (
+  composition: {H: 2, O: 2},
+  thermodynamic: (
+    temperature_ranges: [200.0, 1000.0, 3500.0],
+    pieces: [
+      (4.27611269, -5.428224e-4, 1.673357e-5, -2.157708e-8, 8.624544e-12, -17702.5821, 3.43505074),
+      (4.16500285, 0.0049083169, -1.901392e-6, 3.71186e-10, -2.87908e-14, -17861.7877, 2.91615662)
+    ],
+  ),
+),
+"Ar": (
+  composition: {Ar: 1},
+  thermodynamic: (
+    temperature_ranges: [300.0, 5000.0],
+    pieces: [
+      (2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.366)
+    ],
+  ),
+)
 },
 reactions: [
-	(equation: ({"O":1,"H2":1},{"H":1,"OH":1}), rate_constant: (A: 3.87e-8, beta: 2.7, Ea: 6260.), model: Elementary),
-	(equation: ({"O":1,"HO2":1},{"OH":1,"O2":1}), rate_constant: (A: 20, beta: 0., Ea: 0.), model: Elementary),
-	(equation: ({"O":1,"H2O2":1},{"OH":1,"HO2":1}), rate_constant: (A: 9.63e-6, beta: 2., Ea: 4000.), model: Elementary),
+	(equation: ({"H2":1,"O":1},{"H":1,"OH":1}), rate_constant: (A: 3.87e-8, beta: 2.7, Ea: 6260.), model: Elementary),
+	(equation: ({"HO2":1,"O":1},{"O2":1,"OH":1}), rate_constant: (A: 20, beta: 0., Ea: 0.), model: Elementary),
+	(equation: ({"H2O2":1,"O":1},{"HO2":1,"OH":1}), rate_constant: (A: 9.63e-6, beta: 2., Ea: 4000.), model: Elementary),
 	(equation: ({"H":1,"O2":2},{"HO2":1,"O2":1}), rate_constant: (A: 28, beta: -1.24, Ea: 0.), model: Elementary),
-	(equation: ({"H":1,"O2":1,"H2O":1},{"HO2":1,"H2O":1}), rate_constant: (A: 11.26, beta: -0.76, Ea: 0.), model: Elementary),
+	(equation: ({"H":1,"H2O":1,"O2":1},{"H2O":1,"HO2":1}), rate_constant: (A: 11.26, beta: -0.76, Ea: 0.), model: Elementary),
 	(equation: ({"H":1,"O2":1,"Ar":1},{"HO2":1,"Ar":1}), rate_constant: (A: 0.7, beta: -0.8, Ea: 0.), model: Elementary),
 	(equation: ({"H":1,"O2":1},{"O":1,"OH":1}), rate_constant: (A: 2.65e4, beta: -0.6707, Ea: 1.7041e4), model: Elementary),
 	(equation: ({"H":2,"H2":1},{"H2":2}), rate_constant: (A: 9.e-2, beta: -0.6, Ea: 0.), model: Elementary),
 	(equation: ({"H":2,"H2O":1},{"H2":1,"H2O":1}), rate_constant: (A: 60, beta: -1.25, Ea: 0.), model: Elementary),
 	(equation: ({"H":1,"HO2":1},{"O":1,"H2O":1}), rate_constant: (A: 3.97, beta: 0., Ea: 671.), model: Elementary),
-	(equation: ({"H":1,"HO2":1},{"O2":1,"H2":1}), rate_constant: (A: 44.8, beta: 0., Ea: 1068.), model: Elementary),
+	(equation: ({"H":1,"HO2":1},{"H2":1,"O2":1}), rate_constant: (A: 44.8, beta: 0., Ea: 1068.), model: Elementary),
 	(equation: ({"H":1,"HO2":1},{"OH":2}), rate_constant: (A: 84, beta: 0., Ea: 635.), model: Elementary),
 	(equation: ({"H":1,"H2O2":1},{"HO2":1,"H2":1}), rate_constant: (A: 12.1, beta: 2., Ea: 5200.), model: Elementary),
 	(equation: ({"H":1,"H2O2":1},{"OH":1,"H2O":1}), rate_constant: (A: 10, beta: 0., Ea: 3600.), model: Elementary),
@@ -125,8 +118,8 @@ reactions: [
 	(equation: ({"OH":1,"HO2":1},{"O2":1,"H2O":1}), rate_constant: (A: 5.e9, beta: 0., Ea: 1.733e4), model: Elementary),
 	(equation: ({"OH":1,"H2O2":1},{"HO2":1,"H2O":1}), rate_constant: (A: 2, beta: 0., Ea: 427.), model: Elementary),
 	(equation: ({"OH":1,"H2O2":1},{"HO2":1,"H2O":1}), rate_constant: (A: 1.7e12, beta: 0., Ea: 2.941e4), model: Elementary),
-	(equation: ({"H2O":2},{"O2":1,"H2O2":1}), rate_constant: (A: 0.13, beta: 0., Ea: -1630.), model: Elementary),
-	(equation: ({"H2O":2},{"O2":1,"H2O2":1}), rate_constant: (A: 4.2e8, beta: 0., Ea: 1.2e4), model: Elementary),
+	(equation: ({"HO2":2},{"O2":1,"H2O2":1}), rate_constant: (A: 0.13, beta: 0., Ea: -1630.), model: Elementary),
+	(equation: ({"HO2":2},{"O2":1,"H2O2":1}), rate_constant: (A: 4.2e8, beta: 0., Ea: 1.2e4), model: Elementary),
 	(equation: ({"O":2},{"O2":1}), rate_constant: (A: 0.12, beta: -1., Ea: 0.), model: ThreeBody(efficiencies: {"H2": 2.4, "H2O": 15.4, "Ar": 0.83})),
 	(equation: ({"O":1,"H":1},{"OH":1}), rate_constant: (A: 0.5, beta: -1., Ea: 0.), model: ThreeBody(efficiencies: {"H2": 2., "H2O": 6., "Ar": 0.7})),
 	(equation: ({"H":1,"O2":1},{"HO2":1}), rate_constant: (A: 2.8, beta: -0.86, Ea: 0.), model: ThreeBody(efficiencies: {"O2": 0., "H2O": 0., "Ar": 0.})),

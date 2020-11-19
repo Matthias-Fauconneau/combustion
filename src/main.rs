@@ -13,6 +13,7 @@
 		let state = eval(&states_components, |c| c[i]);
 		//dbg!(species, state);
 		let state = system.step(/*rtol:*/ 1e-6, /*atol:*/ 1e-10, time_step, constant, state);
+		use itertools::Itertools; println!("{:e}", state.iter().format(" "));
 		for (states_components, &state) in zip!(&mut states_components, &state) { states_components[i] = state; }
 	}
 
@@ -41,4 +42,5 @@
 		print!("{:14.5e}{:14.5e}{:14.5e} {:32}", forward_rate, reverse_rate, net_rate);*/
 		println!("{:?} = {:?}", left, right);
 	}*/
+	println!("OK");
 }

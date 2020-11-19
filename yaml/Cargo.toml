@@ -1,15 +1,14 @@
 [package]
-name = "combustion"
+name = "combustion-yaml"
 version = "0.0.0"
 authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-iter = {path='../iter'}
-num = {path='../num'}
-serde = ''
-linear-map = {version='', features = ['serde_impl']}
-ron = ''
 fehler = ''
 anyhow = ''
+combustion = {path=".."}
+ron = ''
+yaml-rust = ''
 itertools = ''
+float-pretty-print = ''

@@ -1,6 +1,5 @@
-
-extern crate serde; use serde::Deserialize;
-extern crate std; pub use std::{boxed::Box, collections::BTreeMap as Map};
+use serde::Deserialize;
+pub use {std::boxed::Box, linear_map::LinearMap as Map};
 #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, Ar }
 #[derive(Deserialize, Debug)] pub struct InitialState<'t> { pub temperature: f64, pub pressure: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64>, pub volume: f64 }
 #[derive(Deserialize, Debug)] pub enum Phase<'t> {
@@ -12,7 +11,7 @@ extern crate std; pub use std::{boxed::Box, collections::BTreeMap as Map};
 }
 #[derive(Deserialize, Debug)] pub struct NASA7 {
 	pub temperature_ranges: Box<[f64]>,
-	pub coefficients: Box<[[f64; 7]]>,
+	pub pieces: Box<[[f64; 7]]>,
 }
 
 #[derive(Deserialize, Debug)] enum Transport {
@@ -23,13 +22,13 @@ extern crate std; pub use std::{boxed::Box, collections::BTreeMap as Map};
 #[derive(Deserialize, Debug)] pub struct Specie {
 	pub composition: Map<Element, u8>,
 	pub thermodynamic: NASA7,
-	transport: Transport
+	//transport: Transport
 }
 
 #[derive(Deserialize, Debug)] pub struct RateConstant {
-	#[serde(rename="A")] pub preexponential_factor: f64,
+	#[serde(rename="A")] pub preexponential_factor: f64, // m^3/mol/s
 	#[serde(rename="beta")] pub temperature_exponent: f64,
-	#[serde(rename="Ea")] pub activation_energy: f64
+	#[serde(rename="Ea")] pub activation_energy: f64 // cal/mol
 }
 
 #[derive(Deserialize, Debug)] pub struct Troe { pub A: f64, pub T3: f64, pub T1: f64, pub T2: f64 }
