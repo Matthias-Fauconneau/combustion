@@ -1,33 +1,17 @@
-#![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,clamp,array_map,map_into_keys_values,bindings_after_at)]
+#![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals)]
-#![allow(dead_code)] // DEBUG
-#[macro_export] macro_rules! assert { ($cond:expr $(, $val:expr)* ) => { std::assert!($cond, "{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
 pub mod ron;
 use {std::convert::TryInto,
-				iter::{array_from_iter as from_iter, box_collect, into::{Collect, Enumerate, IntoChain, Zip, map, Find, Product}, zip, eval,
-				vec::{eval, generate, Sub, Dot, Suffix}},
-				num::{ssq, norm}};
-trait IntoFormat : iter::IntoIterator+Sized {
-	fn format(self, sep: &str) -> itertools::Format<'_, Self::IntoIter> { itertools::Itertools::format(self.into_iter(), sep) }
-	fn format_with<F: FnMut(Self::Item, &mut dyn FnMut(&dyn std::fmt::Display) -> std::fmt::Result) -> std::fmt::Result>(self, sep: &str, format: F) -> itertools::FormatWith<'_, Self::IntoIter, F> {
-		itertools::Itertools::format_with(self.into_iter(), sep, format)
-	}
-}
-impl<I:iter::IntoIterator> IntoFormat for I {}
-
-pub fn error<I:iter::IntoExactSizeIterator+iter::IntoIterator<Item=f64>>(iter: I) -> f64 {
-	let iter = iter::IntoIterator::into_iter(iter);
-	let len = iter.len();
-	(ssq(iter) / len as f64).sqrt()
-}
+				iter::{array_from_iter as from_iter, box_collect, into::{Collect, Enumerate, IntoChain, Zip, Find}, eval, //zip,
+				vec::{eval, generate, Dot, Suffix}}};
 
 pub use self::ron::*;
 
 pub struct NASA7([[f64; 7]; 2]);
 impl NASA7 {
-	const reference_pressure : f64 = 101325.; // 1 atm
+	pub const reference_pressure : f64 = 101325.; // 1 atm
 	const T_split : f64 = 1000.;
-	pub fn a(&self, T: f64) -> &[f64; 7] { if T <= Self::T_split { &self.0[0] } else { &self.0[1] } }
+	pub fn a(&self, T: f64) -> &[f64; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
 	pub fn dimensionless_specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T }
 	pub fn dimensionless_specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T }
 	pub fn dimensionless_specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T }
@@ -35,46 +19,54 @@ impl NASA7 {
 
 pub const ideal_gas_constant : f64 = 8.31446261815324; // J⋅K−1⋅mol−1
 
-pub fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &RateConstant, temperature: f64) -> f64 {
-	preexponential_factor*temperature.powf(temperature_exponent)*f64::exp((-activation_energy*4.184/ideal_gas_constant)/temperature)
+pub struct RateConstant {
+	pub log_preexponential_factor: f64,
+	pub temperature_exponent: f64,
+	pub activation_temperature: f64
 }
 
-#[derive(Debug)] pub enum Model<const S: usize> {
+impl From<ron::RateConstant> for RateConstant { fn from(ron::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: ron::RateConstant) -> Self {
+	Self{log_preexponential_factor: f64::ln(preexponential_factor), temperature_exponent, activation_temperature: activation_energy*4.184/ideal_gas_constant}
+}}
+
+pub fn log_arrhenius(&RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: f64) -> f64 {
+	log_preexponential_factor + temperature_exponent*f64::ln(T) - activation_temperature*(1./T)
+}
+
+pub enum Model<const S: usize> {
 	Elementary,
 	ThreeBody { efficiencies: [f64; S] },
 	Falloff { efficiencies: [f64; S], k0: RateConstant, troe: Troe },
 }
 
 impl<const S: usize> Model<S> {
-fn efficiency(&self, T: f64, concentrations: &[f64; S], k_inf: f64) -> f64 {
+pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f64 {
 	match self {
 		Self::Elementary => 1.,
 		Self::ThreeBody{efficiencies} => efficiencies.dot(concentrations),
 		Self::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
-			let Pr = efficiencies.dot(concentrations) * arrhenius(k0, T) / k_inf;
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
 			let log10Fcent = f64::log10(Fcent);
 			let C = -0.4-0.67*log10Fcent;
-			/*let N = 0.75-1.27*log10Fcent;
-			let f1 = (f64::log10(Pr) + C)/(N-0.14*(f64::log10(Pr) + C));
-			let F = num::exp10(log10Fcent/(1.+f1*f1));*/
-			let ATroe = f64::log10(Pr) + C;
-			let BTroe = 0.806 - 1.1762*log10Fcent - 0.14*f64::log10(Pr);
-			let F = f64::powf(Fcent, f64::recip(1.+num::sq(ATroe/BTroe)));
-			Pr * F / (1.+Pr) // Chemically activated bimolecular reaction
+			let N = 0.75-1.27*log10Fcent;
+			let log10PrC = f64::log10(Pr) + C;
+			let f1 = log10PrC/(N-0.14*log10PrC);
+			let F = num::exp10(log10Fcent/(1.+f1*f1));
+			Pr / (1.+Pr) * F
 		}
 	}
 }
 }
 
 pub struct Reaction<const S: usize, const S1: usize> {
-	pub equation: [Zip<Box<[usize]>, Box<[u8]>>; 2],
-	rate_constant: RateConstant,
+	pub equation: [Zip<Box<[usize]>, Box<[f64]>>; 2],
+	pub rate_constant: RateConstant,
 	pub model: Model<S>,
-	specie_net_coefficients: [f64; S1],
+	pub specie_net_coefficients: [f64; S1],
 	//Σνf: f64,
 	//Σνr: f64,
-	sum_net_coefficients: f64,
+	pub sum_net_coefficients: f64,
 }
 
 pub struct System<const S: usize, const S1: usize, const N: usize> {
@@ -86,29 +78,30 @@ pub struct System<const S: usize, const S1: usize, const N: usize> {
 impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
 pub fn state(P: f64, y: &[f64; N]) -> (f64, f64, [f64; S]) {
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	let concentrations : [_; /*S-1*/S1] = eval(n, |n| n / V); // Skips most abundant specie (last index) (will be deduced from conservation)
+	let concentrations : [_; /*S-1*/S1] = eval(n, |n| (n / V).max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation) // Clamps negative values yielded by integration
 	let C = P / (ideal_gas_constant * T);
-	let concentrations = from_iter(concentrations.chain([C - concentrations.iter().sum::<f64>()]));
+	let Ca = C - concentrations.iter().sum::<f64>();
+	let concentrations = from_iter(concentrations.chain([Ca]));
 	(T, V, concentrations)
 }
-fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
+pub fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
+	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 	let (T, V, concentrations) = Self::state(P, y);
 	let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
-
-	let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 	let ref H_T = eval(species, |s| s.dimensionless_specific_enthalpy_T(T));
 	let ref G = eval!(species, H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
-	let net_rates = reactions.iter().map(|Reaction{equation, rate_constant, model, specie_net_coefficients: ν, sum_net_coefficients, ..}| {
-		let recip_equilibrium_constant = f64::exp(ν.dot(G) - sum_net_coefficients*logP0_RT);
-		let kf = arrhenius(rate_constant, T);
-		let kr = recip_equilibrium_constant * kf;
-		let [ΠCνf, ΠCνr] : [f64;2] = eval(equation, |side| map(side, |(&specie, &ν)| f64::powi(concentrations[specie], ν as i32)).product());
-		let [Rf, Rr] = [kf * ΠCνf, kr * ΠCνr];
-		model.efficiency(T, &concentrations, kf) * (Rf - Rr)
-	});
-
-	let ref mut dtω = [0.; /*S-1*/S1]; //][..S-1];
-	for (Reaction{specie_net_coefficients: ν, ..}, net_rate) in reactions.iter().zip(net_rates) { for (specie, ν) in ν.enumerate() { dtω[specie] += ν * net_rate; } }
+	let log_concentrations = eval(concentrations, f64::ln);
+	let ref mut dtω = [0.; /*S-1*/S1];
+	for Reaction{equation, rate_constant, model, specie_net_coefficients: ν, sum_net_coefficients, ..} in reactions.iter() {
+		let log_equilibrium_constant = sum_net_coefficients*logP0_RT - ν.dot(G);
+		let log_kf = log_arrhenius(rate_constant, T);
+		let log_kr = log_kf - log_equilibrium_constant;
+		use iter::into::{IntoMap, Sum};
+		let [log_ΠCνf, log_ΠCνr] : [f64;2] = eval(equation, |side| side.map(|(&specie, ν)| ν*log_concentrations[specie]).sum());
+		let [Rf, Rr] = [log_kf + log_ΠCνf, log_kr + log_ΠCνr].map(f64::exp);
+		let net_rate = model.efficiency(T, &concentrations, log_kf) * (Rf - Rr);
+		for (specie, ν) in ν.enumerate() { dtω[specie] += ν * net_rate; }
+	}
 	let ref dtω = *dtω;
 
 	let Cp = species.iter().map(|s| s.dimensionless_specific_heat_capacity(T));
@@ -120,102 +113,32 @@ fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	from_iter([dtT_T*T, dtV].chain(dtn))
 }
 
-// Estimate principal eigenvector/value of dyF|y
-fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[f64; N]) -> ([f64; N], f64) {
-	let [norm_y, norm_v] = [y,v].map(norm);
-	assert!(norm_y > 0.);
-	let ε = norm_y * f64::EPSILON.sqrt();
-	assert!(norm_v > 0.);
-	let ref mut yεv = eval!(y, v; |y, v| y + ε * v / norm_v);
-	let mut ρ = 0.;
-	for i in 1..=50 {
-		let ref dtεv = self.dt(P, yεv).sub(dty);
-		let norm_dtεv = norm(dtεv);
-		assert!(norm_dtεv > 0.);
-		let previous_ρ = ρ;
-		ρ = norm_dtεv / ε;
-		if i >= 2 && f64::abs(ρ - previous_ρ) <= 0.01*ρ.max(1./tmax) { dbg!(i); break; } // Early exit
-		*yεv = eval!(y, dtεv; |y, dtεv| y + (ε / norm_dtεv) * dtεv);
+pub fn step(&self, _rtol: f64, _atol: f64, tmax: f64, P: f64, mut u: [f64; N]) -> [f64; N] {
+	const steps : usize = 600;
+	let dt = tmax/(steps as f64);
+	for _ in 0..steps {
+		let ref k0 = self.dt(P, &u);
+		u = if true {
+			eval!(&u, k0; |u, k0| u+dt*k0)
+		} else {
+			let a = ((),
+			[0.161],
+			[-0.008480655492356989,0.335480655492357],
+			[2.8971530571054935, -6.359448489975075, 4.3622954328695815],
+			[5.325864828439257, -11.748883564062828, 7.4955393428898365, -0.09249506636175525],
+			[5.86145544294642, -12.92096931784711, 8.159367898576159, -0.071584973281401, -0.028269050394068383],
+			[0.09646076681806523, 0.01, 0.4798896504144996, 1.379008574103742, -3.290069515436081, 2.324710524099774]);
+			let ref k1 = self.dt(P, &eval!(&u, k0; |u, k0| u+dt*(a.1[0]*k0)));
+			let ref k2 = self.dt(P, &eval!(&u, k0, k1; |u, k0, k1| u+dt*(a.2[0]*k0+a.2[1]*k1)));
+			let ref k3 = self.dt(P, &eval!(&u, k0, k1, k2; |u, k0, k1, k2| u+dt*(a.3[0]*k0+a.3[1]*k1+a.3[2]*k2)));
+			let ref k4 = self.dt(P, &eval!(&u, k0, k1, k2, k3; |u, k0, k1, k2, k3| u+dt*(a.4[0]*k0+a.4[1]*k1+a.4[2]*k2+a.4[3]*k3)));
+			let ref k5 = self.dt(P, &eval!(&u, k0, k1, k2, k3, k4; |u, k0, k1, k2, k3, k4| u+dt*(a.5[0]*k0+a.5[1]*k1+a.5[2]*k2+a.5[3]*k3+a.5[4]*k4)));
+			eval!(&u, k0, k1, k2, k3, k4, k5; |u, k0, k1, k2, k3, k4, k5| u+dt*(a.6[0]*k0+a.6[1]*k1+a.6[2]*k2+a.6[3]*k3+a.6[4]*k4+a.6[5]*k5))
+		};
 	}
-	dbg!(ρ);
-	(yεv.sub(y), ρ * 1.2)
+	u
 }
 
-pub fn step(&self, rtol: f64, atol: f64, tmax: f64, P: f64, mut y: [f64; N]) -> [f64; N] {
-	use iter::into::IntoMap;
-	let max_steps = ((rtol / (10. * f64::EPSILON)).sqrt().round() as usize).max(2);
-	let mut nstep = 0;
-	let mut t = 0.;
-	let ref mut dty = self.dt(P, &y);
-	let (mut v, mut jacobian_spectral_radius) = self.power_iteration(P, tmax, &y, dty, dty);
-	let mut dt = {
-		let dt = (1./jacobian_spectral_radius).min(tmax);
-		let ref dty1 = self.dt(P, &eval!(&y, &*dty; |y, dty| y + dt * dty));
-		//(dt/(dt*error(iter::map!(&*dty, dty1, &y; |dty, dty1, y| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
-		(dt/(dt*error(zip!(&*dty, dty1, &y).map(|(dty, dty1, y):(&f64,&f64,&f64)| (dty1 - dty) / (atol + rtol * y.abs())))) / 10.).min(tmax)
-	};
-	let (mut previous_error, mut previous_dt) = (0., 0.);
-	loop {
-		if 1.1*dt >= tmax - t { dt = tmax- t; } // fit last step
-		let steps = 1 + (1. + 1.54 * dt * jacobian_spectral_radius).sqrt().floor() as usize;
-		let steps = if steps > max_steps {
-			dt = (max_steps*max_steps - 1) as f64 / (1.54 * jacobian_spectral_radius);
-			max_steps
-		} else { steps };
-		let w0 = 1. + 2. / (13.0 * (steps * steps) as f64);
-		let sqw01 = w0*w0 - 1.;
-		let arg = steps as f64 * (w0 + sqw01.sqrt()).ln();
-		let w1 = arg.sinh() * sqw01 / (arg.cosh() * steps as f64 * sqw01.sqrt() - w0 * arg.sinh());
-		let mut B = [1. / (4.*w0*w0); 2];
-		let mu_t = w1 * B[0];
-		let [ref mut y0, mut y1] = [y, eval!(&y, &*dty; |y, dty| y + mu_t * dt * dty)];
-		let mut Z = [w0, 1.];
-		let mut dZ = [1., 0.];
-		let mut ddZ = [0., 0.];
-		let mut steps = steps - 2;
-		loop {
-			let z = 2. * w0 * Z[0] - Z[1];
-			let dz = 2. * w0 * dZ[0] - dZ[1] + 2. * Z[0];
-			let ddz = 2. * w0 * ddZ[0] - ddZ[1] + 4. * dZ[0];
-			let b = ddz / (dz * dz);
-			let gamma_t = 1. - (Z[0] * B[0]);
-			let nu = - b / B[1];
-			let mu = 2. * b * w0 / B[0];
-			let mu_t = mu * w1 / w0;
-			let ref dty1 = self.dt(P, &y1);
-			for (y0, y1, dty1, y, dty) in zip!(y0, &mut y1, dty1, &y, &*dty) {
-				let y0_ = *y0;
-				*y0 = *y1;
-				*y1 = (1.-mu-nu)*y + nu*y0_ + mu**y1 + dt*mu_t*(dty1-(gamma_t*dty));
-			}
-			if steps == 0 { break; }
-			steps -= 1;
-			B = [b, B[0]];
-			Z = [z, Z[0]];
-			dZ = [dz, dZ[0]];
-			ddZ = [ddz, ddZ[0]];
-		}
-		let ref dty1 = self.dt(P, &y1);
-		//let error = error(map!(&y,&y1,&*dty,dty1; |y,y1,dty,dty1| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
-		let error = error(zip!(&y,&y1,&*dty,dty1).map(|(y,y1,dty,dty1):(&f64,&f64,&f64,&f64)| (0.8*(y1-y)+0.4*dt*(dty+dty1)/(atol + rtol*y.abs().max(y1.abs())))));
-		if error > 1. { // error too large, step is rejected
-			dt *= 0.8 / error.powf(1./3.);
-			assert!(dt >= f64::EPSILON);
-			{let t = self.power_iteration(P, tmax, &y, &dty, &v); v = t.0; jacobian_spectral_radius = t.1;}
-		} else { // step accepted
-			t += dt;
-			if t >= tmax { break y1; }
-			y = y1;
-			*dty = *dty1;
-			nstep += 1;
-			if (nstep % 25) == 0 {let t = self.power_iteration(P, tmax, &y, &dty, &v); v = t.0; jacobian_spectral_radius = t.1;}
-			let factor = (0.8 * if previous_error > f64::EPSILON { dt/previous_dt*previous_error.powf(1./3.) } else { 1. } / error.powf(1./3.)).clamp(0.1, 10.);
-			previous_error = error;
-			previous_dt = dt;
-			dt *= factor;
-		}
-	}
-}
 }
 
 #[derive(Clone)] pub struct State<const S: usize> {
@@ -251,7 +174,7 @@ impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 		ref ranges => panic!("{:?}", ranges),
 	}});
 	let reactions = reactions.map(|self::ron::Reaction{equation: ref str_equation, rate_constant, model}| {
-		let equation = eval(str_equation, |e| box_collect(e.keys().map(|&key| species.iter().position(|&k| k==key).expect(key))).zip(box_collect(e.values().copied())));
+		let equation = eval(str_equation, |e| box_collect(e.keys().map(|&key| species.iter().position(|&k| k==key).expect(key))).zip(box_collect(e.values().map(|&ν| ν as f64))));
 		let specie_net_coefficients = generate(|specie| {
 			let [reactant, product]:[_;2] = eval(&equation, |side| side.find(|(&s,_)| s==specie).map(|(_,&ν)| ν as i8).unwrap_or(0));
 			product-reactant
@@ -263,15 +186,14 @@ impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 				*net.get_mut(&element).unwrap() += ν * count as i8;
 			}
 		}
-		for (_, &ν) in &net { assert!(ν == 0, net, str_equation); }
 		let sum_net_coefficients = specie_net_coefficients.iter().sum::<i8>() as f64;
 		Reaction{
 			equation,
-			rate_constant,
+			rate_constant: rate_constant.into(),
 			model: {use self::ron::Model::*; match model {
 				Elementary => Model::Elementary,
 				ThreeBody{efficiencies} => Model::ThreeBody{efficiencies: eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.))},
-				Falloff{efficiencies, k0, troe} => Model::Falloff{efficiencies: eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.)), k0, troe},
+				Falloff{efficiencies, k0, troe} => Model::Falloff{efficiencies: eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.)), k0: k0.into(), troe},
 			}},
 			specie_net_coefficients: eval(specie_net_coefficients, |ν| ν as f64),
 			sum_net_coefficients,
@@ -291,5 +213,3 @@ impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 	}
 }
 }
-
-//impl<const S: usize> std::convert::From<State<S>> for Box<[Box<[f64]>]> { fn from(s: State<S>) -> Self { box [box [s.temperature] as Box<[_]>, box s.amounts] as Box<[_]> } }
