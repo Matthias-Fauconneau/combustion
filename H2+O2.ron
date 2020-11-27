@@ -3,7 +3,7 @@
 time_step: 1e-4,
 phases: [IdealGas(
 	elements: [H, O, Ar],
-	species: ["H","H2","O","OH","H2O","O2","HO2","H2O2","Ar"],
+	species: ["H","O","H2","O2","OH","H2O","HO2","H2O2","Ar"],
 	state: (temperature: 1000., pressure: 101325, mole_proportions: {"H2": 2, "O2": 1, "Ar": 2}, volume: 1)
 )],
 species: {

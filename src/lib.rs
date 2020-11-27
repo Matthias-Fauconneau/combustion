@@ -1,9 +1,9 @@
 #![feature(min_const_generics,non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals)]
 pub mod ron;
-use {std::convert::TryInto,
-				iter::{array_from_iter as from_iter, box_collect, into::{Collect, Enumerate, IntoChain, Zip, Find}, eval, //zip,
-				vec::{eval, generate, Dot, Suffix}}};
+use {std::convert::TryInto, num::{norm, error},
+				iter::{array_from_iter as from_iter, box_collect, into::{Collect, Enumerate, IntoChain, Zip, Find, IntoMap, IntoZip}, zip, map, eval,
+				vec::{eval, generate, Dot, Suffix, Sub}}};
 
 pub use self::ron::*;
 
@@ -96,7 +96,7 @@ pub fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 		let log_equilibrium_constant = sum_net_coefficients*logP0_RT - ν.dot(G);
 		let log_kf = log_arrhenius(rate_constant, T);
 		let log_kr = log_kf - log_equilibrium_constant;
-		use iter::into::{IntoMap, Sum};
+		use iter::into::Sum;
 		let [log_ΠCνf, log_ΠCνr] : [f64;2] = eval(equation, |side| side.map(|(&specie, ν)| ν*log_concentrations[specie]).sum());
 		let [Rf, Rr] = [log_kf + log_ΠCνf, log_kr + log_ΠCνr].map(f64::exp);
 		let net_rate = model.efficiency(T, &concentrations, log_kf) * (Rf - Rr);
@@ -113,30 +113,97 @@ pub fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	from_iter([dtT_T*T, dtV].chain(dtn))
 }
 
-pub fn step(&self, _rtol: f64, _atol: f64, tmax: f64, P: f64, mut u: [f64; N]) -> [f64; N] {
-	const steps : usize = 600;
-	let dt = tmax/(steps as f64);
-	for _ in 0..steps {
-		let ref k0 = self.dt(P, &u);
-		u = if true {
-			eval!(&u, k0; |u, k0| u+dt*k0)
-		} else {
-			let a = ((),
-			[0.161],
-			[-0.008480655492356989,0.335480655492357],
-			[2.8971530571054935, -6.359448489975075, 4.3622954328695815],
-			[5.325864828439257, -11.748883564062828, 7.4955393428898365, -0.09249506636175525],
-			[5.86145544294642, -12.92096931784711, 8.159367898576159, -0.071584973281401, -0.028269050394068383],
-			[0.09646076681806523, 0.01, 0.4798896504144996, 1.379008574103742, -3.290069515436081, 2.324710524099774]);
-			let ref k1 = self.dt(P, &eval!(&u, k0; |u, k0| u+dt*(a.1[0]*k0)));
-			let ref k2 = self.dt(P, &eval!(&u, k0, k1; |u, k0, k1| u+dt*(a.2[0]*k0+a.2[1]*k1)));
-			let ref k3 = self.dt(P, &eval!(&u, k0, k1, k2; |u, k0, k1, k2| u+dt*(a.3[0]*k0+a.3[1]*k1+a.3[2]*k2)));
-			let ref k4 = self.dt(P, &eval!(&u, k0, k1, k2, k3; |u, k0, k1, k2, k3| u+dt*(a.4[0]*k0+a.4[1]*k1+a.4[2]*k2+a.4[3]*k3)));
-			let ref k5 = self.dt(P, &eval!(&u, k0, k1, k2, k3, k4; |u, k0, k1, k2, k3, k4| u+dt*(a.5[0]*k0+a.5[1]*k1+a.5[2]*k2+a.5[3]*k3+a.5[4]*k4)));
-			eval!(&u, k0, k1, k2, k3, k4, k5; |u, k0, k1, k2, k3, k4, k5| u+dt*(a.6[0]*k0+a.6[1]*k1+a.6[2]*k2+a.6[3]*k3+a.6[4]*k4+a.6[5]*k5))
-		};
+// Estimate principal eigenvector/value of dyF|y
+fn power_iteration(&self, P: f64, tmax: f64, y: &[f64; N], dty: &[f64; N], v: &[f64; N]) -> ([f64; N], f64) {
+	let [norm_y, norm_v] = [y,v].map(norm);
+	assert!(norm_y > 0.);
+	let ε = norm_y * f64::EPSILON.sqrt();
+	assert!(norm_v > 0.);
+	let ref mut yεv = eval!(y, v; |y, v| y + ε * v / norm_v);
+	let mut ρ = 0.;
+	for i in 1..=50 {
+		let ref dtεv = self.dt(P, yεv).sub(dty);
+		let norm_dtεv = norm(dtεv);
+		assert!(norm_dtεv > 0.);
+		let previous_ρ = ρ;
+		ρ = norm_dtεv / ε;
+		if i >= 2 && f64::abs(ρ - previous_ρ) <= 0.01*ρ.max(1./tmax) { break; }
+		*yεv = eval!(y, dtεv; |y, dtεv| y + (ε / norm_dtεv) * dtεv);
 	}
-	u
+	(yεv.sub(y), ρ * 1.2)
+}
+
+pub fn step(&self, relative_tolerance: f64, absolute_tolerance: f64, tmax: f64, P: f64, mut u: [f64; N]) -> [f64; N] {
+	let mut dtu = self.dt(P, &u);
+	let (mut v, mut jacobian_spectral_radius) = self.power_iteration(P, tmax, &u, &dtu, &dtu);
+	let max_stages = ((relative_tolerance / (10. * f64::EPSILON)).sqrt().round() as usize).max(2);
+	let mut dt = {
+		let dt = (1./jacobian_spectral_radius).min(tmax);
+		let ref dtu1 = self.dt(P, &eval!(&u, &dtu; |u, dtu| u + dt * dtu));
+		(dt/(dt*error(zip!(&dtu, dtu1, &u).map(|(dtu, dtu1, u):(&f64,&f64,&f64)| (dtu1 - dtu) / (absolute_tolerance + relative_tolerance * u.abs())))) / 10.).min(tmax)
+	};
+	let (mut previous_error, mut previous_dt) = (0., 0.);
+	let mut nstep = 0;
+	let mut t = 0.;
+	loop {
+		let stages = 1 + (1. + 1.54 * dt * jacobian_spectral_radius).sqrt().floor() as usize;
+		let stages = if stages > max_stages {
+			dt = (max_stages*max_stages - 1) as f64 / (1.54 * jacobian_spectral_radius);
+			max_stages
+		} else { stages };
+		let ref u1 = {
+			let w0 = 1. + 2. / (13.0 * (stages * stages) as f64);
+			let sqw01 = w0*w0 - 1.;
+			let arg = stages as f64 * (w0 + sqw01.sqrt()).ln();
+			let w1 = arg.sinh() * sqw01 / (arg.cosh() * stages as f64 * sqw01.sqrt() - w0 * arg.sinh());
+			let mut B = [1. / (4.*w0*w0); 2];
+			let mu_t = w1 * B[0];
+			let [ref mut u0, mut u1] = [u, eval!(&u, &dtu; |u, dtu| u + mu_t * dt * dtu)];
+			let mut Z = [w0, 1.];
+			let mut dZ = [1., 0.];
+			let mut ddZ = [0., 0.];
+			for _ in 1..stages {
+				let z = 2. * w0 * Z[0] - Z[1];
+				let dz = 2. * w0 * dZ[0] - dZ[1] + 2. * Z[0];
+				let ddz = 2. * w0 * ddZ[0] - ddZ[1] + 4. * dZ[0];
+				let b = ddz / (dz * dz);
+				let gamma_t = 1. - (Z[0] * B[0]);
+				let nu = - b / B[1];
+				let mu = 2. * b * w0 / B[0];
+				let mu_t = mu * w1 / w0;
+				let ref dtu1 = self.dt(P, &u1);
+				for (u0, u1, dtu1, u, dtu) in zip!(u0, &mut u1, dtu1, &u, &dtu) {
+					let u0_ = *u0;
+					*u0 = *u1;
+					*u1 = (1.-mu-nu)*u + nu*u0_ + mu**u1 + dt*mu_t*(dtu1-(gamma_t*dtu));
+				}
+				B = [b, B[0]];
+				Z = [z, Z[0]];
+				dZ = [dz, dZ[0]];
+				ddZ = [ddz, ddZ[0]];
+			}
+			u1
+		};
+		let ref dtu1 = self.dt(P, &u1);
+		let ũ = map!(u1, &u, &dtu, dtu1; |u1, u, dtu, dtu1| u1-dt*(dtu+dtu1)/2.-u);
+		let error = 0.8 * error(zip!(ũ, &u, u1).map(|(ũ, u, u1):(f64,&f64,&f64)| ũ / (absolute_tolerance + relative_tolerance*u.abs().max(u1.abs()))));
+		if error > 1. {
+			dt *= 0.8 / error.powf(1./3.);
+			(v, jacobian_spectral_radius) = self.power_iteration(P, tmax, &u, &dtu, &v);
+		} else {
+			t += dt;
+			if t >= tmax { break *u1; }
+			u = *u1;
+			dtu = *dtu1;
+			nstep += 1;
+			if nstep%25 == 0 { (v, jacobian_spectral_radius) = self.power_iteration(P, tmax, &u, &dtu, &v); }
+			let factor = (0.8 * if previous_error > f64::EPSILON { dt/previous_dt*(previous_error/error).powf(1./3.) } else { 1./error.powf(1./3.) } ).clamp(0.1, 10.);
+			if nstep%100000==0 { println!("{:e} {:e} {:e} {:e} {} {} {} {}", jacobian_spectral_radius, t, dt, error, nstep, stages, factor, previous_error/error); }
+			previous_error = error;
+			previous_dt = dt;
+			dt = (factor*dt).min(tmax);
+		}
+	}
 }
 
 }
@@ -163,7 +230,6 @@ pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new
 
 impl<const S: usize, const S1: usize, const N: usize> Simulation<'t, S, S1, N> {
 #[fehler::throws(anyhow::Error)] pub fn new(system: &'b [u8]) -> Self where 'b: 't {
-	use iter::into::{IntoMap, IntoZip};
 	let ron::System{species: species_data, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
 	let Phase::IdealGas{species, state, ..} = phases.into_vec().into_iter().next().unwrap();
 	let species : [_; S] = species.as_ref().try_into().unwrap();
