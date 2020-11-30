@@ -1,0 +1,22 @@
+[package]
+name = 'gpu'
+version = '0.0.0'
+authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition = '2018'
+
+[features]
+default = ['spirv-builder/use-installed-tools']
+
+[dependencies]
+fehler = ''
+futures = {version= '', default-features= false, features= ['executor']}
+wgpu = ''
+#shared = {git='https://github.com/embarkstudios/rust-gpu', branch= 'main'}
+
+[build-dependencies]
+fehler = ''
+spirv-builder = {git='https://github.com/embarkstudios/rust-gpu', branch= 'main', default-features = false}
+
+[[bin]]
+name = 'gpu'
+path = 'main.rs'

@@ -85,7 +85,7 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 	}
 	}
 	let dt = system.dt(pressure, &state);
-	state = system.step(/*relative_tolerance:*/ 1e-8, /*absolute_tolerance:*/ 1e-8, time_step, pressure, state);
+	state = system.step(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-14, time_step, pressure, state);
 	println!("{}", species.iter().map(|k| format!("{:^15}",k)).format(" "));
 	let dtn : &[_;S-1] = iter::vec::Suffix::suffix(&dt);
 	for &net_production_rates in &[&iter::vec::eval(dtn, |dtn| dtn/volume), other_net_production_rates] { println!("{}", net_production_rates.iter().map(|c| format!("{:15.6e}",c)).format(" ")); }
@@ -97,4 +97,5 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 	println!("{}", concentrations.iter().zip(other_concentrations).format_with(" ", |(&c,&o), f| f(&format_args!("{:15.9e}", num::relative_error(c,o)))));
 	println!("{:e}", concentrations.iter().zip(other_concentrations).map(|(&c,&o)| num::abs(c-o)/o).max_by(|a,b| PartialOrd::partial_cmp(a,b).unwrap()).unwrap());
 	}
+	println!("OK");
 }

@@ -92,15 +92,15 @@ pub fn dt(&self, P: f64, y: &[f64; N]) -> [f64; N] {
 	let ref G = eval!(species, H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
 	let log_concentrations = eval(concentrations, f64::ln);
 	let ref mut dtω = [0.; /*S-1*/S1];
-	for Reaction{equation, rate_constant, model, specie_net_coefficients: ν, sum_net_coefficients, ..} in reactions.iter() {
-		let log_equilibrium_constant = sum_net_coefficients*logP0_RT - ν.dot(G);
+	for Reaction{equation, rate_constant, model, specie_net_coefficients, sum_net_coefficients, ..} in reactions.iter() {
+		let log_equilibrium_constant = sum_net_coefficients*logP0_RT - specie_net_coefficients.dot(G);
 		let log_kf = log_arrhenius(rate_constant, T);
 		let log_kr = log_kf - log_equilibrium_constant;
 		use iter::into::Sum;
 		let [log_ΠCνf, log_ΠCνr] : [f64;2] = eval(equation, |side| side.map(|(&specie, ν)| ν*log_concentrations[specie]).sum());
 		let [Rf, Rr] = [log_kf + log_ΠCνf, log_kr + log_ΠCνr].map(f64::exp);
 		let net_rate = model.efficiency(T, &concentrations, log_kf) * (Rf - Rr);
-		for (specie, ν) in ν.enumerate() { dtω[specie] += ν * net_rate; }
+		for (specie, ν) in specie_net_coefficients.enumerate() { dtω[specie] += ν * net_rate; }
 	}
 	let ref dtω = *dtω;
 
@@ -190,6 +190,7 @@ pub fn step(&self, relative_tolerance: f64, absolute_tolerance: f64, tmax: f64, 
 		if error > 1. {
 			dt *= 0.8 / error.powf(1./3.);
 			(v, jacobian_spectral_radius) = self.power_iteration(P, tmax, &u, &dtu, &v);
+			//println!("{:e} {:e} {:e} {:e} {} {} {}", jacobian_spectral_radius, t, dt, error, nstep, stages, previous_error/error);
 		} else {
 			t += dt;
 			if t >= tmax { break *u1; }
@@ -198,7 +199,7 @@ pub fn step(&self, relative_tolerance: f64, absolute_tolerance: f64, tmax: f64, 
 			nstep += 1;
 			if nstep%25 == 0 { (v, jacobian_spectral_radius) = self.power_iteration(P, tmax, &u, &dtu, &v); }
 			let factor = (0.8 * if previous_error > f64::EPSILON { dt/previous_dt*(previous_error/error).powf(1./3.) } else { 1./error.powf(1./3.) } ).clamp(0.1, 10.);
-			if nstep%100000==0 { println!("{:e} {:e} {:e} {:e} {} {} {} {}", jacobian_spectral_radius, t, dt, error, nstep, stages, factor, previous_error/error); }
+			if nstep%10000==0 { println!("{:e} {:e} {:e} {:e} {} {} {} {}", jacobian_spectral_radius, t, dt, error, nstep, stages, factor, previous_error/error); }
 			previous_error = error;
 			previous_dt = dt;
 			dt = (factor*dt).min(tmax);

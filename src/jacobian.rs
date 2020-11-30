@@ -1,6 +1,6 @@
 //let [(_, νf), (_, νr)] = &equation;
 //let [Σνf, Σνr] = [νf.iter().sum::<u8>() as f64, νr.iter().sum::<u8>() as f64];
-/*fn dT_Cp(&self, T: f64) -> f64 {
+fn dT_Cp(&self, T: f64) -> f64 {
 	use itertools::Itertools;
 	let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
 	ideal_gas_constant * (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T)
@@ -10,7 +10,7 @@ fn dT_b(&self, T: f64) -> f64 { // dT(S/R - H/RT)
 	let a = &self.coefficients[self.temperature_ranges.iter().tuple_windows().position(|(&min, &max)| min <= T && T <= max).unwrap_or_else(|| panic!("{:?}", T))];
 	(a[0]-1.)/T + a[1]/2. + a[2]/12.*T + a[3]/36.*T*T + a[4]/80.*T*T*T + a[5]/(T*T)
 }*/
-/*impl<const S: usize> State<S> {
+impl<const S: usize> State<S> {
 	pub fn step(&mut self, System{thermodynamics: species, reactions, amount, volume: V, molar_masses: W}: &System<S>) {
 		use iter::array::{from_iter, map, generate};
 		let scale = |s, v| from_iter(scale(s, v.iter().copied()));
@@ -135,4 +135,4 @@ fn dT_b(&self, T: f64) -> f64 { // dT(S/R - H/RT)
 		for &amount in self.amounts.iter() { assert!(amount>= 0. && amount< total_amount,"{} {:?} {}", amount, &self.amounts, total_amount); }
 		self.temperature += system.time_step * dtT;
 	}
-}*/
+}
