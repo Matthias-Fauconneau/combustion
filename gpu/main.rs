@@ -1,17 +1,44 @@
-#![feature(default_free_fn)]
-#[fehler::throws(Box<dyn std::error::Error>)] pub fn main() {
-	use {std::default::default, wgpu::*};
-	let (device, queue) = futures::executor::block_on(async{Instance::new(BackendBit::PRIMARY).request_adapter(&default()).await.unwrap().request_device(&DeviceDescriptor{shader_validation: true, ..default()}, None).await})?;
-	let ref module = device.create_shader_module(include_spirv!(env!("f.spv")));
-	let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor{label: None, entries: &[]});
-	let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor{label: None, bind_group_layouts: &[&bind_group_layout], push_constant_ranges: &[]});
-	let compute_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor{label: None, layout: Some(&pipeline_layout), compute_stage: ProgrammableStageDescriptor{module, entry_point: "main"}});
-	let bind_group = device.create_bind_group(&BindGroupDescriptor{label: None, layout: &bind_group_layout, entries: &[]});
-	let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor{label: None});
-	{let mut pass = encoder.begin_compute_pass();
-		pass.set_bind_group(0, &bind_group, &[]);
-		pass.set_pipeline(&compute_pipeline);
-		pass.dispatch(1, 1, 1);}
-	queue.submit(Some(encoder.finish()));
-  println!("OK");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+	use {std::{sync::Arc, ffi::CStr}, vulkano::{
+		instance::*, device::*, pipeline::{shader::ShaderModule, ComputePipeline}, buffer::*, descriptor::{pipeline_layout::*, descriptor::*, descriptor_set::*}, command_buffer::*, sync::{self, *}}};
+	let instance = Instance::new(None, &InstanceExtensions::none(), None)?;
+	let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
+	let queue_family = physical.queue_families().find(|&q| q.supports_compute()).unwrap();
+	let extensions = &DeviceExtensions{khr_storage_buffer_storage_class: true, ..DeviceExtensions::none()};
+	let (device, mut queues) = Device::new(physical, physical.supported_features(), extensions, [(queue_family, 0.5)].iter().cloned())?;
+	let queue = queues.next().unwrap();
+	let pipeline = Arc::new({
+		#[derive(Clone)] struct Main;
+		unsafe impl PipelineLayoutDesc for Main {
+			fn num_sets(&self) -> usize { 1 }
+			fn num_bindings_in_set(&self, set: usize) -> Option<usize> { match set { 0 => Some(1), _ => None } }
+			fn descriptor(&self, set: usize, binding: usize) -> Option<DescriptorDesc> {
+				match (set, binding) {
+					(0, 0) => Some(
+										DescriptorDesc{ty: DescriptorDescTy::Buffer(DescriptorBufferDesc{dynamic: Some(false), storage: true}), array_count: 1, stages: ShaderStages::compute(), readonly: true}
+					),
+					_ => None,
+				}
+			}
+			fn num_push_constants_ranges(&self) -> usize { 0 }
+			fn push_constants_range(&self, _: usize) -> Option<PipelineLayoutDescPcRange> { None }
+		}
+		let shader = unsafe{ ShaderModule::from_words(device.clone(), vk_shader_macros::include_glsl!("main.comp"))? };
+		ComputePipeline::new(device.clone(), &unsafe{ shader.compute_entry_point(CStr::from_bytes_with_nul(b"main\0") ?, Main) }, &())?
+	});
+	let layout = pipeline.layout().descriptor_set_layout(0).unwrap();
+	let buffer = {
+		let data = (0..65536).map(|n| n);
+		CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), false, data)?
+	};
+	let set = Arc::new(PersistentDescriptorSet::start(layout.clone()).add_buffer(buffer.clone())?.build()?);
+	let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())?;
+	builder.dispatch([1024, 1, 1], pipeline.clone(), set.clone(), ())?;
+	let command_buffer = builder.build()?;
+	let future = sync::now(device.clone()).then_execute(queue.clone(), command_buffer)?.then_signal_fence_and_flush()?;
+	future.wait(None).unwrap();
+	let buffer = buffer.read().unwrap();
+	for n in 0..65536 { assert_eq!(buffer[n as usize], n * 12); }
+	println!("OK");
+	Ok(())
 }
