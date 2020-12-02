@@ -78,7 +78,7 @@ pub struct System<const S: usize, const S1: usize, const N: usize> {
 impl<const S: usize, const S1: usize, const N: usize> System<S,S1,N> {
 pub fn state(P: f64, y: &[f64; N]) -> (f64, f64, [f64; S]) {
 	let (T, V, n) = (y[0], y[1], y.suffix());
-	let concentrations : [_; /*S-1*/S1] = eval(n, |n| (n / V).max(0.)); // Skips most abundant specie (last index) (will be deduced from conservation) // Clamps negative values yielded by integration
+	let concentrations : [_; /*S-1*/S1] = eval(n, |n| (n / V)/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation) // Clamps negative values yielded by integration
 	let C = P / (ideal_gas_constant * T);
 	let Ca = C - concentrations.iter().sum::<f64>();
 	let concentrations = from_iter(concentrations.chain([Ca]));
