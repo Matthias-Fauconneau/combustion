@@ -1,49 +1,51 @@
 #version 460
 
-#define NASA7 double[2][7]
-const double reference_pressure = 101325.; // 1 atm
+const double reference_pressure = 101325.;
 const double T_split = 1000.;
-double[7] a(NASA7 s, double T) { if (T < T_split) { return s[0]; } else { return s[1]; } }
-double dimensionless_specific_heat_capacity(NASA7 s, double T) -> double { double[7] a = a(s, T); return a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T }
-double dimensionless_specific_enthalpy_T(NASA7 s, double T) -> double { double[7] a = a(s, T); return a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T }
-double dimensionless_specific_entropy(NASA7 s, double T) -> double { double[7] a = a(s, T); return a[6]+a[0]*double::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T }
+double[7] a(double[2][7] s, double T) { if (T < T_split) { return s[0]; } else { return s[1]; } }
+double dimensionless_specific_heat_capacity(double[2][7] s, double T) { double[7] a = a(s, T); return a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T; }
+double dimensionless_specific_enthalpy_T(double[2][7] s, double T) { double[7] a = a(s, T); return a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T; }
+double dimensionless_specific_entropy(double[2][7] s, double T) { double[7] a = a(s, T); return a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T; }
 
-const double ideal_gas_constant = 8.31446261815324; // J⋅K−1⋅mol−1
+const double ideal_gas_constant = 8.31446261815324;
 
 struct RateConstant {
 	double log_preexponential_factor;
 	double temperature_exponent;
 	double activation_temperature;
-}
+};
 
-double log_arrhenius(RateConstant r, double T) { return r.log_preexponential_factor + r.temperature_exponent*ln(T) - r.activation_temperature*(1./T) }
+double log_arrhenius(RateConstant r, double T) { return r.log_preexponential_factor + r.temperature_exponent*log(T) - r.activation_temperature*(1./T); }
 
-const uint S = 9;
+const uint S = SPECIES;
 
 struct Reaction {
-	double[2][S-1] equation;
+	double[S-1] reactants;
+	double[S-1] products;
+	double[S-1] net;
+	double sum_net;
 	RateConstant rate_constant;
-	double[S-1] specie_net_coefficients;
-	double sum_net_coefficients;
-}
+};
 
+double dot(double[S-1] a, double[S-1] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 double dot(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 
-double R(double logP0_RT, double[S] G, Reaction r, out double log_kf) {
-	double log_equilibrium_constant = r.sum_net_coefficients*logP0_RT - dot(r.specie_net_coefficients, G);
+double R(Reaction r, double T, double logP0_RT, double[S-1] log_concentrations, double[S-1] G, out double log_kf) {
 	log_kf = log_arrhenius(r.rate_constant, T);
-	double log_kr = log_kf - log_equilibrium_constant;
-	double log_ΠCνf = dot(equation[0], log_concentrations);
-	double log_ΠCνr = dot(equation[1], log_concentrations);
-	double Rf = exp(log_kf + log_ΠCνf);
-	double Rr = exp(log_kr + log_ΠCνr)
-	return Rf - Rr
+	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
+	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
+	double Rr = exp(dot(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
+	return Rf - Rr;
 }
+
+struct Elementary {
+	Reaction reaction;
+};
 
 struct ThreeBody {
 	Reaction reaction;
-	double[S] efficiencies; //efficiencies.dot(concentrations),
-}
+	double[S] efficiencies;
+};
 
 struct Falloff {
 	Reaction reaction;
@@ -53,93 +55,92 @@ struct Falloff {
 	double T3;
 	double T1;
 	double T2;
-}
+};
+
+double log10(double x) { return log(x) / log(10); }
+double exp10(double x) { return exp(log(10.)*x); }
 
 double falloff_efficiency(Falloff f, double T, double[S] concentrations, double log_k_inf) {
-	double Pr = dot(f.efficiencies, concentrations) * exp(log_arrhenius(f.k0, f.T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
-	double Fcent = (1.-A)*exp(-T/f.T3)+A*exp(-T/f.T1)+exp(-f.T2/T);
+	double Pr = dot(f.efficiencies, concentrations) * exp(log_arrhenius(f.k0, T) - log_k_inf);
+	double Fcent = (1.-f.A)*exp(-T/f.T3)+f.A*exp(-T/f.T1)+exp(-f.T2/T);
 	double log10Fcent = log10(Fcent);
 	double C = -0.4-0.67*log10Fcent;
 	double N = 0.75-1.27*log10Fcent;
 	double log10PrC = log10(Pr) + C;
 	double f1 = log10PrC/(N-0.14*log10PrC);
 	double F = exp10(log10Fcent/(1.+f1*f1));
-	return Pr / (1.+Pr) * F
+	return Pr / (1.+Pr) * F;
 }
 
 struct System {
-	double[S] W;
-	NASA7[S] thermodynamics;
-	Reaction[22] elementary;
-	ThreeBody[5] three_body;
-	Falloff[1] falloff;
-}
-layout(set = 0, binding = 0) uniform System system;
-
-layout(set = 0, binding = 1) buffer Storage {
-		const double P[];
-		double T[];
-		double V[];
-		double n[S-1][];
-} state;
+	double[S-1] reduced_molar_masses;
+	double[S][2][7] thermodynamics;
+	Elementary[ELEMENTARY] elementary;
+	ThreeBody[THREE_BODY] three_body;
+	Falloff[FALLOFF] falloff;
+};
+const System system = System(SYSTEM);
+layout(set = 0, binding = 0) buffer Pressure { readonly double data[]; } pressure;
+layout(set = 0, binding = 1) buffer Temperature { double data[]; } temperature;
+layout(set = 0, binding = 2) buffer Volume { double data[]; } volume;
+layout(set = 0, binding = 3) buffer Amount { double data[]; } amounts[S-1];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	double T = state.T[i];
-	double P = state.P[i];
+	double P = pressure.data[i];
+	double T = temperature.data[i];
+	double V = volume.data[i];
 	double C = P / (ideal_gas_constant * T);
-	double[S-1] concentrations;
-	for(int k=0;k<concentrations.length();k++) concentrations[k] = state.n[k] / V;
-	double sum = 0.;
-	for(int k=0;k<concentrations.length();k++) sum[k] += concentrations[k];
-	double Ca = C - sum;
-	double chain[S];
-	for(int k=0;k<chain.length()-1;k++) chain[k] = concentrations[k];
-	chain[chain.length()-1] = Ca;
-	concentrations = chain; //#define concentrations chain
-	double logP0_RT = ln(reference_pressure/ideal_gas_constant) - ln(T);
-	double H_T[S];
+	double[S] chain; {
+		double[S-1] concentrations;
+		for(int k=0;k<amounts.length();k++) concentrations[k] = amounts[k].data[i] / V;
+		double sum = 0;
+		for(int k=0;k<concentrations.length();k++) sum += concentrations[k];
+		double Ca = C - sum;
+		for(int k=0;k<concentrations.length();k++) chain[k] = concentrations[k];
+		chain[chain.length()-1] = Ca;
+	}
+	double[S] concentrations = chain;
+	double logP0_RT = log(reference_pressure/ideal_gas_constant) - log(T);
+	double[S-1] H_T;
 	for(uint k=0;k<H_T.length();k++) H_T[k] = dimensionless_specific_enthalpy_T(system.thermodynamics[k], T);
-	double G[S];
+	double[S-1] G;
 	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - dimensionless_specific_entropy(system.thermodynamics[k], T);
-	double log_concentrations[S];
+	double[S-1] log_concentrations;
 	for(uint k=0;k<log_concentrations.length();k++) log_concentrations[k] = log(concentrations[k]);
-	double[S-1] dtω;
-	for(uint k=0;k<dtω.length();k++) dtω[k] = 0.;
+	double[S-1] net_rates;
+	for(uint k=0;k<net_rates.length();k++) net_rates[k] = 0;
 	for(uint j=0;j<system.elementary.length();j++) {
-		Reaction r = system.elementary[j];
+		Elementary r = system.elementary[j];
 		double log_kf;
-		double R = R(logP0_RT, G, r, log_kf);
+		double R = R(r.reaction, T, logP0_RT, log_concentrations, G, log_kf);
 		double net_rate = R;
-		for(uint k=0;k<dtω.length();k++) dtω[k] += r.specie_net_coefficients[k] * net_rate;
+		for(uint k=0;k<net_rates.length();k++) net_rates[k] += r.reaction.net[k] * net_rate;
 	}
 	for(uint j=0;j<system.three_body.length();j++) {
 		ThreeBody r = system.three_body[j];
 		double log_kf;
-		double R = R(logP0_RT, G, r.reaction, log_kf);
+		double R = R(r.reaction, T, logP0_RT, log_concentrations, G, log_kf);
 		double net_rate = dot(r.efficiencies, concentrations) * R;
-		for(uint k=0;k<dtω.length();k++) dtω[k] += r.reaction.specie_net_coefficients[k] * net_rate;
+		for(uint k=0;k<net_rates.length();k++) net_rates[k] += r.reaction.net[k] * net_rate;
 	}
 	for(uint j=0;j<system.falloff.length();j++) {
 		Falloff r = system.falloff[j];
 		double log_kf;
-		double R = R(logP0_RT, G, r.reaction, log_kf);
+		double R = R(r.reaction, T, logP0_RT, log_concentrations, G, log_kf);
 		double net_rate = falloff_efficiency(r, T, concentrations, log_kf) * R;
-		for(uint k=0;k<dtω.length();k++) dtω[k] += r.reaction.specie_net_coefficients[k] * net_rate;
+		for(uint k=0;k<net_rates.length();k++) net_rates[k] += r.reaction.net[k] * net_rate;
 	}
 	double Cp[S];
 	for(uint k=0;k<Cp.length();k++) Cp[k] = dimensionless_specific_heat_capacity(system.thermodynamics[k], T);
-	double rcp_ΣCCp = 1./dot(Cp, concentrations);
-	double dtT_T = - rcp_ΣCCp * dot(H_T, dtω);
-	double w[S-1];
-	for(uint k=0;k<W.length();k++) w = 1.-W[k]/W[S-1];
-	double dtE = dot(w, dtω);
+	double dtT_T = - dot(H_T, net_rates) / dot(Cp, concentrations);
+	double dtE = dot(system.reduced_molar_masses, net_rates);
 	double dtV = V * (dtT_T + T * ideal_gas_constant / P * dtE);
 	double dtn[S-1];
-	for(uint k=0;k<dtn.length();k++) dtn[k] = V*dtω[k];
+	for(uint k=0;k<net_rates.length();k++) dtn[k] = V*net_rates[k];
 	// DEBUG: Outputs dt instead of integrating for now to benchmark without integration
-	state.T[i] = dtT_T * T;
-	state.V[i] = dtV;
-	for(uint k=0;k<dtn.length();k++) state.n[k] = stn[k];
+	temperature.data[i] = dtT_T * T;
+	volume.data[i] = dtV;
+	for(uint k=0;k<amounts.length();k++) amounts[k].data[i] = dtn[k];
 }
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;

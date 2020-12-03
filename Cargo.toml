@@ -11,5 +11,4 @@ serde = ''
 linear-map = {version='', features = ['serde_impl']}
 ron = ''
 fehler = ''
-anyhow = ''
 itertools = ''

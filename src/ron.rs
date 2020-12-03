@@ -31,7 +31,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 	#[serde(rename="Ea")] pub activation_energy: f64 // cal/mol
 }
 
-#[derive(Deserialize, Debug)] pub struct Troe { pub A: f64, pub T3: f64, pub T1: f64, pub T2: f64 }
+#[derive(Deserialize, Debug, Clone, Copy)] pub struct Troe { pub A: f64, pub T3: f64, pub T1: f64, pub T2: f64 }
 
 #[derive(Deserialize, Debug)] pub enum Model<'t> {
 	Elementary,

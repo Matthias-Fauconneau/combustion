@@ -1,3 +1,4 @@
+//#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked,
 #![feature(type_ascription, array_map, non_ascii_idents)]#![allow(mixed_script_confusables,non_snake_case)]
 extern "C" {
 fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f64, pressure: &mut f64, mole_proportions: *const std::os::raw::c_char, time_step: f64,
@@ -5,20 +6,20 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 									reactions_len: &mut usize, equations: &mut *const *const std::os::raw::c_char, equilibrium_constants: &mut *const f64, forward: &mut *const f64, reverse: &mut *const f64);
 }
 
-#[fehler::throws(anyhow::Error)] fn main() {
+#[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use combustion::*;
 	let system = std::fs::read("H2+O2.ron")?;
-	pub const S : usize = 9; // Total number of species
-	pub const N : usize = 2/*T, V*/+S-1; // Skips most abundant specie (last index) (will be deduced from conservation)
-	let Simulation{species, system, state: State{temperature, ref amounts}, volume, pressure, time_step, ..} = Simulation::<S,{S-1},N>::new(&system)?;
-	let mut state : [_; N] = {
+	pub const S : usize = 9; // Number of species
+	let Simulation{species, system, state: State{temperature, ref amounts}, volume, pressure, time_step, ..} = Simulation/*::<S>*/::new(&system)?;
+	//type Vec = Simulation::<S>::Vec;
+	let mut state /*: [_; Simulation::<S>::state_vector_len]*/ = {
 			use {std::convert::TryInto, iter::{into::IntoChain, array_from_iter as from_iter}};
 			from_iter([temperature,volume].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
 	};
-	for _ in 0..2 {
+	/*for _ in 0..2 {
 	use itertools::Itertools;
 	let (equations, [equilibrium_constants, forward, reverse], ref other_net_production_rates, ref other_concentrations) = {
-		let (T, _, ref concentrations) : (_,_,[_;S]) = System::<S,{S-1},N>::state(pressure, &state);
+		let (T, _, ref concentrations) /*: (_,_,[_;S])*/ = System::state(pressure, &state);
 		let mole_proportions = format!("{}", species.iter().zip(concentrations).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
 		let mole_proportions = std::ffi::CString::new(mole_proportions).unwrap();
 		use std::ptr::null;
@@ -30,7 +31,7 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 				&mut reactions_len, &mut equations, &mut equilibrium_constants, &mut forward, &mut reverse);
 			let equations = iter::box_collect(std::slice::from_raw_parts(equations, reactions_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
 			let equilibrium_constants = std::slice::from_raw_parts(equilibrium_constants, reactions_len);
-			let equilibrium_constants = iter::box_collect(equilibrium_constants.iter().zip(system.reactions.iter()).map(|(c,Reaction{sum_net_coefficients, ..})| c*f64::powf(1e3, *sum_net_coefficients)));
+			let equilibrium_constants = iter::box_collect(equilibrium_constants.iter().zip(system.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet)));
 			let [forward, reverse] = [forward, reverse].map(|r| iter::box_collect(std::slice::from_raw_parts(r, reactions_len).iter().map(|c| c*1000.)));
 			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
 			let order = |o:Box<[_]>| iter::vec::eval(species, |s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}",s,species))]);
@@ -44,21 +45,14 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 	let reactions = {
 		let specie_names = species;
 		let System{thermodynamics: species, reactions, ..} = &system;
-		let (T, _, ref concentrations) : (_,_,[_;S]) = System::<S,{S-1},N>::state(pressure, &state);
+		let (T, _, ref concentrations) : (_,_,[_;S]) = System::state(pressure, &state);
 		println!("{}", T);
 		let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
 		let ref H_T = iter::vec::eval(species, |s| s.dimensionless_specific_enthalpy_T(T));
 		let ref G = iter::eval!(species, H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
 		let log_concentrations = iter::vec::eval(concentrations, |&c| f64::ln(c));
-		iter::box_collect(reactions.iter().map(move |Reaction{equation, rate_constant, model, specie_net_coefficients: ν, sum_net_coefficients, ..} | {
-			use iter::vec::Dot;
-			let log_equilibrium_constant = sum_net_coefficients*logP0_RT - ν.dot(G);
-			let log_kf = log_arrhenius(rate_constant, T);
-			let log_kr = log_kf - log_equilibrium_constant;
-			use iter::into::{IntoMap, Sum};
-			let [log_ΠCνf, log_ΠCνr] : [f64;2] = iter::vec::eval(equation, |side| side.map(|(&specie, ν)| ν*log_concentrations[specie]).sum());
-			let [Rf, Rr] = [log_kf + log_ΠCνf, log_kr + log_ΠCνr].map(f64::exp);
-			let equation = format!("{}", equation.iter().format_with(" <=> ", |side, f| {
+		iter::box_collect(reactions.iter().map(move |Reaction{reactants, products, rate_constant, model, net, Σnet, ..}| {
+			let equation = format!("{}", [reactants, products].iter().format_with(" <=> ", |side, f| {
 				let other_species = ["Ar","H","H2","H2O","HO2","H2O2","O","O2","OH"];
 				f(&
 					//(&side).into_iter()
@@ -71,6 +65,10 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 				};
 				Ok(())
 			}));
+			let log_kf = log_arrhenius(rate_constant, T);
+			let Rf = f64::exp(reactants.dot(log_concentrations) + log_kf);
+			let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
+			let Rr = f64::exp(products.dot(log_concentrations) + log_kf - log_equilibrium_constant);
 			let [Rf,Rr] = [Rf,Rr].map(|R| model.efficiency(T, &concentrations, log_kf) * R);
 			(equation, f64::exp(log_equilibrium_constant), Rf, Rr)
 		}))
@@ -91,11 +89,11 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 	for &net_production_rates in &[&iter::vec::eval(dtn, |dtn| dtn/volume), other_net_production_rates] { println!("{}", net_production_rates.iter().map(|c| format!("{:15.6e}",c)).format(" ")); }
 	println!("{}", dtn.iter().map(|dtn| dtn/volume).zip(other_net_production_rates).format_with(" ", |(a,&b), f| f(&format_args!("{:15.9e}", a-b))));
 	println!("{}", dtn.iter().map(|dtn| dtn/volume).zip(other_net_production_rates).format_with(" ", |(a,&b), f| f(&format_args!("{:15.9e}", num::relative_error(a,b)))));
-	let (_, _, ref concentrations) : (_,_,[_;S]) = System::<S,{S-1},N>::state(pressure, &state);
+	let (_, _, ref concentrations) : (_,_,[_;S]) = System::state(pressure, &state);
 	println!("{}", &[concentrations, other_concentrations].iter().format_with("\n",|concentrations, f| f(&format_args!("{}",concentrations.iter().format_with(" ", |c, f| f(&format_args!("{:15.6e}",c)))))));
 	println!("{}", concentrations.iter().zip(other_concentrations).format_with(" ", |(c,o), f| f(&format_args!("{:15.8e}", c-o))));
 	println!("{}", concentrations.iter().zip(other_concentrations).format_with(" ", |(&c,&o), f| f(&format_args!("{:15.9e}", num::relative_error(c,o)))));
 	println!("{:e}", concentrations.iter().zip(other_concentrations).map(|(&c,&o)| num::abs(c-o)/o).max_by(|a,b| PartialOrd::partial_cmp(a,b).unwrap()).unwrap());
 	}
-	println!("OK");
+	println!("OK");*/
 }

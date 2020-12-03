@@ -5,8 +5,16 @@ edition = '2018'
 authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com']
 
 [dependencies]
-vulkano = ''
-vk-shader-macros = ''
+combustion = {path=".."}
+ash = ''
+fehler = ''
+anyhow = ''
+
+[build-dependencies]
+combustion = {path='..'}
+shaderc = ''
+iter = {git='https://github.com/Matthias-Fauconneau/iter'}
+itertools = ''
 
 [[bin]]
 name = 'gpu'
