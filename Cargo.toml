@@ -5,8 +5,8 @@ authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-iter = {path='../iter'}
-num = {path='../num'}
+iter = {git='https://github.com/Matthias-Fauconneau/iter'}
+num = {git='https://github.com/Matthias-Fauconneau/num'}
 serde = ''
 linear-map = {version='', features = ['serde_impl']}
 ron = ''

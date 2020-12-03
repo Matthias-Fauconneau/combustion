@@ -1,4 +1,6 @@
 #version 460
+double log(double x) { return log(float(x)); }
+double exp(double x) { return exp(float(x)); }
 
 const double reference_pressure = 101325.;
 const double T_split = 1000.;

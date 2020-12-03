@@ -7,8 +7,10 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com']
 [dependencies]
 combustion = {path=".."}
 ash = ''
+iter = {git='https://github.com/Matthias-Fauconneau/iter'}
 fehler = ''
 anyhow = ''
+itertools = ''
 
 [build-dependencies]
 combustion = {path='..'}

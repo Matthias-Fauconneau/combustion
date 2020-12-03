@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals)]
 pub mod ron;
-use {iter::{array_from_iter as from_iter, into::{Enumerate, IntoChain, IntoMap}, eval, vec::{eval, Dot, Suffix}}, self::ron::{Map, Element, Troe}};
+use {iter::{array_from_iter as from_iter, into::{Enumerate, IntoChain, IntoMap}, eval, vec::{eval, Dot, Prefix, Suffix}}, self::ron::{Map, Element, Troe}};
 
 #[derive(Debug)] pub struct NASA7(pub [[f64; 7]; 2]);
 impl NASA7 {
@@ -147,8 +147,9 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		}});
 		#[allow(unused_variables)]
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
+			let [reactants, products] = eval(equation, |e| eval(species.prefix(), |s| *e.get(s).unwrap_or(&0) as f64));
 			//let [reactants, products] = eval(equation, |e| eval(species[..S-1].try_into().unwrap():[_;S-1], |s| *e.get(s).unwrap_or(&0) as f64));
-			let [reactants, products] = [[0.; S-1]; 2];
+			//let [reactants, products] = [[0.; S-1]; 2];
 			let net = [0.; S-1]; //iter::vec::Sub::sub(&products, &reactants);
 			let Σnet = 0.; //net.iter().sum();
 			Reaction{
