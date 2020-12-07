@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
-#![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals)]
+#![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports)]
 pub mod ron;
-use {iter::{array_from_iter as from_iter, into::{Enumerate, IntoChain, IntoMap}, eval, vec::{eval, Dot, Prefix, Suffix}}, self::ron::{Map, Element, Troe}};
+use {iter::{array_from_iter as from_iter, into::{Enumerate, IntoChain, IntoMap, map}, eval, vec::{eval, Dot, Prefix, Suffix}}, self::ron::{Map, Element, Troe}};
 
 #[derive(Debug)] pub struct NASA7(pub [[f64; 7]; 2]);
 impl NASA7 {
@@ -67,7 +67,7 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 pub struct System<const S: usize> where [(); S-1]: {
-	pub molar_masses: [f64; S],
+	pub reduced_molar_masses: [f64; S-1],
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
 }
@@ -82,27 +82,28 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		(T, V, concentrations)
 	}
 	pub fn dt(&self, P: f64, y: &[f64; 2+S-1]) -> [f64; 2+S-1] {
-		let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
+		let Self{thermodynamics: species, reactions, reduced_molar_masses, ..} = self;
 		let (T, V, concentrations) = Self::state(P, y);
 		let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
-		let ref H_T = eval(species, |s| s.dimensionless_specific_enthalpy_T(T));
-		let ref G = eval!(species, H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
-		let log_concentrations = eval(concentrations, f64::ln);
+		let ref H_T = eval(species.prefix(), |s| s.dimensionless_specific_enthalpy_T(T));
+		let ref G = eval!(species.prefix(), H_T; |s, h_T| h_T - s.dimensionless_specific_entropy(T)); // (H-TS)/RT
+		let ref log_concentrations = eval(concentrations.prefix(), |&x| f64::ln(x));
 		let ref mut dtω = [0.; S-1];
 		for Reaction{reactants, products, rate_constant, model, net, Σnet, ..} in reactions.iter() {
 			let log_kf = log_arrhenius(rate_constant, T);
-			let Rf = f64::exp(reactants.dot(log_concentrations) + log_kf);
+			let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
+			let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
 			let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
-			let Rr = f64::exp(products.dot(log_concentrations) + log_kf - log_equilibrium_constant);
+			let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
 			let net_rate = model.efficiency(T, &concentrations, log_kf) * (Rf - Rr);
 			for (specie, ν) in net.enumerate() { dtω[specie] += ν * net_rate; }
 		}
 		let ref dtω = *dtω;
 
-		let Cp = species.iter().map(|s| s.dimensionless_specific_heat_capacity(T));
+		let Cp = map(species, |s:&NASA7| s.dimensionless_specific_heat_capacity(T));
 		let rcp_ΣCCp = 1./concentrations.dot(Cp);
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
-		let dtE = W.map(|w| 1.-w/W[S-1]).dot(dtω);
+		let dtE = reduced_molar_masses.dot(dtω);
 		let dtV = V * (dtT_T + T * ideal_gas_constant / P * dtE);
 		let dtn = eval(dtω, |dtω| V*dtω);
 		from_iter([dtT_T*T, dtV].chain(dtn))
@@ -131,8 +132,6 @@ pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new
 
 impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 	pub const species_len : usize = S;
-	//pub const state_vector_len : usize = 2/*T, V*/+Self::species_len-1/*Skips most abundant specie (last index) (will be deduced from conservation)*/;
-	//pub type Vec = [f64; 2/*T, V*/+S-1/*Skips most abundant specie (last index) (will be deduced from conservation)*/];
 
 	pub fn new(system: &'b [u8]) -> ::ron::Result<Self> where 'b: 't, [(); S]: {
 		let ron::System{species: species_data, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
@@ -140,6 +139,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		use std::convert::TryInto;
 		let species : [_; S] = species.as_ref().try_into().unwrap();
 		let molar_masses = eval(species, |s| species_data[s].composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
+		let reduced_molar_masses = eval(molar_masses.prefix(), |w:&f64| 1.-w/molar_masses[S-1]);
 		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
@@ -148,10 +148,8 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		#[allow(unused_variables)]
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
 			let [reactants, products] = eval(equation, |e| eval(species.prefix(), |s| *e.get(s).unwrap_or(&0) as f64));
-			//let [reactants, products] = eval(equation, |e| eval(species[..S-1].try_into().unwrap():[_;S-1], |s| *e.get(s).unwrap_or(&0) as f64));
-			//let [reactants, products] = [[0.; S-1]; 2];
-			let net = [0.; S-1]; //iter::vec::Sub::sub(&products, &reactants);
-			let Σnet = 0.; //net.iter().sum();
+			let net = iter::vec::Sub::sub(&products, &reactants);
+			let Σnet = net.iter().sum();
 			Reaction{
 				reactants, products, net, Σnet,
 				rate_constant: rate_constant.into(),
@@ -170,7 +168,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 
 		Ok(Self{
 			species,
-			system: System{molar_masses, thermodynamics, reactions},
+			system: System{reduced_molar_masses, thermodynamics, reactions},
 			time_step, pressure, volume,
 			state: State{temperature, /*volume,*/ amounts}
 		})

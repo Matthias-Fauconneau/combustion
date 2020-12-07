@@ -21,3 +21,6 @@ itertools = ''
 [[bin]]
 name = 'gpu'
 path = 'main.rs'
+
+[profile.dev]
+incremental = false #combustion ICE

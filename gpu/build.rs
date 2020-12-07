@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=main.comp");
 	let system = std::fs::read("H2+O2.ron")?;
 	type Simulation<'t> = combustion::Simulation::<'t, 9>;
-	let combustion::System{molar_masses, thermodynamics, reactions} = Simulation::new(&system)?.system;
+	let combustion::System{reduced_molar_masses, thermodynamics, reactions} = Simulation::new(&system)?.system;
 	use combustion::*;
 	struct System<const S: usize> where [(); S-1]: {
 		reduced_molar_masses: [f64; S-1],
@@ -16,8 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		falloff: Box<[Reaction<S>]>,
 	}
 	let system = System{
-		reduced_molar_masses: iter::vec::eval(std::convert::TryInto::try_into(&molar_masses[..Simulation::species_len-1]).unwrap():[_;Simulation::species_len-1],
-																																		|w| 1.-w/molar_masses[Simulation::species_len-1]),
+		reduced_molar_masses,
 		thermodynamics,
 		elementary: reactions.iter().filter(|r| matches!(r.model, Model::Elementary{})).copied().collect(),
 		three_body: reactions.iter().filter(|r| matches!(r.model, Model::ThreeBody{..})).copied().collect(),
