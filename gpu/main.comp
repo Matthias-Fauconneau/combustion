@@ -22,8 +22,8 @@ double log_arrhenius(RateConstant r, double T) { return r.log_preexponential_fac
 const uint S = SPECIES;
 
 struct Reaction {
-	double[S-1] reactants;
-	double[S-1] products;
+	double[S] reactants;
+	double[S] products;
 	double[S-1] net;
 	double sum_net;
 	RateConstant rate_constant;
@@ -32,7 +32,7 @@ struct Reaction {
 double dot(double[S-1] a, double[S-1] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 double dot(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 
-double R(Reaction r, double T, double logP0_RT, double[S-1] log_concentrations, double[S-1] G, out double log_kf) {
+double R(Reaction r, double T, double logP0_RT, double[S] log_concentrations, double[S-1] G, out double log_kf) {
 	log_kf = log_arrhenius(r.rate_constant, T);
 	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
 	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
@@ -107,7 +107,7 @@ void main() {
 	for(uint k=0;k<H_T.length();k++) H_T[k] = dimensionless_specific_enthalpy_T(system.thermodynamics[k], T);
 	double[S-1] G;
 	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - dimensionless_specific_entropy(system.thermodynamics[k], T);
-	double[S-1] log_concentrations;
+	double[S] log_concentrations;
 	for(uint k=0;k<log_concentrations.length();k++) log_concentrations[k] = log(concentrations[k]);
 	double[S-1] net_rates;
 	for(uint k=0;k<net_rates.length();k++) net_rates[k] = 0;

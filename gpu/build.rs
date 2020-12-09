@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=main.comp");
 	let system = std::fs::read("H2+O2.ron")?;
 	type Simulation<'t> = combustion::Simulation::<'t, 9>;
-	let combustion::System{reduced_molar_masses, thermodynamics, reactions} = Simulation::new(&system)?.system;
+	let combustion::System{reduced_molar_masses, thermodynamics, reactions, ..} = Simulation::new(&system)?.system;
 	use combustion::*;
 	struct System<const S: usize> where [(); S-1]: {
 		reduced_molar_masses: [f64; S-1],
