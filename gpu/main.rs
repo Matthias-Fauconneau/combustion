@@ -6,9 +6,8 @@ mod vulkan; use vulkan::{Device, Buffer};
 	let system = std::fs::read("H2+O2.ron")?;
 	type Simulation<'t> = combustion::Simulation::<'t, 9>;
 	let Simulation{system, pressure, volume, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
-	let amount = pressure * volume / (combustion::ideal_gas_constant * temperature);
 	let state = {use iter::into::IntoChain; from_iter([temperature,volume].chain(amounts))};
-	let f = system.dt(pressure, amount, &state);
+	let f = system.dt(pressure, &state);
 	let f = (f.0, f.1.concat().try_into().unwrap());
 
 	let ref device = Device::new()?;
@@ -23,5 +22,5 @@ mod vulkan; use vulkan::{Device, Buffer};
 		eval(&jacobian, |buffer:&Buffer| buffer.map(device).unwrap()[0])
 	);
 	use itertools::Itertools;
-	if gpu_f != f { println!("{:e}\n{:e}", f.0.iter().format(" "), gpu_f.0.iter().format(" ")); }
+	if gpu_f != f { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.0.iter().format(" ")); }
 }

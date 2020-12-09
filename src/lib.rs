@@ -77,21 +77,18 @@ pub struct System<const S: usize> where [(); S-1]: {
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
-	pub fn state(P: f64, y: &[f64; 2+S-1]) -> (f64, f64, [f64; S]) {
-		let (T, V, n) = (y[0], y[1], y.suffix());
-		let concentrations : [_; S-1] = eval(n, |n| (n / V)/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
-		let C = P / (ideal_gas_constant * T);
-		let Ca = C - concentrations.iter().sum():f64;
-		let concentrations = from_iter(concentrations.chain([Ca]));
-		(T, V, concentrations)
-	}
-	pub fn dt(&self, amount: f64, P: f64, y: &[f64; 2+S-1]) -> ([f64; 2+S-1], [[f64; 2+S-1]; 2+S-1]) {
+	pub fn dt(&self, pressure: f64, y: &[f64; 2+S-1]) -> ([f64; 2+S-1], [[f64; 2+S-1]; 2+S-1]) {
 		use iter::into::Sum;
 		let a = S-1;
 		let Self{thermodynamics: species, reactions, molar_masses: W, reduced_molar_masses, ..} = self;
-		let rcp_n = 1. / amount;
-		let (T, V, ref concentrations) = Self::state(P, y);
-		let ref C = concentrations.prefix::<{S-1}>();
+		let (T, V, amounts) = (y[0], y[1], y.suffix());
+		let C = pressure / (ideal_gas_constant * T);
+		let amount = V * C;
+		let rcp_amount = 1. / amount;
+		let concentrations : [_; S-1] = eval(amounts, |n| (n / V)/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
+		let Ca = C - concentrations.sum():f64;
+		let ref concentrations = from_iter(concentrations.chain([Ca]));
+		let rcpC = 1. / C;
 		let rcpV = 1. / V;
 		let logP0_RT = f64::ln(NASA7::reference_pressure/ideal_gas_constant) - f64::ln(T);
 		let ref H = eval(species, |s| s.dimensionless_specific_enthalpy(T));
@@ -111,6 +108,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 			let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
 			let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
 			let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
+			//assert!(Rf.is_finite() && Rr.is_finite(), Rf, Rr, reactants, products, log_concentrations);
 			let R = Rf - Rr;
 			let cR = c * R;
 			let νfRfνrRr = reactants.scale(Rf).sub(&products.scale(Rr));
@@ -119,7 +117,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 			// dV(R) = 1/V . ( (kf.Sf-kr.Sr) - (Σνf.Rf - Σνr.Rr) )
 			let dVR = rcpV * ( νfRfνrRr[a] - (Σreactants*Rf - Σproducts*Rr));
 			// dn(R) = 1/n . ( kf.(Sf-Sfa) - kr.(Sr-Sra) )
-			let dnR = map(νfRfνrRr.prefix(), |νfRfνrRrj| rcp_n * (νfRfνrRrj - νfRfνrRr[a]));
+			let dnR = map(νfRfνrRr.prefix(), |νfRfνrRrj| rcp_amount * (νfRfνrRrj - νfRfνrRr[a]));
 			let (dTc, dVc, dnc) = match model {
 				Model::Elementary => (0., 0., [0.; S-1]),
 				Model::ThreeBody{efficiencies}|Model::Falloff{efficiencies,..} => {
@@ -154,7 +152,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		let rcp_ΣCCp = 1./concentrations.dot(Cp);
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
 		let dtE = reduced_molar_masses.dot(dtω);
-		let dtV = V * (dtT_T + T * ideal_gas_constant / P * dtE);
+		let dtV = V * (dtT_T + T * ideal_gas_constant / pressure * dtE);
 		let dtn = eval(dtω, |dtω| V*dtω);
 		let mut J = [[f64::NAN; 2+S-1]; 2+S-1];
 		// 1 / (Σ C.Cp)
@@ -164,23 +162,24 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		let HaWaWH = eval!(W.prefix(), H.prefix(); |W, H| HaWa*W - H);
 		// dtT = - 1 / (Σ C.Cp) . Σ H.dtω
 		let dtT = - rcp_ΣCCp * H.prefix().dot(dtω);
+
 		let Cpa = Cp[a];
+		let Cpa_Wa = Cpa/W[a];
+		let concentrations = concentrations.prefix(); //::<{S-1}>();
 		let Cp = Cp.prefix();
-		let CpaWa = Cpa/W[a];
 		// dT(dtT) = 1 / (Σ C.Cp) . [ dtT . Σ C.(Cpa/T - dT(Cp)) + Σ_ ( (Ha/Wa*W - H).dT(ω) + (Cpa/Wa.W - Cp).ω ) ]
-		let dTdtT = rcp_ΣCCp * (dtT * C.dot(species.prefix().map(|s:&NASA7| Cpa/T - s.dT_Cp(T))) + HaWaWH.dot(dTω) + map!(W.prefix(), Cp; |W, Cp| CpaWa*W - Cp).dot(dtω));
+		let dTdtT = rcp_ΣCCp * (dtT * concentrations.dot(species.prefix().map(|s:&NASA7| Cpa/T - s.dT_Cp(T))) + HaWaWH.dot(dTω) + map!(W.prefix(), Cp; |W, Cp| Cpa_Wa*W - Cp).dot(dtω));
 		J[0][0] = dTdtT;
 		// dV(dtT) = 1 / (Σ C.Cp) . [ Σ_ (Ha/Wa*W - H).dV(ω) + dtT/V . Σ_ C.(Cp-Cpa) ]
-		let dVdtT = rcp_ΣCCp * (HaWaWH.dot(dVω) + rcpV * dtT * C.dot(Cp.map(|Cp| Cp - Cpa)));
+		let dVdtT = rcp_ΣCCp * (HaWaWH.dot(dVω) + rcpV * dtT * concentrations.dot(Cp.map(|Cp| Cp - Cpa)));
 		J[0][1] = dVdtT;
 		// dn(dtT) = 1 / (Σ C.Cp) . [ Σ_ (Ha/Wa*W - H).dn(ω) + dtT/V . (Cpa-Cp) ]
 		let ref dndtT = eval!(dnω, Cp; |dnω, Cp| rcp_ΣCCp * (HaWaWH.dot(dnω) + rcpV * dtT * (Cpa-Cp) ));
 		J[0][2..S+1].copy_from_slice(dndtT);
 
 		// dT(dtV) = V/C . Σ_ (1-W/Wa).(dT(ω)+ω/T) + V/T.(dT(dtT) - dtT/T)
-		let rcpC = V*rcp_n;
-		let VT = V/T;
-		let dTdtV = V*rcpC* map!(reduced_molar_masses, dTω, dtω; |reduced_molar_mass, dTω, dtω| reduced_molar_mass*(dTω+dtω/T)).sum():f64 + VT * (dTdtT - dtT/T);
+		let V_T = V / T;
+		let dTdtV = V*rcpC* map!(reduced_molar_masses, dTω, dtω; |reduced_molar_mass, dTω, dtω| reduced_molar_mass*(dTω+dtω/T)).sum():f64 + V_T * (dTdtT - dtT/T);
 		J[1][0] = dTdtV;
 		// dV(dtn) = VdV(ω)+ω
 		let dVdtn = from_iter(map!(dVω,dtω; |dVω,dtω| V*dVω+dtω));
@@ -190,7 +189,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		// dn(dtn) = Vdn(ω)
 		let dndtn = generate(|j| generate(|k| V*dnω[k][j])); // Transpose [k][j] -> [j][k]
 		// dn(dtV) = 1/C . Σ_ (1-W/Wa).dn(dtn) + V/T.dn(dtT))
-		let ref dndtV = eval!(dndtn, dndtT; |dndtn, dndtT| rcpC * reduced_molar_masses.dot(dndtn)+ VT*dndtT);
+		let ref dndtV = eval!(dndtn, dndtT; |dndtn, dndtT| rcpC * reduced_molar_masses.dot(dndtn)+ V_T*dndtT);
 		J[1][2..S+1].copy_from_slice(dndtV);
 
 		// dT(dtn) = VdT(ω)
