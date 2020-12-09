@@ -6,9 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=main.comp");
 	let system = std::fs::read("H2+O2.ron")?;
 	type Simulation<'t> = combustion::Simulation::<'t, 9>;
-	let combustion::System{reduced_molar_masses, thermodynamics, reactions, ..} = Simulation::new(&system)?.system;
+	let combustion::System{molar_masses, reduced_molar_masses, thermodynamics, reactions, ..} = Simulation::new(&system)?.system;
 	use combustion::*;
 	struct System<const S: usize> where [(); S-1]: {
+		molar_masses: [f64; S],
 		reduced_molar_masses: [f64; S-1],
 		thermodynamics: [NASA7; S],
 		elementary: Box<[Reaction<S>]>,
@@ -16,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		falloff: Box<[Reaction<S>]>,
 	}
 	let system = System{
+		molar_masses,
 		reduced_molar_masses,
 		thermodynamics,
 		elementary: reactions.iter().filter(|r| matches!(r.model, Model::Elementary{})).copied().collect(),
@@ -34,15 +36,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				let variant = {use Model::*; match reactions.first().unwrap().model {Elementary => "Elementary", ThreeBody{..} => "ThreeBody", Falloff{..} => "Falloff"}};
 				format!("{}[]({})", variant, reactions.iter().format_with(",\\\n", |r, f| {
 					let fmt = |r:RateConstant| format!("RateConstant({}, {}, {})", r.log_preexponential_factor, r.temperature_exponent, r.activation_temperature);
-					f(&format_args!("{}(Reaction(double[]({}), double[]({}), double[]({}), {:.1}, {})",
-						variant, r.reactants.iter().format(", "), r.products.iter().format(", "), r.net.iter().format(", "), r.Σnet, fmt(r.rate_constant)))?;
+					f(&format_args!("{}(Reaction(double[]({}), double[]({}), double[]({}), {}, {}, {}, {})",
+						variant, r.reactants.iter().format(", "), r.products.iter().format(", "), r.net.iter().format(", "), r.Σreactants, r.Σproducts, r.Σnet, fmt(r.rate_constant)))?;
 					{use Model::*; match r.model {Elementary => f(&")"),
 						ThreeBody{efficiencies} => f(&format_args!(", double[]({}))", efficiencies.iter().format(", "))),
 						Falloff{efficiencies, k0, troe: ron::Troe{A, T3, T1, T2}} => f(&format_args!(", double[]({}), {}, {}, {}, {}, {})", efficiencies.iter().format(", "), fmt(k0), A, T3, T1, T2)),
 					}}
 				}))
 			};
-			write!(f, "double[]({}),\\\ndouble[][][]({}),\\\n{},\\\n{},\\\n{}",
+			write!(f, "double[]({}),\\\ndouble[]({}),\\\ndouble[][][]({}),\\\n{},\\\n{},\\\n{}",
+									self.molar_masses.iter().format(", "),
 									self.reduced_molar_masses.iter().format(", "),
 									self.thermodynamics.iter().format_with(", ", |t, f|
 										f(&format_args!("double[][]({})", t.0.iter().format_with(", ", |t, f| f(&format_args!("double[]({})", t.iter().format(", "))))))),
