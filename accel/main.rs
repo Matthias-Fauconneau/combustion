@@ -1,32 +1,10 @@
 #![feature(type_ascription, array_map, array_methods)]
+mod cuda;
+
 pub const S : usize = 9;
 pub const N : usize = 2+S-1;
 
-#[accel::kernel]
-//unsafe fn dt(len: usize, pressure: *const f32, temperature: *mut f32, volume: *mut f32, amounts: [*mut f32; 9], jacobian: [[*mut f32; 2+9-1]; 2+9-1]) {
-unsafe fn dt(len: usize, pressure: *const f32, temperature: *mut f32, volume: *mut f32, amounts: *const *mut f32/*, jacobian: *const &'static [*mut f32]*/) {
-	let i = accel_core::index();
-	if (i as usize) < len {
-			//*c.offset(i) = *a.offset(i) + *b.offset(i);
-	}
-}
-
-struct Device {
-	_device: accel::Device,
-	context: accel::Context
-}
-impl std::ops::Deref for Device { type Target = accel::Context; fn deref(&self) -> &Self::Target { &self.context } }
-impl Device { #[fehler::throws(anyhow::Error)] fn new() -> Self {
-	std::process::Command::new("gpu-on").spawn()?.wait()?;
-	assert!(std::fs::read("/proc/modules").lines().containts(|line| line.starts_with("nvidia ")));
-	let device = accel::Device::nth(0)?;
-	let context = device.create_context();
-	Self{_device: device, context}
-}}
-impl Drop for Device { fn drop(&mut self) {
-	std::process::Command::new("gpu-off").spawn().unwrap().wait().unwrap();
-	assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_err());
-} }
+mod kernel;
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	use {std::convert::TryInto, iter::{array_from_iter as from_iter, vec::eval, box_collect}};
@@ -37,13 +15,13 @@ impl Drop for Device { fn drop(&mut self) {
 	let f = system.dt(pressure_r, &state);
 
 	use accel::{DeviceMemory, Allocatable};
-	let ref device = Device::new()?;
+	let ref device = cuda::Device::new()?;
 	let stride = 1;
 	let len = 1*stride;
 	let [pressure_r, mut temperature, mut volume] = [pressure_r, temperature, volume].map(|initial| DeviceMemory::<f32>::from_elem(device, len, initial as f32));
 	let mut amounts = eval(amounts, |n| DeviceMemory::<f32>::from_elem(device, len, n as f32));
 	//let mut jacobian: [[_;N]; N] = generate(|_| generate(|_| DeviceMemory::<f32>::from_elem(device, len, f32::NAN)));
-	dt(device, 1, len, (len,
+	kernel::dt(device, 1, len, (len,
 		pressure_r.as_ptr(), temperature.as_mut_ptr(), volume.as_mut_ptr(), box_collect(amounts.iter_mut().map(|n| n.as_mut_ptr())).as_ref(),//.as_slice(),
 		//box_collect(jacobian.iter_mut().map(|j| box_collect(j.map(|j| j.as_mut_ptr())).as_slice())).as_slice()
 	))?;
