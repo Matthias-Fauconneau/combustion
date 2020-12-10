@@ -53,6 +53,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 	}
 	options.add_macro_definition("SYSTEM", Some(&system.to_string()));
+	//options.set_optimization_level(shaderc::OptimizationLevel::Zero); // default: 56K hangs
+	//options.set_optimization_level(shaderc::OptimizationLevel::Size); // 312B broken
+	//options.set_optimization_level(shaderc::OptimizationLevel::Performance); // 312B broken
 	std::fs::write(std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("main.spv"),
 											shaderc::Compiler::new().unwrap().compile_into_spirv(include_str!("main.comp"), shaderc::ShaderKind::Compute, "main.comp", "main", Some(&options))?.as_binary_u8())?;
 	Ok(())

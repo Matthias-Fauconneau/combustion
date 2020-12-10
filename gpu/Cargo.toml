@@ -7,7 +7,7 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com']
 [dependencies]
 combustion = {path=".."}
 ash = ''
-iter = {path='../../iter'}#git='https://github.com/Matthias-Fauconneau/iter'}
+iter = {git='https://github.com/Matthias-Fauconneau/iter'}
 fehler = ''
 anyhow = ''
 itertools = ''
@@ -15,7 +15,7 @@ itertools = ''
 [build-dependencies]
 combustion = {path='..'}
 shaderc = ''
-iter = {path='../../iter'}#{git='https://github.com/Matthias-Fauconneau/iter'}
+iter = {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools = ''
 
 [[bin]]

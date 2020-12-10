@@ -93,16 +93,19 @@ impl Device {
 			let code = {let (h, code, t) = spv.align_to(); assert!(h.is_empty() && t.is_empty(), "{} {} {}", h.len(), code.len(), t.len()); code};
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts), None)?;
-			let pipeline = device.create_compute_pipelines(default(), &[ComputePipelineCreateInfo{
-				stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}],
-				None).map_err(|(_,e)| e)?[0];
+			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
+			dbg!();
+			let pipeline = device.create_compute_pipelines(default(), &pipeline, None).map_err(|(_,e)| e)?[0];
+			dbg!();
 			let descriptor_pool = device.create_descriptor_pool(
 				&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty: descriptor_type, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
+			dbg!();
 			for (binding, buffers) in buffers.iter().enumerate() {
 				device.update_descriptor_sets(&[WriteDescriptorSet::builder().dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(descriptor_type)
 												.buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>()).build()], &[]);
 			}
+			dbg!();
 			let command_pool =
 																	device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index: *queue_family_index, ..default()}, None)?;
 			let command_buffer =

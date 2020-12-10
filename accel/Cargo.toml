@@ -1,0 +1,17 @@
+[package]
+name = 'gpu'
+version = '0.0.0'
+authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition = '2018'
+
+[dependencies]
+combustion= {path='..'}
+accel= {path='../../accel/accel'}#git='https://github.com/termoshtt/accel'}
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+itertools= ''
+fehler= ''
+anyhow= ''
+
+[[bin]]
+name= 'gpu'
+path= 'main.rs'

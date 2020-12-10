@@ -239,4 +239,4 @@ void main() {
 	for(uint k=0;k<2+S-1;k++) for(uint l=0;l<2+S-1;l++) jacobian[k*(2+S-1)+l].data[i] = J[k][l];
 }
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
