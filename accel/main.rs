@@ -11,6 +11,23 @@ unsafe fn dt(len: usize, pressure: *const f32, temperature: *mut f32, volume: *m
 	}
 }
 
+struct Device {
+	_device: accel::Device,
+	context: accel::Context
+}
+impl std::ops::Deref for Device { type Target = accel::Context; fn deref(&self) -> &Self::Target { &self.context } }
+impl Device { #[fehler::throws(anyhow::Error)] fn new() -> Self {
+	std::process::Command::new("gpu-on").spawn()?.wait()?;
+	assert!(std::fs::read("/proc/modules").lines().containts(|line| line.starts_with("nvidia ")));
+	let device = accel::Device::nth(0)?;
+	let context = device.create_context();
+	Self{_device: device, context}
+}}
+impl Drop for Device { fn drop(&mut self) {
+	std::process::Command::new("gpu-off").spawn().unwrap().wait().unwrap();
+	assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_err());
+} }
+
 #[fehler::throws(anyhow::Error)] fn main() {
 	use {std::convert::TryInto, iter::{array_from_iter as from_iter, vec::eval, box_collect}};
 	let system = std::fs::read("H2+O2.ron")?;
@@ -19,9 +36,8 @@ unsafe fn dt(len: usize, pressure: *const f32, temperature: *mut f32, volume: *m
 	let state = {use iter::into::IntoChain; from_iter([temperature,volume].chain(amounts))};
 	let f = system.dt(pressure_r, &state);
 
-	use accel::{Device, DeviceMemory, Allocatable};
-	let device = Device::nth(0)?;
-	let ref device = device.create_context();
+	use accel::{DeviceMemory, Allocatable};
+	let ref device = Device::new()?;
 	let stride = 1;
 	let len = 1*stride;
 	let [pressure_r, mut temperature, mut volume] = [pressure_r, temperature, volume].map(|initial| DeviceMemory::<f32>::from_elem(device, len, initial as f32));
