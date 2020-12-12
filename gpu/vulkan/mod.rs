@@ -83,40 +83,33 @@ impl Buffer {
 }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn submit_and_wait(&self, constants: &Buffer, buffers: &[&[&mut Buffer]], stride: usize, len: usize) {
-		let descriptor_type = DescriptorType::STORAGE_BUFFER;
+	#[fehler::throws(Result)] pub fn submit_and_wait<T>(&self, constants: &[T], buffers: &[&[&mut Buffer]], stride: usize, len: usize) {
+		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
-		let bindings = iter::box_collect(
-			std::iter::once(DescriptorSetLayoutBinding{binding: 0, descriptor_type: DescriptorType::UNIFORM_BUFFER, descriptor_count: 1, stage_flags, ..default()}) .chain(
-			buffers.iter().enumerate().map(|(i,b)| (i+1,b)).map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: descriptor_type, descriptor_count: buffers.len() as u32, stage_flags, ..default()})
-		));
+		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{queue_family_index, device, queue, ..} = self;
 		unsafe {
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
 			let spv = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/main.spv"));
 			let code = {let (h, code, t) = spv.align_to(); assert!(h.is_empty() && t.is_empty(), "{} {} {}", h.len(), code.len(), t.len()); code};
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
-			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts), None)?;
+			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts)
+																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: (constants.len() * std::mem::size_of::<T>()) as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline = device.create_compute_pipelines(default(), &pipeline, None).map_err(|(_,e)| e)?[0];
-			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[
-				DescriptorPoolSize{ty: DescriptorType::UNIFORM_BUFFER, descriptor_count: 1},
-				DescriptorPoolSize{ty: descriptor_type, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}
-				]).max_sets(1), None)?;
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), 																																												None)?;
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
-			device.update_descriptor_sets(&[WriteDescriptorSet::builder().dst_set(descriptor_set).dst_binding(0).descriptor_type(DescriptorType::UNIFORM_BUFFER)
-												.buffer_info(&[DescriptorBufferInfo{buffer: constants.buffer, offset: 0, range: WHOLE_SIZE}]).build()], &[]);
-			for (binding, buffers) in buffers.iter().enumerate().map(|(i,b)| (i+1,b)) {
-				device.update_descriptor_sets(&[WriteDescriptorSet::builder().dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(descriptor_type)
-												.buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>()).build()], &[]);
+			for (binding, buffers) in buffers.iter().enumerate() {
+				device.update_descriptor_sets(&[WriteDescriptorSet::builder()
+					.dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(ty).buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>())
+					.build()], &[]);
 			}
-			let command_pool =
-																	device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index: *queue_family_index, ..default()}, None)?;
-			let command_buffer =
-																	device.allocate_command_buffers(&CommandBufferAllocateInfo{command_pool, level: CommandBufferLevel::PRIMARY, command_buffer_count: 1, ..default()})?[0];
+			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index: *queue_family_index, ..default()}, None)?;
+			let command_buffer = device.allocate_command_buffers(&CommandBufferAllocateInfo{command_pool, level: CommandBufferLevel::PRIMARY, command_buffer_count: 1, ..default()})?[0];
 			device.begin_command_buffer(command_buffer, &CommandBufferBeginInfo{flags: CommandBufferUsageFlags::ONE_TIME_SUBMIT, ..default()})?;
 			device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::COMPUTE, pipeline);
 			device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::COMPUTE, layout, 0, &[descriptor_set], &[]);
+			device.cmd_push_constants(command_buffer, layout, stage_flags, 0, std::slice::from_raw_parts(constants.as_ptr() as *const u8, constants.len() * std::mem::size_of::<T>()));
 			device.cmd_dispatch(command_buffer, (len/stride) as u32, 1, 1);
 			device.cmd_pipeline_barrier(command_buffer, PipelineStageFlags::ALL_COMMANDS, PipelineStageFlags::HOST, default(),
 				&[MemoryBarrier{src_access_mask: AccessFlags::MEMORY_WRITE, dst_access_mask: AccessFlags::HOST_READ, ..default()}], &[], &[]);

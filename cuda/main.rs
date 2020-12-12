@@ -5,9 +5,9 @@
 	pub const S : usize = 9;
 
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
-	let Simulation{system, pressure_r, volume, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
+	let Simulation{system, pressure_r, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
 	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
-	let f = system.dt_J(volume, pressure_r, &state);
+	let f = system.dt_J(pressure_r, &state);
 
 	std::process::Command::new("gpu-on").spawn()?.wait()?;
 	assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_ok());
@@ -24,7 +24,7 @@
 	let len = 1*stride;
 	let mut temperature = DeviceBuffer::from_slice(&vec![temperature; len])?;
 	let mut amounts = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n).take(len)).flatten()))?;
-	unsafe { launch!(module.dt<<<1, 1, 0, stream>>>(len, volume, pressure_r, temperature.as_device_ptr(), amounts.as_device_ptr()))?; }
+	unsafe { launch!(module.dt<<<1, 1, 0, stream>>>(len, pressure_r, temperature.as_device_ptr(), amounts.as_device_ptr()))?; }
 	stream.synchronize()?;
 	let gpu_f : [_;1+S-1] = *(box_collect(std::iter::once({let ref mut host = [0.; 1]; temperature.copy_to(host).unwrap(); host[0] }).chain({
 		let mut host = vec![0.; (S-1)*len]; amounts.copy_to(&mut host).unwrap(); (0..(S-1)).map(move |n| host[n*len])

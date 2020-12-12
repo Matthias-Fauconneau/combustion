@@ -84,12 +84,11 @@ struct System {
 	Falloff falloff[FALLOFF];
 };
 
-extern "C" __global__ void dt(const size_t len, const double volume, const double pressure_R, double* temperature, double* amounts) {
+extern "C" __global__ void dt(const size_t len, const double pressure_R, double* temperature, double* amounts) {
 const System system = System{
 #include "system.h"
 };
 for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * gridDim.x) {
-	double V = volume;
 	double T = temperature[i];
 	double C = pressure_R / T;
 	double logP0_RT = log(reference_pressure_R) - log(T);
@@ -100,7 +99,7 @@ for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * 
 	double G[S-1];
 	for(uint k=0;k<S-1;k++) G[k] = H_T[k] - specific_entropy(system.thermodynamics[k], T);
 	double active_concentrations[S-1];
-	for(int k=0;k<S-1;k++) active_concentrations[k] = amounts[k*len+i] / V;
+	for(int k=0;k<S-1;k++) active_concentrations[k] = amounts[k*len+i];
 	double sumC = 0.;
 	for(int k=0;k<S-1;k++) sumC += active_concentrations[k];
 	double Ca = C - sumC;
@@ -132,7 +131,7 @@ for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * 
 	double dtT_T = - rcp_sumCCp * dot1(H_T, net_rates);
 	temperature[i] = dtT_T;
 	double dtn[S-1];
-	for(uint k=0;k<S-1;k++) dtn[k] = V*net_rates[k];
+	for(uint k=0;k<S-1;k++) dtn[k] = net_rates[k];
 	for(uint k=0;k<S-1;k++) amounts[k*len+i] = dtn[k];
 }
 }

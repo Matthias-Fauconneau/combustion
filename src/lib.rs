@@ -75,7 +75,7 @@ pub struct System<const S: usize> where [(); S-1]: {
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
-	pub fn dt_J(&self, V: f64, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
+	pub fn dt_J(&self, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
 		use iter::into::Sum;
 		//let a = S-1;
 		let Self{thermodynamics: species, reactions/*, molar_masses: W*/, ..} = self;
@@ -89,7 +89,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 		let ref H_T = eval(H.prefix(), |H| H/T);
 		let ref G = eval!(species.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
 		//let ref dT_G = eval!(species.prefix(); |s| s.dT_Gibbs_free_energy(T));
-		let concentrations : [_; S-1] = eval(amounts, |n| (n / V)/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
+		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - concentrations.sum():f64;
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| f64::ln(x));
@@ -138,12 +138,12 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 				for (dnω, RdnccdnR) in zip!(&mut dnω[specie], RdnccdnR) { *dnω += ν * RdnccdnR; }*/
 			}
 		}
-		let ref dtω = *dtω;
+		let dtω = *dtω;
 
 		let Cp = eval(species, |s:&NASA7| s.specific_heat_capacity(T));
 		let rcp_ΣCCp = 1./concentrations.dot(Cp); // All?
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
-		let dtn = eval(dtω, |dtω| V*dtω);
+		let dtn = dtω;
 
 		/*let mut J = [[f64::NAN; 1+S-1]; 1+S-1];
 		let dtT = - rcp_ΣCCp * H.prefix().dot(dtω);
@@ -177,7 +177,6 @@ pub struct Simulation<'t, const S: usize> where [(); S-1]: {
 	pub system: System<S>,
 	pub time_step: f64,
 	pub pressure_r: f64,
-	pub volume: f64,
 	pub state: State<S>
 }
 
@@ -216,16 +215,16 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 			}
 		}));
 
-		let ron::InitialState{temperature, pressure, mole_proportions, volume} = state;
+		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / ideal_gas_constant;
-		let amount = pressure_r * volume / temperature;
+		let amount = pressure_r / temperature;
 		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions.prefix(), |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
 
 		Ok(Self{
 			species,
 			system: System{molar_masses, thermodynamics, reactions},
-			time_step, pressure_r, volume,
+			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})
 	}

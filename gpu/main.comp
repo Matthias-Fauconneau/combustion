@@ -1,6 +1,6 @@
 #version 460
-double log(double x) { return log(float(x)); }
-double exp(double x) { return exp(float(x)); }
+double log(double x) { return double(log(float(x))); }
+double exp(double x) { return double(exp(float(x))); }
 
 const double ideal_gas_constant = 8.31446261815324;
 
@@ -55,7 +55,7 @@ struct Falloff {
 	double T2;
 };
 
-double log10(double x) { return log(x) / log(10); }
+double log10(double x) { return log(x)/log(10.); }
 double exp10(double x) { return exp(log(10.)*x); }
 
 double falloff_efficiency(Falloff f, double T, double[S] concentrations, double log_k_inf) {
@@ -70,12 +70,10 @@ double falloff_efficiency(Falloff f, double T, double[S] concentrations, double 
 	return Pr / (1.+Pr) * F;
 }
 
-double dot_m(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { if(b[k]!=0.) sum += a[k]*b[k]; } return sum; }
-
 void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, inout double[S-1] dV_net_rates, inout double[S-1][S-1] dn_net_rates,*/ Reaction r, /*double[S] efficiencies, double T, double rcpV, double rcp_amount,*/ double logP0_RT, double[S-1] G, /*double[S-1] dT_G,*/ double log_kf, double[S] log_concentrations, double c) {
-	double Rf = exp(dot_m(r.reactants, log_concentrations) + log_kf);
+	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
 	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
-	double Rr = exp(dot_m(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
+	double Rr = exp(dot(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
 	double R = Rf - Rr;
 	double cR = c * R;
 
@@ -117,16 +115,14 @@ struct System {
 	Falloff[FALLOFF] falloff;
 };
 const System system = System(SYSTEM);
-layout(set = 0, binding = 0) uniform Constants {
-double volume;
+layout(push_constant) uniform Constants {
 double pressure_R;
 } constants;
-layout(set = 0, binding = 1) buffer Temperature { double data[]; } temperature;
-layout(set = 0, binding = 2) buffer Amount { double data[]; } amounts[S-1];
+layout(set = 0, binding = 0) buffer Temperature { double data[]; } temperature;
+layout(set = 0, binding = 1) buffer Amount { double data[]; } amounts[S-1];
 //layout(set = 0, binding = 2) buffer Jacobian { writeonly double data[]; } jacobian[(1+S-1)*(1+S-1)];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	double V = constants.volume;
 	//double rcpV = 1. / V;
 	double T = temperature.data[i];
 	double C = constants.pressure_R / T;
@@ -142,7 +138,7 @@ void main() {
 	/*double[S-1] dT_G;
 	for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);*/
 	double[S-1] active_concentrations;
-	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i] / V;
+	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i];
 	double sumC = 0.;
 	for(int k=0;k<active_concentrations.length();k++) sumC += active_concentrations[k];
 	double Ca = C - sumC;
@@ -181,8 +177,7 @@ void main() {
 	double dtT_T = - rcp_sumCCp * dot(H_T, net_rates);
 	temperature.data[i] = dtT_T;
 	double dtn[S-1];
-	for(uint k=0;k<dtn.length();k++) dtn[k] = V*net_rates[k];
-	for(uint k=0;k<amounts.length();k++) amounts[k].data[i] = dtn[k];
+	for(uint k=0;k<amounts.length();k++) amounts[k].data[i] = net_rates[k];
 
 	/*double[1+S-1][1+S-1] J;
 	double dtT = - rcp_sumCCp * dot(H, net_rates);
@@ -202,9 +197,9 @@ void main() {
 	for(uint k=0;k<dndtT.length();k++) dndtT[k] = rcp_sumCCp * (dot(HaWaWH,dn_net_rates[k]) + rcpV * dtT * (Cpa-Cp[k]) );
 	for(uint k=0;k<dndtT.length();k++) J[0][1+k] = dndtT[k];
 	double[S-1][S-1] dndtn;
-	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) dndtn[k][l] = V*dn_net_rates[l][k]; // Transpose [l][k] -> [k][l]
+	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) dndtn[k][l] = dn_net_rates[l][k]; // Transpose [l][k] -> [k][l]
 	double dTdtn[S-1];
-	for(uint k=0;k<dTdtn.length();k++) dTdtn[k] = V*dT_net_rates[k];
+	for(uint k=0;k<dTdtn.length();k++) dTdtn[k] = dT_net_rates[k];
 	for(uint k=0;k<dTdtn.length();k++) J[1+k][0] = dTdtn[k];
 	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) J[2+k][l] = dndtn[l][k]; // Transpose back
 	for(uint k=0;k<1+S-1;k++) for(uint l=0;l<1+S-1;l++) jacobian[k*(1+S-1)+l].data[i] = J[k][l];*/
