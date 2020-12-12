@@ -1,6 +1,3 @@
-double log(double x) { return log(float(x)); }
-double exp(double x) { return exp(float(x)); }
-
 const double ideal_gas_constant = 8.31446261815324;
 
 const double reference_pressure_R = 101325. / ideal_gas_constant;
@@ -64,10 +61,12 @@ double __device__ falloff_efficiency(Falloff f, double T, double concentrations[
 	return Pr / (1.+Pr) * F;
 }
 
+__device__ double dot_m(double a[S], double b[S]) { double sum = 0.; for(uint k=0;k<S;k++) { if(a[k]!=0.) sum += a[k]*b[k]; } return sum; } // 0*inf=0
+
 __device__ void reaction(double (&net_rates)[S-1], Reaction r, double logP0_RT, double G[S-1], double log_kf, double log_concentrations[S], double c) {
-	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
+	double Rf = exp(dot_m(r.reactants, log_concentrations) + log_kf);
 	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
-	double Rr = exp(dot(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
+	double Rr = exp(dot_m(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
 	double R = Rf - Rr;
 	double cR = c * R;
 	for(uint k=0;k<S-1;k++) {
@@ -130,8 +129,6 @@ for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * 
 	double rcp_sumCCp = 1. / dot(concentrations, Cp);
 	double dtT_T = - rcp_sumCCp * dot1(H_T, net_rates);
 	temperature[i] = dtT_T;
-	double dtn[S-1];
-	for(uint k=0;k<S-1;k++) dtn[k] = net_rates[k];
-	for(uint k=0;k<S-1;k++) amounts[k*len+i] = dtn[k];
+	for(uint k=0;k<S-1;k++) amounts[k*len+i] = net_rates[k];
 }
 }
