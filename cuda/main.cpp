@@ -21,13 +21,13 @@ int main() {
 	auto len = 1*stride;
 	CUdeviceptr temperature;
 	cuMemAlloc_v2(&temperature, len);
-	double host_temperature[len];
+	auto host_temperature = new double[len];
 	for(size_t i=0; i<len; i++) host_temperature[i] = 1000.;
 	cuMemcpyHtoD_v2(temperature, host_temperature, len*sizeof(double));
 	auto S = 9;
 	CUdeviceptr amounts;
 	cuMemAlloc_v2(&amounts, (S-1)*len);
-	double host_amounts[(S-1)*len];
+	auto host_amounts = new double[(S-1)*len];
 	for(size_t k=0; k<S-1; k++)	for(size_t i=0; i<len; i++) host_amounts[k*len+i] = (double[]){0., 0., 4.874638549881687, 2.4373192749408434, 0., 0., 0., 0.}[k];
 	cuMemcpyHtoD_v2(amounts, host_amounts, (S-1)*len*sizeof(double));
 	CUfunction function;
