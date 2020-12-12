@@ -10,8 +10,8 @@ double[7] a(double[2][7] s, double T) { if (T < T_split) { return s[0]; } else {
 double specific_heat_capacity(double[2][7] s, double T) { double[7] a = a(s, T); return a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T; } // /R
 double specific_enthalpy(double[2][7] s, double T) { double[7] a = a(s, T); return a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T; } // /R
 double specific_entropy(double[2][7] s, double T) { double[7] a = a(s, T); return a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T; } // /R
-double dT_specific_heat_capacity(double[2][7] s, double T) { 	double[7] a = a(s, T); return (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T); } // /R
-double dT_Gibbs_free_energy(double[2][7] s, double T) { double[7] a = a(s, T); return (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T); } // dT((H-TS)/RT)
+/*double dT_specific_heat_capacity(double[2][7] s, double T) { 	double[7] a = a(s, T); return (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T); } // /R
+double dT_Gibbs_free_energy(double[2][7] s, double T) { double[7] a = a(s, T); return (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T); } // dT((H-TS)/RT)*/
 
 const uint S = SPECIES;
 
@@ -70,10 +70,12 @@ double falloff_efficiency(Falloff f, double T, double[S] concentrations, double 
 	return Pr / (1.+Pr) * F;
 }
 
-void reaction(inout double[S-1] net_rates, inout double[S-1] dT_net_rates, inout double[S-1] dV_net_rates, inout double[S-1][S-1] dn_net_rates, Reaction r, double[S] efficiencies, double T, double rcpV, double rcp_amount, double logP0_RT, double[S-1] G, double[S-1] dT_G, double log_kf, double[S] log_concentrations, double c) {
-	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
+double dot_m(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { if(b[k]!=0.) sum += a[k]*b[k]; } return sum; }
+
+void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, inout double[S-1] dV_net_rates, inout double[S-1][S-1] dn_net_rates,*/ Reaction r, /*double[S] efficiencies, double T, double rcpV, double rcp_amount,*/ double logP0_RT, double[S-1] G, /*double[S-1] dT_G,*/ double log_kf, double[S] log_concentrations, double c) {
+	double Rf = exp(dot_m(r.reactants, log_concentrations) + log_kf);
 	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
-	double Rr = exp(dot(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
+	double Rr = exp(dot_m(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
 	double R = Rf - Rr;
 	double cR = c * R;
 
@@ -115,19 +117,21 @@ struct System {
 	Falloff[FALLOFF] falloff;
 };
 const System system = System(SYSTEM);
-uniform double pressure_R;
-uniform double volume;
-layout(set = 0, binding = 0) buffer Temperature { double data[]; } temperature;
-layout(set = 0, binding = 1) buffer Amount { double data[]; } amounts[S-1];
+layout(set = 0, binding = 0) uniform Constants {
+double volume;
+double pressure_R;
+} constants;
+layout(set = 0, binding = 1) buffer Temperature { double data[]; } temperature;
+layout(set = 0, binding = 2) buffer Amount { double data[]; } amounts[S-1];
 //layout(set = 0, binding = 2) buffer Jacobian { writeonly double data[]; } jacobian[(1+S-1)*(1+S-1)];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	double V = volume;
-	double rcpV = 1. / V;
+	double V = constants.volume;
+	//double rcpV = 1. / V;
 	double T = temperature.data[i];
-	double C = pressure_R / T;
-	double rcpC = 1. / C;
-	double rcp_amount = rcpV * rcpC;
+	double C = constants.pressure_R / T;
+	//double rcpC = 1. / C;
+	//double rcp_amount = rcpV * rcpC;
 	double logP0_RT = log(reference_pressure_R) - log(T);
 	double[S-1] H;
 	for(uint k=0;k<H.length();k++) H[k] = specific_enthalpy(system.thermodynamics[k], T);
@@ -135,8 +139,8 @@ void main() {
 	for(uint k=0;k<H_T.length();k++) H_T[k] = H[k] / T;
 	double[S-1] G;
 	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - specific_entropy(system.thermodynamics[k], T);
-	double[S-1] dT_G;
-	for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);
+	/*double[S-1] dT_G;
+	for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);*/
 	double[S-1] active_concentrations;
 	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i] / V;
 	double sumC = 0.;
@@ -157,19 +161,19 @@ void main() {
 	for(uint j=0;j<system.elementary.length();j++) {
 		Elementary r = system.elementary[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		double zero[S];
-		for(uint k=0;k<zero.length();k++) zero[k] = 0.;
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, zero, T, rcpV, rcp_amount, logP0_RT, G, dT_G, log_kf, log_concentrations, 1.);
+		/*double zero[S];
+		for(uint k=0;k<zero.length();k++) zero[k] = 0.;*/
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*zero, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, 1.);
 	}
 	for(uint j=0;j<system.three_body.length();j++) {
 		ThreeBody r = system.three_body[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, r.efficiencies, T, rcpV, rcp_amount, logP0_RT, G, dT_G, log_kf, log_concentrations, dot(r.efficiencies, concentrations));
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, dot(r.efficiencies, concentrations));
 	}
 	for(uint j=0;j<system.falloff.length();j++) {
 		Falloff r = system.falloff[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, r.efficiencies, T, rcpV, rcp_amount, logP0_RT, G, dT_G, log_kf, log_concentrations, falloff_efficiency(r, T, concentrations, log_kf));
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, falloff_efficiency(r, T, concentrations, log_kf));
 	}
 	double Cp[S];
 	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
@@ -177,7 +181,7 @@ void main() {
 	double dtT_T = - rcp_sumCCp * dot(H_T, net_rates);
 	temperature.data[i] = dtT_T;
 	double dtn[S-1];
-	for(uint k=0;k<net_rates.length();k++) dtn[k] = V*net_rates[k];
+	for(uint k=0;k<dtn.length();k++) dtn[k] = V*net_rates[k];
 	for(uint k=0;k<amounts.length();k++) amounts[k].data[i] = dtn[k];
 
 	/*double[1+S-1][1+S-1] J;

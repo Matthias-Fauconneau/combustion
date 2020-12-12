@@ -1,5 +1,6 @@
 #[macro_use] mod include_bytes_align_as;
 use {std::{default::default, mem::size_of, ffi::CStr}, ash::{*, vk::*, version::*, extensions::ext::DebugUtils}};
+pub use vk::BufferUsageFlags;
 
 pub struct Device {
 	_entry: Entry,
@@ -65,11 +66,11 @@ impl Buffer {
 		MapMut{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts_mut(device.map_memory(self.memory, 0, (self.len * size_of::<T>())as u64, default())? as *mut T, self.len)} }
 	}
 
-	#[fehler::throws(Result)] pub fn new<I: ExactSizeIterator>(device: &Device, iter: I) -> Self {
+	#[fehler::throws(Result)] pub fn new<I: ExactSizeIterator>(device: &Device, usage: BufferUsageFlags, iter: I) -> Self {
 		let len = iter.len();
 		let mut buffer = unsafe {
 			let buffer = device.create_buffer(&BufferCreateInfo{size: (len * size_of::<I::Item>()) as u64,
-				usage: {type F = BufferUsageFlags; F::STORAGE_BUFFER|F::TRANSFER_SRC|F::TRANSFER_DST},
+				usage: usage|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index: 0, ..default()}, None)?;
@@ -82,10 +83,13 @@ impl Buffer {
 }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn submit_and_wait(&self, buffers: &[&[&mut Buffer]], stride: usize, len: usize) {
+	#[fehler::throws(Result)] pub fn submit_and_wait(&self, constants: &Buffer, buffers: &[&[&mut Buffer]], stride: usize, len: usize) {
 		let descriptor_type = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
-		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
+		let bindings = iter::box_collect(
+			std::iter::once(DescriptorSetLayoutBinding{binding: 0, descriptor_type: DescriptorType::UNIFORM_BUFFER, descriptor_count: 1, stage_flags, ..default()}) .chain(
+			buffers.iter().enumerate().map(|(i,b)| (i+1,b)).map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: descriptor_type, descriptor_count: buffers.len() as u32, stage_flags, ..default()})
+		));
 		let Self{queue_family_index, device, queue, ..} = self;
 		unsafe {
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
@@ -94,18 +98,18 @@ impl Device {
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
-			dbg!();
 			let pipeline = device.create_compute_pipelines(default(), &pipeline, None).map_err(|(_,e)| e)?[0];
-			dbg!();
-			let descriptor_pool = device.create_descriptor_pool(
-				&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty: descriptor_type, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[
+				DescriptorPoolSize{ty: DescriptorType::UNIFORM_BUFFER, descriptor_count: 1},
+				DescriptorPoolSize{ty: descriptor_type, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}
+				]).max_sets(1), None)?;
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
-			dbg!();
-			for (binding, buffers) in buffers.iter().enumerate() {
+			device.update_descriptor_sets(&[WriteDescriptorSet::builder().dst_set(descriptor_set).dst_binding(0).descriptor_type(DescriptorType::UNIFORM_BUFFER)
+												.buffer_info(&[DescriptorBufferInfo{buffer: constants.buffer, offset: 0, range: WHOLE_SIZE}]).build()], &[]);
+			for (binding, buffers) in buffers.iter().enumerate().map(|(i,b)| (i+1,b)) {
 				device.update_descriptor_sets(&[WriteDescriptorSet::builder().dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(descriptor_type)
 												.buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>()).build()], &[]);
 			}
-			dbg!();
 			let command_pool =
 																	device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index: *queue_family_index, ..default()}, None)?;
 			let command_buffer =

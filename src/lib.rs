@@ -13,8 +13,8 @@ impl NASA7 {
 	pub fn specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
 	pub fn specific_enthalpy(&self, T: f64) -> f64 { let a = self.a(T); a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T } // /R
 	pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
-	fn dT_specific_heat_capacity(&self, T: f64) -> f64 { 	let a = self.a(T); ideal_gas_constant * (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T) } // /R
-	fn dT_Gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T) } // dT((H-TS)/RT)
+	//fn dT_specific_heat_capacity(&self, T: f64) -> f64 { 	let a = self.a(T); ideal_gas_constant * (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T) } // /R
+	//fn dT_Gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T) } // dT((H-TS)/RT)
 }
 
 #[derive(Debug, Clone, Copy)] pub struct RateConstant {
@@ -75,29 +75,29 @@ pub struct System<const S: usize> where [(); S-1]: {
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
-	pub fn dt_J(&self, V: f64, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], [[f64; 1+S-1]; 1+S-1]) {
+	pub fn dt_J(&self, V: f64, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
 		use iter::into::Sum;
-		let a = S-1;
-		let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
-		let rcpV = 1. / V;
+		//let a = S-1;
+		let Self{thermodynamics: species, reactions/*, molar_masses: W*/, ..} = self;
+		//let rcpV = 1. / V;
 		let (T, amounts) = (y[0], y.suffix());
 		let C = pressure_R / T;
-		let rcp_C = 1. / C;
-		let rcp_amount = rcpV * rcp_C;
+		//let rcp_C = 1. / C;
+		//let rcp_amount = rcpV * rcp_C;
 		let logP0_RT = f64::ln(NASA7::reference_pressure_R) - f64::ln(T);
 		let ref H = eval(species, |s| s.specific_enthalpy(T));
 		let ref H_T = eval(H.prefix(), |H| H/T);
 		let ref G = eval!(species.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
-		let ref dT_G = eval!(species.prefix(); |s| s.dT_Gibbs_free_energy(T));
+		//let ref dT_G = eval!(species.prefix(); |s| s.dT_Gibbs_free_energy(T));
 		let concentrations : [_; S-1] = eval(amounts, |n| (n / V)/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - concentrations.sum():f64;
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| f64::ln(x));
 		let ref mut dtω = [0.; S-1];
-		let mut dTω = [0.; S-1];
+		/*let mut dTω = [0.; S-1];
 		let mut dVω = [0.; S-1];
-		let mut dnω = [[0.; S-1]; S-1];
-		for Reaction{reactants, products, net, Σreactants, Σproducts, Σnet, rate_constant: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}, model, ..} in reactions.iter() {
+		let mut dnω = [[0.; S-1]; S-1];*/
+		for Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} in reactions.iter() {
 			let log_kf = log_arrhenius(rate_constant, T);
 			let c = model.efficiency(T, concentrations, log_kf);
 			let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
@@ -108,7 +108,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 			let R = Rf - Rr;
 			let cR = c * R;
 
-			let efficiencies = match model {Model::Elementary => &[0.; S], Model::ThreeBody{efficiencies}|Model::Falloff{efficiencies,..} => efficiencies};
+			/*let efficiencies = match model {Model::Elementary => &[0.; S], Model::ThreeBody{efficiencies}|Model::Falloff{efficiencies,..} => efficiencies};
 			let has = eval(efficiencies, |&e| if e != 0. { 1. } else { 0. });
 			let νfRfνrRr = eval!(reactants, products; |νf,νr| νf*Rf - νr*Rr);
 
@@ -125,27 +125,27 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 			let dnc = map(has.prefix(), |has_k| rcpV * (has_k - has[a]));
 			// dn(R) = 1/n . ( kf.(Sf-Sfa) - kr.(Sr-Sra) )
 			let dnR = map(νfRfνrRr.prefix(), |νfRfνrRrj| rcp_amount * (νfRfνrRrj - νfRfνrRr[a]));
-			let RdnccdnR : [_; S-1] = eval!(dnc, dnR; |dnc,dnR| R*dnc + c*dnR);
+			let RdnccdnR : [_; S-1] = eval!(dnc, dnR; |dnc,dnR| R*dnc + c*dnR);*/
 
 			for (specie, ν) in net.enumerate() {
 				// dtω = Σ ν c R
 				dtω[specie] += ν * cR;
-				// dT(ω̇̇̇̇̇̇̇̇̇̇) = Σ ν.(R.dT(c)+c.dT(R))
+				/*// dT(ω̇̇̇̇̇̇̇̇̇̇) = Σ ν.(R.dT(c)+c.dT(R))
 				dTω[specie] += ν * RdTccdTR;
 				// dV(ω) = Σ ν.(R.dV(c)+c.dV(R))
 				dVω[specie] += ν * RdVccdVR;
 				// dn(ω) = Σ ν.(R.dn(c)+c.dn(R))
-				for (dnω, RdnccdnR) in zip!(&mut dnω[specie], RdnccdnR) { *dnω += ν * RdnccdnR; }
+				for (dnω, RdnccdnR) in zip!(&mut dnω[specie], RdnccdnR) { *dnω += ν * RdnccdnR; }*/
 			}
 		}
 		let ref dtω = *dtω;
 
 		let Cp = eval(species, |s:&NASA7| s.specific_heat_capacity(T));
-		let rcp_ΣCCp = 1./concentrations.dot(Cp);
+		let rcp_ΣCCp = 1./concentrations.dot(Cp); // All?
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
 		let dtn = eval(dtω, |dtω| V*dtω);
 
-		let mut J = [[f64::NAN; 1+S-1]; 1+S-1];
+		/*let mut J = [[f64::NAN; 1+S-1]; 1+S-1];
 		let dtT = - rcp_ΣCCp * H.prefix().dot(dtω);
 		let Cpa = Cp[a];
 		let HaWa = H[a]/W[a];
@@ -162,8 +162,8 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 		let dTdtn = dTω.scale(V);
 		for (k, dTdtn) in dTdtn.enumerate() { J[1+k][0] = dTdtn; }
 		let dndtn = generate(|k| generate(|l| V*dnω[l][k])):[[_;S-1];S-1]; // Transpose [l][k] -> [k][l]
-		for l in 0..S-1 { for (k, dndtn) in dndtn[l].enumerate() { J[1+k][l] = dndtn; } } // Transpose back
-		(from_iter([dtT_T].chain(dtn)), J)
+		for l in 0..S-1 { for (k, dndtn) in dndtn[l].enumerate() { J[1+k][l] = dndtn; } } // Transpose back*/
+		(from_iter([dtT_T].chain(dtn)), /*J*/)
 	}
 }
 

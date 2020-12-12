@@ -90,11 +90,8 @@ const System system = System{
 };
 for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * gridDim.x) {
 	double V = volume;
-	double rcpV = 1. / V;
 	double T = temperature[i];
 	double C = pressure_R / T;
-	double rcpC = 1. / C;
-	double rcp_amount = rcpV * rcpC;
 	double logP0_RT = log(reference_pressure_R) - log(T);
 	double H[S-1];
 	for(uint k=0;k<S-1;k++) H[k] = specific_enthalpy(system.thermodynamics[k], T);
