@@ -1,12 +1,12 @@
 [package]
-name= 'gpu'
+name= 'cuda'
 version= '0.0.0'
 edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
 combustion= {path='..'}
-ash= ''
+rustacuda= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools= ''
 fehler= ''
@@ -15,11 +15,9 @@ anyhow= ''
 [build-dependencies]
 combustion= {path='..'}
 itertools= ''
-shaderc= ''
+fehler= ''
+anyhow= ''
 
 [[bin]]
-name= 'gpu'
+name= 'cuda'
 path= 'main.rs'
-
-[profile.dev]
-incremental= false #combustion ICE

@@ -70,18 +70,17 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 
 pub struct System<const S: usize> where [(); S-1]: {
 	pub molar_masses: [f64; S],
-	pub reduced_molar_masses: [f64; S-1],
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
 }
 
-impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
-	pub fn dt(&self, pressure_R: f64, y: &[f64; 2+S-1]) -> ([f64; 2+S-1], [[f64; 2+S-1]; 2+S-1]) {
+impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
+	pub fn dt_J(&self, V: f64, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], [[f64; 1+S-1]; 1+S-1]) {
 		use iter::into::Sum;
 		let a = S-1;
-		let Self{thermodynamics: species, reactions, molar_masses: W, reduced_molar_masses, ..} = self;
-		let (T, V, amounts) = (y[0], y[1], y.suffix());
+		let Self{thermodynamics: species, reactions, molar_masses: W, ..} = self;
 		let rcpV = 1. / V;
+		let (T, amounts) = (y[0], y.suffix());
 		let C = pressure_R / T;
 		let rcp_C = 1. / C;
 		let rcp_amount = rcpV * rcp_C;
@@ -144,13 +143,10 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		let Cp = eval(species, |s:&NASA7| s.specific_heat_capacity(T));
 		let rcp_ΣCCp = 1./concentrations.dot(Cp);
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
-		let dtE = reduced_molar_masses.dot(dtω);
-		let dtV = V * (dtT_T + rcp_C * dtE);
 		let dtn = eval(dtω, |dtω| V*dtω);
-		let mut J = [[f64::NAN; 2+S-1]; 2+S-1];
 
+		let mut J = [[f64::NAN; 1+S-1]; 1+S-1];
 		let dtT = - rcp_ΣCCp * H.prefix().dot(dtω);
-
 		let Cpa = Cp[a];
 		let HaWa = H[a]/W[a];
 		let HaWaWH = eval!(W.prefix(), H.prefix(); |W, H| HaWa*W - H);
@@ -158,44 +154,21 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 2+S-1]: {
 		let concentrations = concentrations.prefix();
 		let Cp = Cp.prefix();
 		// dT(dtT) = 1 / (Σ C.Cp) . [ dtT . Σ C.(Cpa/T - dT(Cp)) + Σ_ ( (Ha/Wa*W - H).dT(ω) + (Cpa/Wa.W - Cp).ω ) ]
-		let dTdtT = rcp_ΣCCp * (dtT * concentrations.dot(species.prefix().map(|s:&NASA7| Cpa/T - s.dT_specific_heat_capacity(T))) + HaWaWH.dot(dTω) + map!(W.prefix(), Cp; |W, Cp| Cpa_Wa*W - Cp).dot(dtω));
+		let dTdtT = rcp_ΣCCp * (dtT * concentrations.dot(species.map(|s:&NASA7| Cpa/T - s.dT_specific_heat_capacity(T))) + HaWaWH.dot(dTω) + map!(W.prefix(), Cp; |W, Cp| Cpa_Wa*W - Cp).dot(dtω));
 		J[0][0] = dTdtT;
-		// dV(dtT) = 1 / (Σ C.Cp) . [ Σ_ (Ha/Wa*W - H).dV(ω) + dtT/V . Σ_ C.(Cp-Cpa) ]
-		let dVdtT = rcp_ΣCCp * (HaWaWH.dot(dVω) + rcpV * dtT * concentrations.dot(Cp.map(|Cp| Cp - Cpa)));
-		J[0][1] = dVdtT;
 		// dn(dtT) = 1 / (Σ C.Cp) . [ Σ_ (Ha/Wa*W - H).dn(ω) + dtT/V . (Cpa-Cp) ]
 		let ref dndtT = eval!(dnω, Cp; |dnω, Cp| rcp_ΣCCp * (HaWaWH.dot(dnω) + rcpV * dtT * (Cpa-Cp) ));
-		J[0][2..S+1].copy_from_slice(dndtT);
-
-		// dT(dtV) = V/C . Σ_ (1-W/Wa).(dT(ω)+ω/T) + V/T.(dT(dtT) - dtT/T)
-		let V_T = V / T;
-		let dTdtV = V*rcp_C* map!(reduced_molar_masses, dTω, dtω; |reduced_molar_mass, dTω, dtω| reduced_molar_mass*(dTω+dtω/T)).sum():f64 + V_T * (dTdtT - dtT/T);
-		J[1][0] = dTdtV;
-		// dV(dtn) = VdV(ω)+ω
-		let dVdtn = from_iter(map!(dVω,dtω; |dVω,dtω| V*dVω+dtω));
-		// dV(dtV) = 1/C . Σ_ (1-W/Wa).dV(dtn) + 1/T.(V.dV(dtT)+dtT)
-		let dVdtV = rcp_C * reduced_molar_masses.dot(dVdtn) + 1./T*(V*dVdtT+dtT);
-		J[1][1] = dVdtV;
-		// dn(dtn) = Vdn(ω)
-		let dndtn = generate(|k| generate(|l| V*dnω[l][k])); // Transpose [l][k] -> [k][l]
-		// dn(dtV) = 1/C . Σ_ (1-W/Wa).dn(dtn) + V/T.dn(dtT))
-		let ref dndtV = eval!(dndtn, dndtT; |dndtn, dndtT| rcp_C * reduced_molar_masses.dot(dndtn)+ V_T*dndtT);
-		J[1][2..S+1].copy_from_slice(dndtV);
-
-		// dT(dtn) = VdT(ω)
+		J[0][1..1+S-1].copy_from_slice(dndtT);
 		let dTdtn = dTω.scale(V);
-		for (k, dTdtn) in dTdtn.enumerate() { J[2+k][0] = dTdtn; }
-		// dV(dtn)
-		for (k, dVdtn) in dVdtn.enumerate() { J[2+k][1] = dVdtn; }
-		// dn(dtn)
-		for l in 0..S-1 { for (k, dndtn) in dndtn[l].enumerate() { J[2+k][l] = dndtn; } } // Transpose back
-		(from_iter([dtT_T*T, dtV].chain(dtn)), J)
+		for (k, dTdtn) in dTdtn.enumerate() { J[1+k][0] = dTdtn; }
+		let dndtn = generate(|k| generate(|l| V*dnω[l][k])):[[_;S-1];S-1]; // Transpose [l][k] -> [k][l]
+		for l in 0..S-1 { for (k, dndtn) in dndtn[l].enumerate() { J[1+k][l] = dndtn; } } // Transpose back
+		(from_iter([dtT_T].chain(dtn)), J)
 	}
 }
 
 #[derive(Clone)] pub struct State<const S: usize> where [(); S-1]: {
 	pub temperature: f64,
-	//pub volume: f64,
 	pub amounts: [f64; S-1]
 }
 
@@ -220,7 +193,6 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		use std::convert::TryInto;
 		let species : [_; S] = species.as_ref().try_into().unwrap();
 		let molar_masses = eval(species, |s| species_data[s].composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
-		let reduced_molar_masses = eval(molar_masses.prefix(), |w:&f64| 1.-w/molar_masses[S-1]);
 		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
@@ -252,9 +224,9 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 
 		Ok(Self{
 			species,
-			system: System{molar_masses, reduced_molar_masses, thermodynamics, reactions},
+			system: System{molar_masses, thermodynamics, reactions},
 			time_step, pressure_r, volume,
-			state: State{temperature, /*volume,*/ amounts}
+			state: State{temperature, amounts}
 		})
 	}
 }
