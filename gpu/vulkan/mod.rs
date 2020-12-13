@@ -7,10 +7,12 @@ pub struct Device {
 	_instance: ash::Instance,
 	_debug_utils: DebugUtils,
 	_debug_utils_messenger: DebugUtilsMessengerEXT,
-	queue_family_index: u32,
 	device: ash::Device,
 	queue: Queue,
-	timestamp_period: f32
+	timestamp_period: f32,
+	command_pool: CommandPool,
+	query_pool: QueryPool,
+	fence: Fence,
 }
 impl std::ops::Deref for Device { type Target = ash::Device; fn deref(&self) -> &Self::Target { &self.device } }
 
@@ -47,7 +49,10 @@ impl Device {
 				.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
 				, None)?;
 			let queue = device.get_device_queue(queue_family_index, 0);
-			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, queue_family_index, device, queue, timestamp_period}
+			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)?;
+			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
+			let fence = device.create_fence(&default(), None)?;
+			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, device, queue, timestamp_period, command_pool, query_pool, fence}
 		}
 	}
 }
@@ -86,14 +91,24 @@ impl Buffer {
 	}
 }
 
+pub struct Pipeline {
+	_descriptor_pool: DescriptorPool,
+	pub descriptor_set: DescriptorSet,
+	layout: PipelineLayout,
+	pipeline: ash::vk::Pipeline,
+}
+//impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
+
 impl Device {
-	#[fehler::throws(Result)] pub fn submit_and_wait<T>(&self, constants: &[T], buffers: &[&[&mut Buffer]], stride: usize, len: usize) -> f32 {
+	#[fehler::throws(Result)] pub fn pipeline<T>(&self, constants: &[T], buffers: &[&[&Buffer]]) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
-		let Self{queue_family_index, device, queue, ..} = self;
+		let Self{device, ..} = self;
 		unsafe {
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
+			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			let spv = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/main.spv"));
 			let code = {let (h, code, t) = spv.align_to(); assert!(h.is_empty() && t.is_empty(), "{} {} {}", h.len(), code.len(), t.len()); code};
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
@@ -101,33 +116,47 @@ impl Device {
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: (constants.len() * std::mem::size_of::<T>()) as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline = device.create_compute_pipelines(default(), &pipeline, None).map_err(|(_,e)| e)?[0];
-			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), 																																												None)?;
-			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
+			Pipeline{_descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
+		}
+	}
+	#[fehler::throws(Result)] pub fn bind(&self, descriptor_set: DescriptorSet, buffers: &[&[&Buffer]]) {
+		let descriptor_type = DescriptorType::STORAGE_BUFFER;
+		let Self{device, ..} = self;
+		unsafe {
 			for (binding, buffers) in buffers.iter().enumerate() {
 				device.update_descriptor_sets(&[WriteDescriptorSet::builder()
-					.dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(ty).buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>())
+					.dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(descriptor_type).buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>())
 					.build()], &[]);
 			}
-			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index: *queue_family_index, ..default()}, None)?;
-			let command_buffer = device.allocate_command_buffers(&CommandBufferAllocateInfo{command_pool, level: CommandBufferLevel::PRIMARY, command_buffer_count: 1, ..default()})?[0];
-			device.begin_command_buffer(command_buffer, &CommandBufferBeginInfo{flags: CommandBufferUsageFlags::ONE_TIME_SUBMIT, ..default()})?;
-			device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::COMPUTE, pipeline);
-			device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::COMPUTE, layout, 0, &[descriptor_set], &[]);
-			device.cmd_push_constants(command_buffer, layout, stage_flags, 0, std::slice::from_raw_parts(constants.as_ptr() as *const u8, constants.len() * std::mem::size_of::<T>()));
-			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
-			device.cmd_reset_query_pool(command_buffer, query_pool, 0, 2);
-			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, query_pool, 0);
+		}
+	}
+	#[fehler::throws(Result)] pub fn command_buffer<T>(&self, pipeline: &Pipeline, constants: &[T], stride: usize, len: usize) -> CommandBuffer {
+		let Self{device, command_pool, query_pool, ..} = self;
+		let Pipeline{descriptor_set, layout, pipeline, ..} = pipeline;
+		unsafe {
+			let command_buffer = device.allocate_command_buffers(&CommandBufferAllocateInfo{command_pool: *command_pool, level: CommandBufferLevel::PRIMARY, command_buffer_count: 1, ..default()})?[0];
+			device.begin_command_buffer(command_buffer, &default())?;
+			device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::COMPUTE, *pipeline);
+			device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::COMPUTE, *layout, 0, &[*descriptor_set], &[]);
+			device.cmd_push_constants(command_buffer, *layout, ShaderStageFlags::COMPUTE, 0, std::slice::from_raw_parts(constants.as_ptr() as *const u8, constants.len() * std::mem::size_of::<T>()));
+			device.cmd_reset_query_pool(command_buffer, *query_pool, 0, 2);
+			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, *query_pool, 0);
 			device.cmd_dispatch(command_buffer, (len/stride) as u32, 1, 1);
-			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, query_pool, 1);
+			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, *query_pool, 1);
 			device.cmd_pipeline_barrier(command_buffer, PipelineStageFlags::ALL_COMMANDS, PipelineStageFlags::HOST, default(),
 				&[MemoryBarrier{src_access_mask: AccessFlags::MEMORY_WRITE, dst_access_mask: AccessFlags::HOST_READ, ..default()}], &[], &[]);
 			device.end_command_buffer(command_buffer)?;
-			let fence = device.create_fence(&default(), None)?;
-			device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], fence)?;
-			device.wait_for_fences(&[fence], true, !0)?;
-			device.reset_fences(&[fence])?;
+			command_buffer
+		}
+	}
+	#[fehler::throws(Result)] pub fn submit_and_wait(&self, command_buffer: CommandBuffer) -> f32 {
+		let Self{device, queue, fence, query_pool, ..} = self;
+		unsafe {
+			device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], *fence)?;
+			device.wait_for_fences(&[*fence], true, !0)?;
+			device.reset_fences(&[*fence])?;
 			let mut results = vec![0; 2];
-			device.get_query_pool_results::<u64>(query_pool, 0, 2, &mut results, vk::QueryResultFlags::TYPE_64)?;
+			device.get_query_pool_results::<u64>(*query_pool, 0, 2, &mut results, vk::QueryResultFlags::TYPE_64)?;
 			(results[1]-results[0]) as f32 * self.timestamp_period * 1e-9
 		}
 	}

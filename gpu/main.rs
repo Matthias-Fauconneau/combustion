@@ -14,19 +14,28 @@ mod vulkan;
 	use vulkan::{Device, Buffer, BufferUsageFlags};
 	let ref device = Device::new()?;
 	let stride = 1792;
-	let len = 65535*stride;
-	let mut temperature = Buffer::new(device, BufferUsageFlags::STORAGE_BUFFER, (0..len).map(|_| temperature))?;
-	let mut amounts = eval(amounts, |n| Buffer::new(device, BufferUsageFlags::STORAGE_BUFFER, (0..len).map(|_| n)).unwrap());
+	let len = 55*stride;
+	let temperature = Buffer::new(device, BufferUsageFlags::STORAGE_BUFFER, (0..len).map(|_| temperature))?;
+	let amounts = eval(amounts, |n| Buffer::new(device, BufferUsageFlags::STORAGE_BUFFER, (0..len).map(|_| n)).unwrap());
+	let ref_amounts = box_collect(amounts.iter().map(|n| n));
+	let ref buffers = [&[&temperature] as &[_], &ref_amounts/*, &box_collect(jacobian.iter_mut().map(|n| n))*/];
 	//let mut jacobian: [_;(2+S-1)*(2+S-1)] = generate(|_| Buffer::new(device, (0..len).map(|_| f64::NAN)).unwrap());
-	let start = std::time::Instant::now();
-	let _time = device.submit_and_wait(&[pressure_r], &[&[&mut temperature], &box_collect(amounts.iter_mut().map(|n| n))/*, &box_collect(jacobian.iter_mut().map(|n| n))*/], stride, len)?;
-	let end = std::time::Instant::now();
-	let time = (end-start).as_secs_f32();
-	let gpu_f = (
-		*(box_collect([temperature].iter().chain(amounts.iter()).map(|buffer:&Buffer| buffer.map(device).unwrap()[0])).try_into().unwrap():Box<_>),
-		//eval(&jacobian, |buffer:&Buffer| buffer.map(device).unwrap()[0])
-	);
-	use itertools::Itertools;
-	if gpu_f != f { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.0.iter().format(" ")); }
-	println!("{:.0}M in {:.0}ms = {:.0}M/s", len as f32/1e6, time*1e3, (len as f32)/1e6/time);
+	let ref constants = [pressure_r];
+	let ref pipeline = device.pipeline(constants, buffers)?;
+	device.bind(pipeline.descriptor_set, buffers)?;
+	let command_buffer  = device.command_buffer(pipeline, constants, stride, len)?;
+	let _warmup = device.submit_and_wait(command_buffer)?;
+	for _ in 0..9 {
+		let start = std::time::Instant::now();
+		let _time = device.submit_and_wait(command_buffer)?;
+		let end = std::time::Instant::now();
+		let time = (end-start).as_secs_f32();
+		let gpu_f = (
+			*(box_collect(std::iter::once(&temperature).chain(amounts.iter()).map(|buffer:&Buffer| buffer.map(device).unwrap()[0])).try_into().unwrap():Box<_>),
+			//eval(&jacobian, |buffer:&Buffer| buffer.map(device).unwrap()[0])
+		);
+		use itertools::Itertools;
+		if gpu_f != f { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.0.iter().format(" ")); }
+		println!("{:.0}M in {:.0}ms = {:.0}M/s", len as f32/1e6, time*1e3, (len as f32)/1e6/time);
+	}
 }
