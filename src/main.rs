@@ -1,21 +1,25 @@
 //#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked,
 #![feature(type_ascription, array_map, non_ascii_idents)]#![allow(mixed_script_confusables,non_snake_case)]
-extern "C" {
+/*extern "C" {
 fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f64, pressure: &mut f64, mole_proportions: *const std::os::raw::c_char, time_step: f64,
 									species_len: &mut usize, species: &mut *const *const std::os::raw::c_char, net_production_rates: &mut *const f64, concentrations: &mut *const f64,
 									reactions_len: &mut usize, equations: &mut *const *const std::os::raw::c_char, equilibrium_constants: &mut *const f64, forward: &mut *const f64, reverse: &mut *const f64);
-}
+}*/
 
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
-	use combustion::*;
+	use iter::{array_from_iter as from_iter};
 	let system = std::fs::read("H2+O2.ron")?;
-	pub const S : usize = 9; // Number of species
-	let Simulation{species, system, state: State{temperature, ref amounts}, volume, pressure, time_step, ..} = Simulation/*::<S>*/::new(&system)?;
-	//type Vec = Simulation::<S>::Vec;
-	let mut state /*: [_; Simulation::<S>::state_vector_len]*/ = {
-			use {std::convert::TryInto, iter::{into::IntoChain, array_from_iter as from_iter}};
-			from_iter([temperature,volume].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
-	};
+	const S : usize = 9; // Number of species
+	type Simulation<'t> = combustion::Simulation::<'t, S>;
+	let Simulation{system, state: combustion::State{temperature, amounts}, pressure_r, ..} = Simulation::new(&system)?;
+	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
+	let len = 1792*65535/8;
+	let start = std::time::Instant::now();
+	use rayon::prelude::*;
+	(0..len).into_par_iter().for_each(|_|{ system.dt_J(pressure_r, &state); });
+	let end = std::time::Instant::now();
+	let time = end-start;
+	println!("{:.0}M in {}ms = {:.0}M/s", len as f32/1e6, time.as_millis(), (len as f32)/1e6/time.as_secs_f32());
 	/*for _ in 0..2 {
 	use itertools::Itertools;
 	let (equations, [equilibrium_constants, forward, reverse], ref other_net_production_rates, ref other_concentrations) = {

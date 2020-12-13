@@ -10,6 +10,7 @@ pub struct Device {
 	queue_family_index: u32,
 	device: ash::Device,
 	queue: Queue,
+	timestamp_period: f32
 }
 impl std::ops::Deref for Device { type Target = ash::Device; fn deref(&self) -> &Self::Target { &self.device } }
 
@@ -37,13 +38,16 @@ impl Device {
 				message_type: DebugUtilsMessageTypeFlagsEXT::all(), pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?;
 
 			let device = *instance.enumerate_physical_devices()?.first().unwrap();
+			let timestamp_period = instance.get_physical_device_properties(device).limits.timestamp_period;
+			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_size);
+			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_count);
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
 			let device = instance.create_device(device, &DeviceCreateInfo::builder()
 				.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
 				.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
 				, None)?;
 			let queue = device.get_device_queue(queue_family_index, 0);
-			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, queue_family_index, device, queue}
+			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, queue_family_index, device, queue, timestamp_period}
 		}
 	}
 }
@@ -83,7 +87,7 @@ impl Buffer {
 }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn submit_and_wait<T>(&self, constants: &[T], buffers: &[&[&mut Buffer]], stride: usize, len: usize) {
+	#[fehler::throws(Result)] pub fn submit_and_wait<T>(&self, constants: &[T], buffers: &[&[&mut Buffer]], stride: usize, len: usize) -> f32 {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
@@ -110,7 +114,11 @@ impl Device {
 			device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::COMPUTE, pipeline);
 			device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::COMPUTE, layout, 0, &[descriptor_set], &[]);
 			device.cmd_push_constants(command_buffer, layout, stage_flags, 0, std::slice::from_raw_parts(constants.as_ptr() as *const u8, constants.len() * std::mem::size_of::<T>()));
+			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
+			device.cmd_reset_query_pool(command_buffer, query_pool, 0, 2);
+			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, query_pool, 0);
 			device.cmd_dispatch(command_buffer, (len/stride) as u32, 1, 1);
+			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, query_pool, 1);
 			device.cmd_pipeline_barrier(command_buffer, PipelineStageFlags::ALL_COMMANDS, PipelineStageFlags::HOST, default(),
 				&[MemoryBarrier{src_access_mask: AccessFlags::MEMORY_WRITE, dst_access_mask: AccessFlags::HOST_READ, ..default()}], &[], &[]);
 			device.end_command_buffer(command_buffer)?;
@@ -118,6 +126,9 @@ impl Device {
 			device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], fence)?;
 			device.wait_for_fences(&[fence], true, !0)?;
 			device.reset_fences(&[fence])?;
+			let mut results = vec![0; 2];
+			device.get_query_pool_results::<u64>(query_pool, 0, 2, &mut results, vk::QueryResultFlags::TYPE_64)?;
+			(results[1]-results[0]) as f32 * self.timestamp_period * 1e-9
 		}
 	}
 }

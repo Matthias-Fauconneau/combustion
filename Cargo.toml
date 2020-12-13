@@ -12,3 +12,4 @@ linear-map = {version='', features = ['serde_impl']}
 ron = ''
 fehler = ''
 itertools = ''
+rayon= ''
