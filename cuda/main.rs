@@ -40,6 +40,6 @@
 		})).try_into().unwrap():Box<_>);
 		use itertools::Itertools;
 		if gpu_f != f.0 { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.iter().format(" ")); }
-		println!("{:.0}K in {:.1}ms = {:.0}M/s", len as f32/1e3, time*1e3, (len as f32)/1e6/time);
+		println!("{:.0}K in {:.1}ms = {:.0}M/s", len as f32/1e3, time*1e3, (len as f32)/time/1e6);
 	}
 }
