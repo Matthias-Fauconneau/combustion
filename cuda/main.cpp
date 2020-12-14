@@ -4,7 +4,7 @@
 #include <vector>
 #include <cmath>
 
-int main() {
+int main(int argc, const char* argv[]) {
 	cuInit(0);
 	CUdevice device;
 	cuDeviceGet(&device, 0);
@@ -19,8 +19,8 @@ int main() {
 	cuModuleLoadData(&module, &buffer[0]);
 	CUstream stream;
 	cuStreamCreateWithPriority(&stream, CU_STREAM_NON_BLOCKING, 0);
-	auto stride = 1;
-	auto len = 1*stride;
+	auto workgroup_size = std::stoi(argv[1]);
+	auto len = std::stoi(argv[2]); // workgroup_count * workground_size;
 
 	CUdeviceptr temperature;
 	cuMemAlloc_v2(&temperature, len*sizeof(double));
@@ -52,7 +52,7 @@ int main() {
 	cuModuleGetFunction(&function, module,"dt");
 	auto pressure_r = 101325./8.31446261815324;
 	void* args[]{&len, &pressure_r, &temperature, &amounts, &d_temperature, &d_amounts};
-	cuLaunchKernel(function, len, 1, 1, stride, 1, 1, 0, stream, args, nullptr);
+	cuLaunchKernel(function, /*workgroup_count*/len/workgroup_size, 1, 1, workgroup_size, 1, 1, 0, stream, args, nullptr);
 	cuStreamSynchronize(stream);
 	cuMemcpyDtoH_v2(host_d_temperature, d_temperature, len*sizeof(double));
 	cuMemcpyDtoH_v2(host_d_amounts, d_amounts, (S-1)*len*sizeof(double));
