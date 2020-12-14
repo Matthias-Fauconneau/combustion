@@ -33,7 +33,8 @@ int main() {
 	CUfunction function;
 	cuModuleGetFunction(&function, module,"dt");
 	auto pressure_r = 101325./8.31446261815324;
-	cuLaunchKernel(function, len, 1, 1, stride, 1, 1, 0, stream, (void*[]){&pressure_r, &temperature, &amounts}, nullptr);
+	void* args[]{&pressure_r, &temperature, &amounts};
+	cuLaunchKernel(function, len, 1, 1, stride, 1, 1, 0, stream, args, nullptr);
 	cuStreamSynchronize(stream);
 	cuMemcpyDtoH_v2(host_temperature, temperature, len*sizeof(double));
 	cuMemcpyDtoH_v2(host_amounts, amounts, (S-1)*len*sizeof(double));
