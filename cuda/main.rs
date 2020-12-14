@@ -10,7 +10,7 @@
 	let f = system.dt_J(pressure_r, &state);
 
 	std::process::Command::new("gpu-on").spawn()?.wait()?;
-	assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_ok());
+	//assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_ok());
 	std::process::Command::new("nvidia-modprobe").spawn()?.wait()?;
 	assert!(std::str::from_utf8(&std::fs::read("/proc/modules")?)?.lines().any(|line| line.starts_with("nvidia ")));
 	use rustacuda::{prelude::*, launch};
@@ -29,7 +29,7 @@
 	for _ in 0..10 {
 		let start = std::time::Instant::now();
 		unsafe {
-			launch!(module.dt<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, pressure_r,
+			launch!(module.rates<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, pressure_r,
 									 temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), d_temperature.as_device_ptr(), d_amounts.as_device_ptr()))?;
 		}
 		stream.synchronize()?;

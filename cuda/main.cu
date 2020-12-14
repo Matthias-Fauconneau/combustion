@@ -75,7 +75,7 @@ __device__ void reaction(double (&net_rates)[S-1], Reaction r, double logP0_RT, 
 	}
 }
 
-struct System {
+struct Model {
 	double molar_masses[S];
 	double thermodynamics[S][2][7];
 	Elementary elementary[ELEMENTARY];
@@ -83,20 +83,20 @@ struct System {
 	Falloff falloff[FALLOFF];
 };
 
-extern "C" __global__ void dt(const size_t len, const double pressure_R, double* temperature, double* amounts, double* d_temperature, double* d_amounts) {
-const System system = System{
-#include "system.h"
+extern "C" __global__ void rates(const size_t len, const double pressure_R, double* temperature, double* amounts, double* d_temperature, double* d_amounts) {
+const Model model = Model{
+#include "model.h"
 };
 for (uint i = blockIdx.x * /*workgroup size*/blockDim.x + /*SIMD lane*/threadIdx.x; i < len; i += /*workgroup size*/blockDim.x * /*SIMD width*/gridDim.x) {
 	double T = temperature[i];
 	double C = pressure_R / T;
 	double logP0_RT = log(reference_pressure_R) - log(T);
 	double H[S-1];
-	for(uint k=0;k<S-1;k++) H[k] = specific_enthalpy(system.thermodynamics[k], T);
+	for(uint k=0;k<S-1;k++) H[k] = specific_enthalpy(model.thermodynamics[k], T);
 	double H_T[S-1];
 	for(uint k=0;k<S-1;k++) H_T[k] = H[k] / T;
 	double G[S-1];
-	for(uint k=0;k<S-1;k++) G[k] = H_T[k] - specific_entropy(system.thermodynamics[k], T);
+	for(uint k=0;k<S-1;k++) G[k] = H_T[k] - specific_entropy(model.thermodynamics[k], T);
 	double active_concentrations[S-1];
 	for(int k=0;k<S-1;k++) active_concentrations[k] = amounts[k*len+i];
 	double sumC = 0.;
@@ -110,22 +110,22 @@ for (uint i = blockIdx.x * /*workgroup size*/blockDim.x + /*SIMD lane*/threadIdx
 	double net_rates[S-1];
 	for(uint k=0;k<S-1;k++) net_rates[k] = 0.;
 	for(uint j=0;j<ELEMENTARY;j++) {
-		Elementary r = system.elementary[j];
+		Elementary r = model.elementary[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, r.reaction, logP0_RT, G, log_kf, log_concentrations, 1.);
 	}
 	for(uint j=0;j<THREE_BODY;j++) {
-		ThreeBody r = system.three_body[j];
+		ThreeBody r = model.three_body[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, r.reaction, logP0_RT, G, log_kf, log_concentrations, dot(r.efficiencies, concentrations));
 	}
 	for(uint j=0;j<FALLOFF;j++) {
-		Falloff r = system.falloff[j];
+		Falloff r = model.falloff[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, r.reaction, logP0_RT, G, log_kf, log_concentrations, falloff_efficiency(r, T, concentrations, log_kf));
 	}
 	double Cp[S];
-	for(uint k=0;k<S;k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
+	for(uint k=0;k<S;k++) Cp[k] = specific_heat_capacity(model.thermodynamics[k], T);
 	double rcp_sumCCp = 1. / dot(concentrations, Cp);
 	double dtT_T = - rcp_sumCCp * dot1(H_T, net_rates);
 	d_temperature[i] = dtT_T;
