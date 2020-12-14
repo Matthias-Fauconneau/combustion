@@ -14,8 +14,8 @@ mod vulkan;
 
 	use vulkan::{Device, Buffer};
 	let ref device = Device::new()?;
-	let stride = 1792;
-	let len = 55*stride;
+	let stride = 32;
+	let len = 100000/stride*stride;
 	let temperature = Buffer::new(device, (0..len).map(|_| temperature))?;
 	let amounts_buffers = eval(amounts, |n| Buffer::new(device, (0..len).map(|_| n)).unwrap());
 	let ref_amounts = box_collect(amounts_buffers.iter().map(|n| n));
@@ -31,11 +31,17 @@ mod vulkan;
 	//let _warmup = device.submit_and_wait(command_buffer)?;
 	for _ in 0..10 {
 		let start = std::time::Instant::now();
-		let _time = device.submit_and_wait(command_buffer)?;
+		let time = device.submit_and_wait(command_buffer)?;
 		let end = std::time::Instant::now();
-		let time = (end-start).as_secs_f32();
+		let cpu_time = (end-start).as_secs_f32();
+		assert!(cpu_time > time);
 		let gpu_f = (
-			*(box_collect(std::iter::once(&d_temperature).chain(d_amounts.iter()).map(|buffer:&Buffer| buffer.map(device).unwrap()[0])).try_into().unwrap():Box<_>),
+			*(box_collect(std::iter::once(&d_temperature).chain(d_amounts.iter()).map(|buffer:&Buffer| {
+				let buffer = buffer.map(device).unwrap();
+				assert!(buffer.len() == len);
+				for &v in buffer.iter() { assert_eq!(v, buffer[0]); }
+				buffer[0]
+			})).try_into().unwrap():Box<_>),
 			//eval(&jacobian, |buffer:&Buffer| buffer.map(device).unwrap()[0])
 		);
 		use itertools::Itertools;
