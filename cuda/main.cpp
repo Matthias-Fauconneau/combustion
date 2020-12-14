@@ -54,20 +54,23 @@ int main(int argc, const char* argv[]) {
 
 	CUfunction function;
 	cuModuleGetFunction(&function, module,"dt");
-	auto pressure_r = 101325./8.31446261815324;
-	void* args[]{&len, &pressure_r, &temperature, &amounts, &d_temperature, &d_amounts};
-	auto start = high_resolution_clock::now();
-	cuLaunchKernel(function, /*workgroup_count*/len/workgroup_size, 1, 1, workgroup_size, 1, 1, 0, stream, args, nullptr);
-	cuStreamSynchronize(stream);
-	auto stop = high_resolution_clock::now();
-	auto ms = duration_cast<milliseconds>(stop - start).count();
-	cout << len/1000 <<"K in "<< ms <<"ms = "<< float(len)/float(ms)*1000/1e6 << "M/s"<<endl;
-	cuMemcpyDtoH_v2(host_d_temperature, d_temperature, len*sizeof(double));
-	cuMemcpyDtoH_v2(host_d_amounts, d_amounts, (S-1)*len*sizeof(double));
-	/*printf("T: %f n:", host_temperature[0]);
-	for(size_t k=0; k<S-1; k++) printf("%f ", host_amounts[k*len]);
-	printf("\n");*/
-	printf("%f ", host_d_temperature[0]);
-	for(size_t k=0; k<S-1; k++) printf("%f ", host_d_amounts[k*len]);
-	printf("\n");
+	for(size_t i=0; i<10; i++) {
+		auto pressure_r = 101325./8.31446261815324;
+		void* args[]{&len, &pressure_r, &temperature, &amounts, &d_temperature, &d_amounts};
+		cuStreamSynchronize(stream);
+		auto start = high_resolution_clock::now();
+		cuLaunchKernel(function, /*workgroup_count*/len/workgroup_size, 1, 1, workgroup_size, 1, 1, 0, stream, args, nullptr);
+		cuStreamSynchronize(stream);
+		auto stop = high_resolution_clock::now();
+		auto ms = duration_cast<milliseconds>(stop - start).count();
+		cout << len/1000 <<"K in "<< ms <<"ms = "<< float(len)/float(ms)*1000/1e6 << "M/s"<<endl;
+		cuMemcpyDtoH_v2(host_d_temperature, d_temperature, len*sizeof(double));
+		cuMemcpyDtoH_v2(host_d_amounts, d_amounts, (S-1)*len*sizeof(double));
+		/*printf("T: %f n:", host_temperature[0]);
+		for(size_t k=0; k<S-1; k++) printf("%f ", host_amounts[k*len]);
+		printf("\n");*/
+		printf("%f ", host_d_temperature[0]);
+		for(size_t k=0; k<S-1; k++) printf("%f ", host_d_amounts[k*len]);
+		printf("\n");
+	}
 }
