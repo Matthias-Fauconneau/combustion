@@ -20,7 +20,7 @@ int main(int argc, const char* argv[]) {
 	CUstream stream;
 	cuStreamCreateWithPriority(&stream, CU_STREAM_NON_BLOCKING, 0);
 	auto workgroup_size = std::stoi(argv[1]);
-	auto len = std::stoi(argv[2]); // workgroup_count * workground_size;
+	size_t len = std::stoi(argv[2]); // workgroup_count * workground_size;
 
 	CUdeviceptr temperature;
 	cuMemAlloc_v2(&temperature, len*sizeof(double));
