@@ -65,7 +65,7 @@ __device__ double dot_m(double a[S], double b[S]) { double sum = 0.; for(uint k=
 
 __device__ void reaction(double (&net_rates)[S-1], Reaction r, double logP0_RT, double G[S-1], double log_kf, double log_concentrations[S], double c) {
 	double Rf = exp(dot_m(r.reactants, log_concentrations) + log_kf);
-	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
+	double log_equilibrium_constant = -dot1(r.net, G) + r.sum_net*logP0_RT;
 	double Rr = exp(dot_m(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
 	double R = Rf - Rr;
 	double cR = c * R;
@@ -83,11 +83,11 @@ struct System {
 	Falloff falloff[FALLOFF];
 };
 
-extern "C" __global__ void dt(const size_t len, const double pressure_R, double* temperature, double* amounts) {
+extern "C" __global__ void dt(const size_t len, const double pressure_R, double* temperature, double* amounts, double* d_temperature, double* d_amounts) {
 const System system = System{
 #include "system.h"
 };
-for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * gridDim.x) {
+for (uint i = blockIdx.x * /*workgroup size*/blockDim.x + /*SIMD lane*/threadIdx.x; i < len; i += /*workgroup size*/blockDim.x * /*SIMD width*/gridDim.x) {
 	double T = temperature[i];
 	double C = pressure_R / T;
 	double logP0_RT = log(reference_pressure_R) - log(T);
@@ -128,7 +128,7 @@ for (uint i = blockIdx.x * blockDim.x + threadIdx.x; i < len; i += blockDim.x * 
 	for(uint k=0;k<S;k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
 	double rcp_sumCCp = 1. / dot(concentrations, Cp);
 	double dtT_T = - rcp_sumCCp * dot1(H_T, net_rates);
-	temperature[i] = dtT_T;
-	for(uint k=0;k<S-1;k++) amounts[k*len+i] = net_rates[k];
+	d_temperature[i] = dtT_T;
+	for(uint k=0;k<S-1;k++) d_amounts[k*len+i] = net_rates[k];
 }
 }

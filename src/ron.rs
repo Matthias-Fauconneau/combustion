@@ -1,6 +1,6 @@
 use serde::Deserialize;
 pub use {std::boxed::Box, linear_map::LinearMap as Map};
-#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, Ar }
+#[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, C, Ar }
 #[derive(Deserialize, Debug)] pub struct InitialState<'t> { pub temperature: f64, pub pressure: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64> }
 #[derive(Deserialize, Debug)] pub enum Phase<'t> {
 	IdealGas {

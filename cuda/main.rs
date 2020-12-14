@@ -23,11 +23,13 @@
 	let stride = 1;
 	let len = 1*stride;
 	let mut temperature = DeviceBuffer::from_slice(&vec![temperature; len])?;
-	let mut amounts = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n).take(len)).flatten()))?;
-	unsafe { launch!(module.dt<<<1, 1, 0, stream>>>(len, pressure_r, temperature.as_device_ptr(), amounts.as_device_ptr()))?; }
+	let mut amounts_buffer = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n).take(len)).flatten()))?;
+	let mut d_temperature = DeviceBuffer::from_slice(&vec![f64::NAN; len])?;
+	let mut d_amounts = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|_| std::iter::repeat(f64::NAN).take(len)).flatten()))?;
+	unsafe { launch!(module.dt<<<1, 1, 0, stream>>>(len, pressure_r, temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), d_temperature.as_device_ptr(), d_amounts.as_device_ptr()))?; }
 	stream.synchronize()?;
-	let gpu_f : [_;1+S-1] = *(box_collect(std::iter::once({let ref mut host = [0.; 1]; temperature.copy_to(host).unwrap(); host[0] }).chain({
-		let mut host = vec![0.; (S-1)*len]; amounts.copy_to(&mut host).unwrap(); (0..(S-1)).map(move |n| host[n*len])
+	let gpu_f : [_;1+S-1] = *(box_collect(std::iter::once({let ref mut host = [0.; 1]; d_temperature.copy_to(host).unwrap(); host[0] }).chain({
+		let mut host = vec![0.; (S-1)*len]; d_amounts.copy_to(&mut host).unwrap(); (0..(S-1)).map(move |n| host[n*len])
 	})).try_into().unwrap():Box<_>);
 	use itertools::Itertools;
 	if gpu_f != f.0 { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.iter().format(" ")); }

@@ -1,6 +1,5 @@
 #[macro_use] mod include_bytes_align_as;
 use {std::{default::default, mem::size_of, ffi::CStr}, ash::{*, vk::*, version::*, extensions::ext::DebugUtils}};
-pub use vk::BufferUsageFlags;
 
 pub struct Device {
 	_entry: Entry,
@@ -75,11 +74,11 @@ impl Buffer {
 		MapMut{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts_mut(device.map_memory(self.memory, 0, (self.len * size_of::<T>())as u64, default())? as *mut T, self.len)} }
 	}
 
-	#[fehler::throws(Result)] pub fn new<I: ExactSizeIterator>(device: &Device, usage: BufferUsageFlags, iter: I) -> Self {
+	#[fehler::throws(Result)] pub fn new<I: ExactSizeIterator>(device: &Device, iter: I) -> Self {
 		let len = iter.len();
 		let mut buffer = unsafe {
 			let buffer = device.create_buffer(&BufferCreateInfo{size: (len * size_of::<I::Item>()) as u64,
-				usage: usage|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
+				usage: BufferUsageFlags::STORAGE_BUFFER|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index: 0, ..default()}, None)?;
@@ -92,10 +91,11 @@ impl Buffer {
 }
 
 pub struct Pipeline {
+	_module: ShaderModule,
 	_descriptor_pool: DescriptorPool,
-	pub descriptor_set: DescriptorSet,
 	layout: PipelineLayout,
 	pipeline: ash::vk::Pipeline,
+	pub descriptor_set: DescriptorSet,
 }
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
@@ -106,17 +106,17 @@ impl Device {
 		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{device, ..} = self;
 		unsafe {
-			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
-			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
-			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			let spv = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/main.spv"));
 			let code = {let (h, code, t) = spv.align_to(); assert!(h.is_empty() && t.is_empty(), "{} {} {}", h.len(), code.len(), t.len()); code};
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
+			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts)
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: (constants.len() * std::mem::size_of::<T>()) as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline = device.create_compute_pipelines(default(), &pipeline, None).map_err(|(_,e)| e)?[0];
-			Pipeline{_descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
+			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
+			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
 		}
 	}
 	#[fehler::throws(Result)] pub fn bind(&self, descriptor_set: DescriptorSet, buffers: &[&[&Buffer]]) {

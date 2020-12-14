@@ -120,6 +120,8 @@ double pressure_R;
 } constants;
 layout(set = 0, binding = 0) buffer Temperature { double data[]; } temperature;
 layout(set = 0, binding = 1) buffer Amount { double data[]; } amounts[S-1];
+layout(set = 0, binding = 2) buffer d_Temperature { double data[]; } d_temperature;
+layout(set = 0, binding = 3) buffer d_Amount { double data[]; } d_amounts[S-1];
 //layout(set = 0, binding = 2) buffer Jacobian { writeonly double data[]; } jacobian[(1+S-1)*(1+S-1)];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
@@ -175,9 +177,8 @@ void main() {
 	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
 	double rcp_sumCCp = 1. / dot(concentrations, Cp);
 	double dtT_T = - rcp_sumCCp * dot(H_T, net_rates);
-	temperature.data[i] = dtT_T;
-	double dtn[S-1];
-	for(uint k=0;k<amounts.length();k++) amounts[k].data[i] = net_rates[k];
+	d_temperature.data[i] = dtT_T;
+	for(uint k=0;k<d_amounts.length();k++) d_amounts[k].data[i] = net_rates[k];
 
 	/*double[1+S-1][1+S-1] J;
 	double dtT = - rcp_sumCCp * dot(H, net_rates);
