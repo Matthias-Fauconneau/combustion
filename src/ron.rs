@@ -36,6 +36,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 #[derive(Deserialize, Debug)] pub enum Model<'t> {
 	Elementary,
 	ThreeBody { #[serde(borrow)] efficiencies: Map<&'t str, f64> },
+	PressureModification { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant },
 	Falloff { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant, troe: Troe },
 }
 

@@ -353,7 +353,7 @@ reactions: [
   (equation: ({"O":1,"CH3":1},{"H":1,"CH2O":1}), rate_constant: (A: 5.06e7, beta: 0., Ea: 0), model: Elementary),
   (equation: ({"O":1,"CH4":1},{"OH":1,"CH3":1}), rate_constant: (A: 1.02e9, beta: 1.5, Ea: 8600.), model: Elementary),
   (equation: ({"O":1,"CO":1},{"CO2":1}), rate_constant: (A: 1.8e4, beta: 0., Ea: 2385.),
-   model: Falloff(k0: (A: 6.02e2, beta: 0., Ea: 3000.), troe: (A: 0, T3: 0., T1: 0., T2: None), efficiencies: {"H2": 2., "O2": 6., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":3.5, "C2H6": 3., "Ar": 0.5})),
+   model: PressureModification(k0: (A: 6.02e2, beta: 0., Ea: 3000.), efficiencies: {"H2": 2., "O2": 6., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":3.5, "C2H6": 3., "Ar": 0.5})),
   (equation: ({"O":1,"HCO":1},{"OH":1,"CO":1}), rate_constant: (A: 3.0e7, beta: 0., Ea: 0.), model: Elementary),
   (equation: ({"O":1,"HCO":1},{"H":1,"CO2":1}), rate_constant: (A: 3e7, beta: 0., Ea: 0.), model: Elementary),
   (equation: ({"O":1,"CH2O":1},{"OH":1,"HCO":1}), rate_constant: (A: 3.9e7, beta: 0., Ea: 3540.), model: Elementary),
@@ -512,114 +512,50 @@ reactions: [
   (equation: ({"HCCO":1,"O2":1},{"OH":1,"CO":2}), rate_constant: (A: 3e6, beta: 0., Ea: 854.), model: Elementary),
   (equation: ({"HCCO":2},{"CO":2,"C2H2":1}), rate_constant: (A: 1e7, beta: 0., Ea: 0.), model: Elementary),
   (equation: ({"O":1,"CH3":1},{"H":1,"H2":1,"CO":1}), rate_constant: (A: 3.37e7, beta: 0., Ea: 0.), model: Elementary),
-- equation: O + C2H4 <=> H + CH2CHO  # Reaction 285
-  rate-constant: {A: 6.7e+06, b: 1.83, Ea: 220.0}
-- equation: O + C2H5 <=> H + CH3CHO  # Reaction 286
-  rate-constant: {A: 1.096e+14, b: 0.0, Ea: 0.0}
-- equation: OH + HO2 <=> O2 + H2O  # Reaction 287
-  duplicate: true
-  rate-constant: {A: 5.0e+15, b: 0.0, Ea: 1.733e+04}
-- equation: OH + CH3 => H2 + CH2O  # Reaction 288
-  rate-constant: {A: 8.0e+09, b: 0.5, Ea: -1755.0}
-- equation: CH + H2 (+M) <=> CH3 (+M)  # Reaction 289
-  type: falloff
-  low-P-rate-constant: {A: 4.82e+25, b: -2.8, Ea: 590.0}
-  high-P-rate-constant: {A: 1.97e+12, b: 0.43, Ea: -370.0}
-  Troe: {A: 0.578, T3: 122.0, T1: 2535.0, T2: 9365.0}
-  efficiencies: {H2: 2.0, H2O: 6.0, CH4: 2.0, CO: 1.5, CO2: 2.0, C2H6: 3.0,
-    AR: 0.7}
-- equation: CH2 + O2 => 2 H + CO2  # Reaction 290
-  rate-constant: {A: 5.8e+12, b: 0.0, Ea: 1500.0}
-- equation: CH2 + O2 <=> O + CH2O  # Reaction 291
-  rate-constant: {A: 2.4e+12, b: 0.0, Ea: 1500.0}
-- equation: CH2 + CH2 => 2 H + C2H2  # Reaction 292
-  rate-constant: {A: 2.0e+14, b: 0.0, Ea: 1.0989e+04}
-- equation: CH2(S) + H2O => H2 + CH2O  # Reaction 293
-  rate-constant: {A: 6.82e+10, b: 0.25, Ea: -935.0}
-- equation: C2H3 + O2 <=> O + CH2CHO  # Reaction 294
-  rate-constant: {A: 3.03e+11, b: 0.29, Ea: 11.0}
-- equation: C2H3 + O2 <=> HO2 + C2H2  # Reaction 295
-  rate-constant: {A: 1.337e+06, b: 1.61, Ea: -384.0}
-- equation: O + CH3CHO <=> OH + CH2CHO  # Reaction 296
-  rate-constant: {A: 2.92e+12, b: 0.0, Ea: 1808.0}
-- equation: O + CH3CHO => OH + CH3 + CO  # Reaction 297
-  rate-constant: {A: 2.92e+12, b: 0.0, Ea: 1808.0}
-- equation: O2 + CH3CHO => HO2 + CH3 + CO  # Reaction 298
-  rate-constant: {A: 3.01e+13, b: 0.0, Ea: 3.915e+04}
-- equation: H + CH3CHO <=> CH2CHO + H2  # Reaction 299
-  rate-constant: {A: 2.05e+09, b: 1.16, Ea: 2405.0}
-- equation: H + CH3CHO => CH3 + H2 + CO  # Reaction 300
-  rate-constant: {A: 2.05e+09, b: 1.16, Ea: 2405.0}
-- equation: OH + CH3CHO => CH3 + H2O + CO  # Reaction 301
-  rate-constant: {A: 2.343e+10, b: 0.73, Ea: -1113.0}
-- equation: HO2 + CH3CHO => CH3 + H2O2 + CO  # Reaction 302
-  rate-constant: {A: 3.01e+12, b: 0.0, Ea: 1.1923e+04}
-- equation: CH3 + CH3CHO => CH3 + CH4 + CO  # Reaction 303
-  rate-constant: {A: 2.72e+06, b: 1.77, Ea: 5920.0}
-- equation: H + CH2CO (+M) <=> CH2CHO (+M)  # Reaction 304
-  type: falloff
-  low-P-rate-constant: {A: 1.012e+42, b: -7.63, Ea: 3854.0}
-  high-P-rate-constant: {A: 4.865e+11, b: 0.422, Ea: -1755.0}
-  Troe: {A: 0.465, T3: 201.0, T1: 1773.0, T2: 5333.0}
-  efficiencies: {H2: 2.0, H2O: 6.0, CH4: 2.0, CO: 1.5, CO2: 2.0, C2H6: 3.0,
-    AR: 0.7}
-- equation: O + CH2CHO => H + CH2 + CO2  # Reaction 305
-  rate-constant: {A: 1.5e+14, b: 0.0, Ea: 0.0}
-- equation: O2 + CH2CHO => OH + CO + CH2O  # Reaction 306
-  rate-constant: {A: 1.81e+10, b: 0.0, Ea: 0.0}
-- equation: O2 + CH2CHO => OH + 2 HCO  # Reaction 307
-  rate-constant: {A: 2.35e+10, b: 0.0, Ea: 0.0}
-- equation: H + CH2CHO <=> CH3 + HCO  # Reaction 308
-  rate-constant: {A: 2.2e+13, b: 0.0, Ea: 0.0}
-- equation: H + CH2CHO <=> CH2CO + H2  # Reaction 309
-  rate-constant: {A: 1.1e+13, b: 0.0, Ea: 0.0}
-- equation: OH + CH2CHO <=> H2O + CH2CO  # Reaction 310
-  rate-constant: {A: 1.2e+13, b: 0.0, Ea: 0.0}
-- equation: OH + CH2CHO <=> HCO + CH2OH  # Reaction 311
-  rate-constant: {A: 3.01e+13, b: 0.0, Ea: 0.0}
-- equation: CH3 + C2H5 (+M) <=> C3H8 (+M)  # Reaction 312
-  type: falloff
-  low-P-rate-constant: {A: 2.71e+74, b: -16.82, Ea: 1.3065e+04}
-  high-P-rate-constant: {A: 9.43e+12, b: 0.0, Ea: 0.0}
-  Troe: {A: 0.1527, T3: 291.0, T1: 2742.0, T2: 7748.0}
-  efficiencies: {H2: 2.0, H2O: 6.0, CH4: 2.0, CO: 1.5, CO2: 2.0, C2H6: 3.0,
-    AR: 0.7}
-- equation: O + C3H8 <=> OH + C3H7  # Reaction 313
-  rate-constant: {A: 1.93e+05, b: 2.68, Ea: 3716.0}
-- equation: H + C3H8 <=> C3H7 + H2  # Reaction 314
-  rate-constant: {A: 1.32e+06, b: 2.54, Ea: 6756.0}
-- equation: OH + C3H8 <=> C3H7 + H2O  # Reaction 315
-  rate-constant: {A: 3.16e+07, b: 1.8, Ea: 934.0}
-- equation: C3H7 + H2O2 <=> HO2 + C3H8  # Reaction 316
-  rate-constant: {A: 378.0, b: 2.72, Ea: 1500.0}
-- equation: CH3 + C3H8 <=> C3H7 + CH4  # Reaction 317
-  rate-constant: {A: 0.903, b: 3.65, Ea: 7154.0}
-- equation: CH3 + C2H4 (+M) <=> C3H7 (+M)  # Reaction 318
-  type: falloff
-  low-P-rate-constant: {A: 3.0e+63, b: -14.6, Ea: 1.817e+04}
-  high-P-rate-constant: {A: 2.55e+06, b: 1.6, Ea: 5700.0}
-  Troe: {A: 0.1894, T3: 277.0, T1: 8748.0, T2: 7891.0}
-  efficiencies: {H2: 2.0, H2O: 6.0, CH4: 2.0, CO: 1.5, CO2: 2.0, C2H6: 3.0,
-    AR: 0.7}
-- equation: O + C3H7 <=> C2H5 + CH2O  # Reaction 319
-  rate-constant: {A: 9.64e+13, b: 0.0, Ea: 0.0}
-- equation: H + C3H7 (+M) <=> C3H8 (+M)  # Reaction 320
-  type: falloff
-  low-P-rate-constant: {A: 4.42e+61, b: -13.545, Ea: 1.1357e+04}
-  high-P-rate-constant: {A: 3.613e+13, b: 0.0, Ea: 0.0}
-  Troe: {A: 0.315, T3: 369.0, T1: 3285.0, T2: 6667.0}
-  efficiencies: {H2: 2.0, H2O: 6.0, CH4: 2.0, CO: 1.5, CO2: 2.0, C2H6: 3.0,
-    AR: 0.7}
-- equation: H + C3H7 <=> CH3 + C2H5  # Reaction 321
-  rate-constant: {A: 4.06e+06, b: 2.19, Ea: 890.0}
-- equation: OH + C3H7 <=> C2H5 + CH2OH  # Reaction 322
-  rate-constant: {A: 2.41e+13, b: 0.0, Ea: 0.0}
-- equation: HO2 + C3H7 <=> O2 + C3H8  # Reaction 323
-  rate-constant: {A: 2.55e+10, b: 0.255, Ea: -943.0}
-- equation: HO2 + C3H7 => OH + C2H5 + CH2O  # Reaction 324
-  rate-constant: {A: 2.41e+13, b: 0.0, Ea: 0.0}
-- equation: CH3 + C3H7 <=> 2 C2H5  # Reaction 325
-  rate-constant: {A: 1.927e+13, b: -0.32, Ea: 0.0}
-
+  (equation: ({"O":1,"C2H4":1},{"H":1,"CH2CHO":1}), rate_constant: (A: 6.7, beta: 1.83, Ea: 220.), model: Elementary),
+  (equation: ({"O":1,"C2H5":1},{"H":1,"CH3CHO":1}), rate_constant: (A: 1.096e8, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"OH":1,"CH3":1},{"H2":1,"CH2O":1}), rate_constant: (A: 8e3, beta: 0.5, Ea: -1755.), model: Elementary),
+  (equation: ({"CH":1,"H2":1},{"CH3":1}), rate_constant: (A: 1.97e6, beta: 0.43, Ea: -370.),
+ 	 model: Falloff(k0: (A: 4.82e13, beta: -2.8, Ea: 590.), troe: (A: 0.578, T3: 122.0, T1: 2535.0, T2: 9365.0), efficiencies: {"H2": 2., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":2., "C2H6": 3., "Ar": 0.7})),
+  (equation: ({"CH2":1,"O2":1},{"H":2,"CO2":1}), rate_constant: (A: 5.8e6, beta: 0., Ea: 1500.), model: Elementary),
+  (equation: ({"CH2":1,"O2":1},{"O":1,"CH2O":1}), rate_constant: (A: 2.4e6, beta: 0., Ea: 1500.), model: Elementary),
+  (equation: ({"CH2":2},{"H":2,"C2H2":1}), rate_constant: (A: 2.e8, beta: 0., Ea: 10989.), model: Elementary),
+  (equation: ({"CH2(S)":1,"H2O":1},{"H2":1,"CH2O":1}), rate_constant: (A: 6.82e4, beta: 0.25, Ea: -935.), model: Elementary),
+  (equation: ({"C2H3":1,"O2":1},{"O":1,"CH2CHO":1}), rate_constant: (A: 3.03e5, beta: 0.29, Ea: 11.), model: Elementary),
+  (equation: ({"C2H3":1,"O2":1},{"HO2":2,"C2H2":1}), rate_constant: (A: 1.337, beta: 1.61, Ea: -384.), model: Elementary),
+  (equation: ({"O":1,"CH3CHO":1},{"OH":1,"CH2CHO":1}), rate_constant: (A: 2.92e6, beta: 0., Ea: 1808.), model: Elementary),
+  (equation: ({"O":1,"CH3CHO":1},{"OH":1,"CH3":1,"CO":1}), rate_constant: (A: 2.92e6, beta: 0., Ea: 1808.), model: Elementary),
+  (equation: ({"O2":1,"CH3CHO":1},{"HO2":1,"CH3":1,"CO":1}), rate_constant: (A: 3.01e7, beta: 0., Ea: 39150.), model: Elementary),
+  (equation: ({"H":1,"CH3CHO":1},{"CH2CHO":1,"H2":1}), rate_constant: (A: 2.05e3, beta: 1.16, Ea: 2405.), model: Elementary),
+  (equation: ({"H":1,"CH3CHO":1},{"CH3":1,"H2":1,"CO":1}), rate_constant: (A: 2.05e3, beta: 1.16, Ea: 2405.), model: Elementary),
+  (equation: ({"OH":1,"CH3CHO":1},{"CH3":1,"H2O":1,"CO":1}), rate_constant: (A: 2.343e4, beta: 0.73, Ea: -1113.), model: Elementary),
+  (equation: ({"HO2":1,"CH3CHO":1},{"CH3":1,"H2O2":1,"CO":1}), rate_constant: (A: 3.01e6, beta: 0.0, Ea: 11923.), model: Elementary),
+  (equation: ({"CH3":1,"CH3CHO":1},{"CH3":1,"CH4":1,"CO":1}), rate_constant: (A: 2.72, beta: 1.77, Ea: 5920.), model: Elementary),
+  (equation: ({"H":1,"CH2CO":1},{"CH2CHO":1}), rate_constant: (A: 4.865e5, beta: 0.422, Ea: -1755.), model: Elementary),
+ 	 model: Falloff(k0: (A: 1.012e30, beta: -7.63, Ea: 3854.), troe: (A: 0.465, T3: 201.0, T1: 1773.0, T2: 5333.0), efficiencies: {"H2": 2., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":2., "C2H6": 3., "Ar": 0.7})),
+  (equation: ({"O":1,"CH2CO":1},{"H":1,"CH2":1,"CO2":1}), rate_constant: (A: 1.5e8, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"O2":1,"CH2CO":1},{"OH":1,"CO":1,"CH2O":1}), rate_constant: (A: 1.81e4, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"O2":1,"CH2CO":1},{"OH":1,"HCO":2}), rate_constant: (A: 2.35e4, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"H":1,"CH2CHO":1},{"CH3":1,"HCO":1}), rate_constant: (A: 2.2e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"H":1,"CH2CHO":1},{"CH2CO":1,"H2":1}), rate_constant: (A: 1.1e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"OH":1,"CH2CHO":1},{"H2O":1,"CH2CO":1}), rate_constant: (A: 1.2e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"OH":1,"CH2CHO":1},{"HCO":1,"CH2OH":1}), rate_constant: (A: 3.01e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"CH3":1,"C2H5":1},{"C3H8":1}), rate_constant: (A: 9.43e6, beta: 0., Ea: 0.),
+   model: Falloff(k0: (A: 2.71e62, beta: -16.82, Ea: 13065), troe: (A: 0.1527, T3: 291.0, T1: 2742.0, T2: 7748.0), efficiencies: {"H2": 2., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":2., "C2H6": 3., "Ar": 0.7})),
+  (equation: ({"O":1,"C3H8":1},{"OH":1,"C3H7":1}), rate_constant: (A: 1.93e-1, beta: 2.68, Ea: 3716.), model: Elementary),
+  (equation: ({"H":1,"C3H8":1},{"H2":1,"C3H7":1}), rate_constant: (A: 1.32, beta: 2.54, Ea: 6756.), model: Elementary),
+  (equation: ({"OH":1,"C3H8":1},{"H2O":1,"C3H7":1}), rate_constant: (A: 3.16e1, beta: 1.8, Ea: 934.), model: Elementary),
+  (equation: ({"H2O2":1,"C3H7":1},{"HO2":1,"C3H8":1}), rate_constant: (A: 3.78e-4, beta: 2.72, Ea: 1500.), model: Elementary),
+  (equation: ({"CH3":1,"C3H8":1},{"CH4":1,"C3H7":1}), rate_constant: (A: 0.904e-6, beta: 3.65, Ea: 7154.), model: Elementary),
+  (equation: ({"CH3":1,"C2H4":1},{"C3H7":1}), rate_constant: (A: 2.55e0, beta: 1.6, Ea: 5700.),
+   model: Falloff(k0: (A: 3e41, beta: -14.6, Ea: 18170), troe: (A: 0.1894, T3: 277.0, T1: 8748.0, T2: 7891.0), efficiencies: {"H2": 2., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":2., "C2H6": 3., "Ar": 0.7})),
+  (equation: ({"O":1,"C3H7":1},{"CH2O":1,"C2H5":1}), rate_constant: (A: 9.64e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"H":1,"C3H7":1},{"C3H8":1}), rate_constant: (A: 3.613e7, beta: 0., Ea: 0.),
+   model: Falloff(k0: (A: 4.42e49, beta: -13.545, Ea: 11357), troe: (A: 0.315, T3: 369.0, T1: 3285.0, T2: 6667.0), efficiencies: {"H2": 2., "H2O": 6., "CH4": 2., "CO": 1.5, "CO2":2., "C2H6": 3., "Ar": 0.7})),
+  (equation: ({"H":1,"C3H7":1},{"CH3":1,"C2H5":1}), rate_constant: (A: 4.06e0, beta: 2.19, Ea: 890.), model: Elementary),
+  (equation: ({"HO2":1,"C3H7":1},{"O2":1,"C3H8":1}), rate_constant: (A: 2.55e4, beta: 0.255, Ea: -943.), model: Elementary),
+  (equation: ({"OH":1,"C3H7":1},{"CH2OH":1,"C2H5":1}), rate_constant: (A: 2.41e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"HO2":1,"C3H7":1},{"OH":1,"C2H5":1,"CH2O":1}), rate_constant: (A: 2.41e7, beta: 0., Ea: 0.), model: Elementary),
+  (equation: ({"CH3":1,"C3H7":1},{"C2H5":2}), rate_constant: (A: 1.927e7, beta: -0.32, Ea: 0.), model: Elementary),
 ]
 )

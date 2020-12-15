@@ -34,6 +34,7 @@ pub fn log_arrhenius(&RateConstant{log_preexponential_factor, temperature_expone
 #[derive(Debug, Clone, Copy)] pub enum Model<const S: usize> {
 	Elementary,
 	ThreeBody { efficiencies: [f64; S] },
+	PressureModification { efficiencies: [f64; S], k0: RateConstant },
 	Falloff { efficiencies: [f64; S], k0: RateConstant, troe: Troe },
 }
 
@@ -42,6 +43,10 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 	match self {
 		Self::Elementary => 1.,
 		Self::ThreeBody{efficiencies} => efficiencies.dot(concentrations),
+		Self::PressureModification{efficiencies, k0} => {
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
+			Pr / (1.+Pr)
+		}
 		Self::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
 			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
