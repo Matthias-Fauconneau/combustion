@@ -45,6 +45,12 @@ struct ThreeBody {
 	double[S] efficiencies;
 };
 
+struct PressureModification {
+	Reaction reaction;
+	double[S] efficiencies;
+	RateConstant k0;
+};
+
 struct Falloff {
 	Reaction reaction;
 	double[S] efficiencies;
@@ -58,9 +64,14 @@ struct Falloff {
 double log10(double x) { return log(x)/log(10.); }
 double exp10(double x) { return exp(log(10.)*x); }
 
-double falloff_efficiency(Falloff f, double T, double[S] concentrations, double log_k_inf) {
-	double Pr = dot(f.efficiencies, concentrations) * exp(log_arrhenius(f.k0, T) - log_k_inf);
-	double Fcent = (1.-f.A)*exp(-T/f.T3)+f.A*exp(-T/f.T1)+exp(-f.T2/T);
+double pressure_modification_efficiency(PressureModification r, double T, double[S] concentrations, double log_k_inf) {
+	double Pr = dot(r.efficiencies, concentrations) * exp(log_arrhenius(r.k0, T) - log_k_inf);
+	return Pr / (1.+Pr);
+}
+
+double falloff_efficiency(Falloff r, double T, double[S] concentrations, double log_k_inf) {
+	double Pr = dot(r.efficiencies, concentrations) * exp(log_arrhenius(r.k0, T) - log_k_inf);
+	double Fcent = (1.-r.A)*exp(-T/r.T3)+r.A*exp(-T/r.T1)+exp(-r.T2/T);
 	double log10Fcent = log10(Fcent);
 	double C = -0.4-0.67*log10Fcent;
 	double N = 0.75-1.27*log10Fcent;
@@ -112,6 +123,7 @@ struct System {
 	double[S][2][7] thermodynamics;
 	Elementary[ELEMENTARY] elementary;
 	ThreeBody[THREE_BODY] three_body;
+	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
 	Falloff[FALLOFF] falloff;
 };
 const System system = System(SYSTEM);
@@ -168,6 +180,11 @@ void main() {
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, dot(r.efficiencies, concentrations));
 	}
+	for(uint j=0;j<system.pressure_modification.length();j++) {
+		PressureModification r = system.pressure_modification[j];
+		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, pressure_modification_efficiency(r, T, concentrations, log_kf));
+	}
 	for(uint j=0;j<system.falloff.length();j++) {
 		Falloff r = system.falloff[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
@@ -206,4 +223,4 @@ void main() {
 	for(uint k=0;k<1+S-1;k++) for(uint l=0;l<1+S-1;l++) jacobian[k*(1+S-1)+l].data[i] = J[k][l];*/
 }
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

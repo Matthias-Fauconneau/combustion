@@ -4,7 +4,7 @@ mod vulkan;
 #[fehler::throws(anyhow::Error)] fn main() {
 	use {std::convert::TryInto, iter::{array_from_iter as from_iter, vec::{eval/*, generate*/}, box_collect}};
 	let system = std::fs::read("CH4+O2.ron")?;
-	const S : usize = 21;
+	const S : usize = 35;
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, pressure_r, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
 	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
@@ -13,8 +13,8 @@ mod vulkan;
 
 	use vulkan::{Device, Buffer};
 	let ref device = Device::new()?;
-	let stride = 32;
-	let len = 100000/stride*stride;
+	let stride = 1;
+	let len = 1/stride*stride;
 	let temperature = Buffer::new(device, (0..len).map(|_| temperature))?;
 	let amounts_buffers = eval(amounts, |n| Buffer::new(device, (0..len).map(|_| n)).unwrap());
 	let ref_amounts = box_collect(amounts_buffers.iter().map(|n| n));
@@ -28,7 +28,7 @@ mod vulkan;
 	device.bind(pipeline.descriptor_set, buffers)?;
 	let command_buffer  = device.command_buffer(pipeline, constants, stride, len)?;
 	//let _warmup = device.submit_and_wait(command_buffer)?;
-	for _ in 0..10 {
+	for _ in 0..1 {
 		let start = std::time::Instant::now();
 		let time = device.submit_and_wait(command_buffer)?;
 		let end = std::time::Instant::now();
