@@ -196,7 +196,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		let ron::Phase::IdealGas{species, state, ..} = phases.into_vec().into_iter().next().unwrap();
 		use std::convert::TryInto;
 		let species : [_; S] = species.as_ref().try_into().unwrap_or_else(|_| panic!("Compiled for {} species, got {}", S, species.len()));
-		let molar_masses = eval(species, |s| species_data[s].composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
+		let molar_masses = eval(species, |s| species_data.get(s).unwrap_or_else(|| panic!("{}", s)).composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
@@ -204,6 +204,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		}});
 		#[allow(unused_variables)]
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
+			for side in equation { for (specie, _) in side { assert!(species.contains(specie), "{}", specie) } }
 			let [reactants, products] = eval(equation, |e| eval(species, |s| *e.get(s).unwrap_or(&0) as f64));
 			let net = iter::vec::Sub::sub(products.prefix(), reactants.prefix());
 			let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];

@@ -3,9 +3,8 @@ mod vulkan;
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	use {std::convert::TryInto, iter::{array_from_iter as from_iter, vec::{eval/*, generate*/}, box_collect}};
-	let system = std::fs::read("H2+O2.ron")?;
-	//let system = std::fs::read("CH4+O2.ron")?;
-	const S : usize = 9;
+	let system = std::fs::read("CH4+O2.ron")?;
+	const S : usize = 21;
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, pressure_r, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
 	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};

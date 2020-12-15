@@ -8,7 +8,7 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use iter::{array_from_iter as from_iter};
 	let system = std::fs::read("CH4+O2.ron")?;
-	const S : usize = 21; // Number of species
+	const S : usize = 35; // Number of species
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, state: combustion::State{temperature, amounts}, pressure_r, ..} = Simulation::new(&system)?;
 	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
