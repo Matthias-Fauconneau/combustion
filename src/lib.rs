@@ -187,7 +187,7 @@ pub struct Simulation<'t, const S: usize> where [(); S-1]: {
 
 use std::lazy::SyncLazy;
 pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
-	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
+	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
 impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
@@ -195,7 +195,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		let ron::System{species: species_data, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
 		let ron::Phase::IdealGas{species, state, ..} = phases.into_vec().into_iter().next().unwrap();
 		use std::convert::TryInto;
-		let species : [_; S] = species.as_ref().try_into().unwrap();
+		let species : [_; S] = species.as_ref().try_into().unwrap_or_else(|_| panic!("Compiled for {} species, got {}", S, species.len()));
 		let molar_masses = eval(species, |s| species_data[s].composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
@@ -215,6 +215,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				model: {use self::ron::Model::*; match model {
 					Elementary => Model::Elementary,
 					ThreeBody{efficiencies} => Model::ThreeBody{efficiencies: from(efficiencies)},
+					PressureModification{efficiencies, k0} => Model::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
 					Falloff{efficiencies, k0, troe} => Model::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe},
 				}},
 			}

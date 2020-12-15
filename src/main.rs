@@ -1,4 +1,3 @@
-//#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked,
 #![feature(type_ascription, array_map, non_ascii_idents)]#![allow(mixed_script_confusables,non_snake_case)]
 /*extern "C" {
 fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f64, pressure: &mut f64, mole_proportions: *const std::os::raw::c_char, time_step: f64,
@@ -8,12 +7,12 @@ fn cantera(relative_tolerance: f64, absolute_tolerance: f64, temperature: &mut f
 
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use iter::{array_from_iter as from_iter};
-	let system = std::fs::read("H2+O2.ron")?;
-	const S : usize = 9; // Number of species
+	let system = std::fs::read("CH4+O2.ron")?;
+	const S : usize = 21; // Number of species
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, state: combustion::State{temperature, amounts}, pressure_r, ..} = Simulation::new(&system)?;
 	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
-	let len = 1792*65535/8;
+	let len = 1;
 	let start = std::time::Instant::now();
 	use rayon::prelude::*;
 	(0..len).into_par_iter().for_each(|_|{ system.dt_J(pressure_r, &state); });
