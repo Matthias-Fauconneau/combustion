@@ -16,13 +16,13 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 
 #[derive(Deserialize, Debug)] enum Transport {
 	Atom { well_depth: f64, diameter: f64},
-	Linear { well_depth: f64, diameter: f64, polarizability: f64, rotational_relaxation: f64},
-	Nonlinear { well_depth: f64, diameter: f64, rotational_relaxation: f64},
+	Linear { well_depth: f64, diameter: f64, #[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64},
+	Nonlinear { well_depth: f64, diameter: f64, #[serde(default)] rotational_relaxation: f64},
 }
 #[derive(Deserialize, Debug)] pub struct Specie {
 	pub composition: Map<Element, u8>,
 	pub thermodynamic: NASA7,
-	//transport: Transport
+	transport: Transport
 }
 
 #[derive(Deserialize, Debug)] pub struct RateConstant {

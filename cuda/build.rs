@@ -45,7 +45,7 @@ impl<const S: usize> std::fmt::Display for System<S> where [(); S-1]: {
 		falloff: reactions.iter().filter(|r| matches!(r.model, Model::Falloff{..})).copied().collect()
 	};
 	let OUT_DIR = std::env::var("OUT_DIR").unwrap();
-	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("system.h"), system.to_string())?;
+	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("model.h"), system.to_string())?;
 	std::process::Command::new("/opt/cuda/bin/nvcc").args(&["-I", &OUT_DIR,
 		&format!("-DSPECIES={}",system.thermodynamics.len()), &format!("-DELEMENTARY={}", system.elementary.len()), &format!("-DTHREE_BODY={}", system.three_body.len()), &format!("-DFALLOFF={}", system.falloff.len()),
 		"--ptx","main.cu","-o",&format!("{}/main.ptx",OUT_DIR)

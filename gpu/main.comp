@@ -53,7 +53,7 @@ struct PressureModification {
 
 struct Falloff {
 	Reaction reaction;
-	double[S] efficiencies;
+	uint efficiency;
 	RateConstant k0;
 	double A;
 	double T3;
@@ -64,13 +64,13 @@ struct Falloff {
 double log10(double x) { return log(x)/log(10.); }
 double exp10(double x) { return exp(log(10.)*x); }
 
-double pressure_modification_efficiency(PressureModification r, double T, double[S] concentrations, double log_k_inf) {
+double pressure_modification(PressureModification r, double T, double[S] concentrations, double log_k_inf) {
 	double Pr = dot(r.efficiencies, concentrations) * exp(log_arrhenius(r.k0, T) - log_k_inf);
 	return Pr / (1.+Pr);
 }
 
-double falloff_efficiency(Falloff r, double T, double[S] concentrations, double log_k_inf) {
-	double Pr = dot(r.efficiencies, concentrations) * exp(log_arrhenius(r.k0, T) - log_k_inf);
+double falloff(Falloff r, double T, double efficiency, double log_k_inf) {
+	double Pr = efficiency * exp(log_arrhenius(r.k0, T) - log_k_inf);
 	double Fcent = (1.-r.A)*exp(-T/r.T3)+r.A*exp(-T/r.T1)+exp(-r.T2/T);
 	double log10Fcent = log10(Fcent);
 	double C = -0.4-0.67*log10Fcent;
@@ -124,6 +124,7 @@ struct System {
 	Elementary[ELEMENTARY] elementary;
 	ThreeBody[THREE_BODY] three_body;
 	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
+	double[S][EFFICIENCIES] efficiencies;
 	Falloff[FALLOFF] falloff;
 };
 const System system = System(SYSTEM);
@@ -183,12 +184,16 @@ void main() {
 	for(uint j=0;j<system.pressure_modification.length();j++) {
 		PressureModification r = system.pressure_modification[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, pressure_modification_efficiency(r, T, concentrations, log_kf));
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, pressure_modification(r, T, concentrations, log_kf));
+	}
+	double[EFFICIENCIES] efficiencies;
+	for(uint j=0;j<system.efficiencies.length();j++) {
+		efficiencies[j] = dot(system.efficiencies[j], concentrations);
 	}
 	for(uint j=0;j<system.falloff.length();j++) {
 		Falloff r = system.falloff[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, falloff_efficiency(r, T, concentrations, log_kf));
+		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, falloff(r, T, efficiencies[r.efficiency], log_kf));
 	}
 	double Cp[S];
 	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
