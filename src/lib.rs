@@ -79,6 +79,10 @@ pub struct System<const S: usize> where [(); S-1]: {
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
 	diameters: [f64; S],
+	well_depths: [f64; S],
+}
+impl<const S: usize> System<S> where [(); S-1]: {
+	const volume : f64 = 1.;
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
@@ -96,8 +100,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 		let ref H_T = eval(H.prefix(), |H| H/T);
 		let ref G = eval!(species.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
 		//let ref dT_G = eval!(species.prefix(); |s| s.dT_Gibbs_free_energy(T));
-		const volume : f64 = 1.;
-		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / volume); // Skips most abundant specie (last index) (will be deduced from conservation)
+		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / Self::volume); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - concentrations.sum():f64;
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| f64::ln(x));
@@ -184,24 +187,24 @@ pub fn transport(&self, _pressure: f64, T: f64, amounts: [f64; S]) -> f64 {//Tra
 	// L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys. 35:1676, 1961.
 	//fn Ω11(T: f64) -> f64 { 1.0548*f64::powf(T, -0.15504) + f64::powf(T+0.55909, -2.1705) }
 	fn Ω22(T: f64) -> f64 { 1.0413*f64::powf(T, -0.1193) + f64::powf(T+0.43628, -1.6041) }
-	let Self{molar_masses, diameters, /*mass: _,*/ ..} = self;
+	let Self{molar_masses, diameters, well_depths, /*mass: _,*/ ..} = self;
 	use num::{sq, sqrt};
 	let σ = |diameter| PI * sq(diameter);
 	let W = molar_masses;
 	//let w = |i| W[i]/NA;
-	//let D = |k| 3./16. * sqrt(4.*PI / w(k) * f64::powf(kB*T, 3./2.) / (σ(diameters[k])  * Ω11(kB* T / well_depths[k])) / pressure; // Self-diffusion coefficient, without polar corrections [Chapman–Enskog]
-	const volume: f64 = 1.;
+	//let D = |i| 3./16. * sqrt(4.*PI / w(i) * f64::powf(kB*T, 3./2.) / (σ(diameters[i])  * Ω11(kB * T / well_depths[i])) / pressure; // Self-diffusion coefficient, without polar corrections [Chapman–Enskog]
 	//let mass = |i| amounts[i] * molar_masses[i];
-	let concentration = |i| amounts[i] / volume;
+	let concentration = |i| amounts[i] / Self::volume; // y/density
 	//let density = (0..S).map(|i| mass(i)).sum() / volume;
 	//let mass_fraction = |i| concentration(i) * molar_masses[i] / density;
+	//let mass_fraction = |i| amounts[i] * molar_masses[i] / density;
 	//let D = generate([i| (1-mass_fraction(i))/ (0..S).filter(|j| j != i).map(|j| concentration(j)/D(i,j)).sum());
-	let η :[_; S] = generate(|i| 5./16. * sqrt(PI * molar_masses[i] / NA * kB * T) / (Ω22(T) * σ(diameters[i])));
+	let η :[_; S] = generate(|i| 5./16. * sqrt(PI * molar_masses[i] / NA * kB * T) / (Ω22(kB * T / well_depths[i]) * σ(diameters[i])));
 	//Cv // molar volumic heat capacity
 	//let λmono = |i| 5./2.*Cv*η(i);
 	let rsqrt = |x| 1./sqrt(x);
 	let Φ = |k,j| rsqrt(8.)*rsqrt(1.+(W[k]/W[j]))*sq(1.+sqrt(η[k]/η[j]*sqrt(W[j]/W[k])));
-	let η = (0..S).map::<f64,_>(|k| concentration(k)*η[k] / (0..S).map(|j| Φ(k,j)*concentration(j)).sum::<f64>()).sum();
+	let η = (0..S).map(|i| concentration(i)*η[i] / (0..S).map(|j| Φ(i,j)*concentration(j)).sum::<f64>()).sum();
 	//let λ = 1./2.*((0..S).map(|k| concentration(k)*λ(k)).sum()+1./(0..S).map(|k| concentration(k)/λ(k)).sum());
 	//Transport{D, η, λ}
 	η
@@ -257,17 +260,19 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 			}
 		}));
 		let diameters = eval(species, |s| species_data[s].transport.diameter);
+		let well_depths = eval(species, |s| species_data[s].transport.well_depth);
+
 
 		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / ideal_gas_constant;
-		let amount = pressure_r / temperature;
+		let amount = pressure_r / temperature * System::<S>::volume;
 		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions/*.prefix()*/, |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
 		//let mass = {use iter::into::Sum; map!(amounts, molar_masses; |n, W| n*W).sum()};
 
 		Ok(Self{
 			species,
-			system: System{molar_masses, thermodynamics, reactions, diameters/*, mass*/},
+			system: System{molar_masses, thermodynamics, reactions, diameters, well_depths/*, mass*/},
 			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})
