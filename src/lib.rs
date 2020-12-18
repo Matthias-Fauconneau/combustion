@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports)]
 pub mod ron;
-use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{Enumerate, IntoChain, IntoMap, map}, zip, map, eval, vec::{eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
+use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{Enumerate, IntoChain, map}, zip, map, eval, vec::{eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
 
 pub const ideal_gas_constant : f64 = 8.31446261815324; // J⋅K−1⋅mol−1
 
@@ -78,12 +78,12 @@ pub struct System<const S: usize> where [(); S-1]: {
 	pub molar_masses: [f64; S],
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
-	//diameters: [f64; S],
+	diameters: [f64; S],
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 	pub fn dt_J(&self, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
-		use iter::into::Sum;
+		use iter::into::{IntoMap, Sum};
 		//let a = S-1;
 		let Self{thermodynamics: species, reactions/*, molar_masses: W*/, ..} = self;
 		//let rcpV = 1. / V;
@@ -175,40 +175,42 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 	}
 }
 
-/*struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 };
-impl<const S: usize> System<S> {
-fn transport(&self, T: f64, amounts: [f64; S]) -> Transport<S> {
+//struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 }
+impl<const S: usize> System<S> where [(); S-1]: {
+pub fn transport(&self, _pressure: f64, T: f64, amounts: [f64; S]) -> f64 {//Transport<S> {
 	use std::f64::consts::PI;
 	const kB : f64 = 1.380649e-23; // J/K
 	const NA : f64 = 6.02214076e23;
 	// L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys. 35:1676, 1961.
-	fn Ω11(T: f64) -> f64 { 1.0548*f64::pow(T, -0.15504) + f64::pow(T+0.55909, -2.1705) }
-	fn Ω22(T: f64) -> f64 { 1.0413*f64::pow(T, -0.1193) + f64::pow(T+0.43628, -1.6041) }
-	let Self{mass, diameters} = self;
-	let T = kB* T / well_depth;
+	//fn Ω11(T: f64) -> f64 { 1.0548*f64::powf(T, -0.15504) + f64::powf(T+0.55909, -2.1705) }
+	fn Ω22(T: f64) -> f64 { 1.0413*f64::powf(T, -0.1193) + f64::powf(T+0.43628, -1.6041) }
+	let Self{molar_masses, diameters, /*mass: _,*/ ..} = self;
+	use num::{sq, sqrt};
 	let σ = |diameter| PI * sq(diameter);
-	let D = |i,j| 3./16. * sqrt(2.*PI/(m[i]*m[j])/(m[i]+m[j])) * f64::pow(kB*T, 3./2.) / (P * σ((diameters[i]+diameters[j])/2.)  * Ω11(T)); // Self-diffusion coefficient, without polar corrections [Chapman–Enskog]
-	const volume: f64 = 1.;
-	let mass = |i| amounts[i] * molar_masses[i];
-	let concentration = |i| amounts[i] / volume;
-	let density = mass / volume;
-	let mass_fraction = |i| concentration(i) * molar_masses[i] / density;
-	let D = generate([i| (1-mass_fraction(i))/ (0..S).filter(|j| j != i).map(|j| concentration(j)/D(i,j)).sum());
-	let η = generate(|i| 5./16. * sqrt(PI * mass[i] / NA * kB * T) / (Ω22(T) * σ(diameters[i])));
-	Cv // molar volumic heat capacity
-	let λmono = |i| 5./2.*Cv*η(i);
 	let W = molar_masses;
-	let rsqrt = |x| 1/f64::sqrt(x);
-	let Φ = |k,j| rsqrt(8.)*rsqrt(1.+(W[k]/W[j]))*sq(1+f64::sqrt(η[k]/η[j]*f64::sqrt(W[j]/W[k])));
-	let η = (0..S).map(|k| concentrations[k]*η(k) / (0..S).map(|j| Φ(k,j)*concentrations[j]).sum()).sum();
-	let λ = 1./2.*((0..S).map(|k| concentrations[k]*λ(k)).sum()+1./(0..S).map(|k| concentrations[k]/λ(k)).sum());
-	Transport{D, η, λ}
+	//let w = |i| W[i]/NA;
+	//let D = |k| 3./16. * sqrt(4.*PI / w(k) * f64::powf(kB*T, 3./2.) / (σ(diameters[k])  * Ω11(kB* T / well_depths[k])) / pressure; // Self-diffusion coefficient, without polar corrections [Chapman–Enskog]
+	const volume: f64 = 1.;
+	//let mass = |i| amounts[i] * molar_masses[i];
+	let concentration = |i| amounts[i] / volume;
+	//let density = (0..S).map(|i| mass(i)).sum() / volume;
+	//let mass_fraction = |i| concentration(i) * molar_masses[i] / density;
+	//let D = generate([i| (1-mass_fraction(i))/ (0..S).filter(|j| j != i).map(|j| concentration(j)/D(i,j)).sum());
+	let η :[_; S] = generate(|i| 5./16. * sqrt(PI * molar_masses[i] / NA * kB * T) / (Ω22(T) * σ(diameters[i])));
+	//Cv // molar volumic heat capacity
+	//let λmono = |i| 5./2.*Cv*η(i);
+	let rsqrt = |x| 1./sqrt(x);
+	let Φ = |k,j| rsqrt(8.)*rsqrt(1.+(W[k]/W[j]))*sq(1.+sqrt(η[k]/η[j]*sqrt(W[j]/W[k])));
+	let η = (0..S).map::<f64,_>(|k| concentration(k)*η[k] / (0..S).map(|j| Φ(k,j)*concentration(j)).sum::<f64>()).sum();
+	//let λ = 1./2.*((0..S).map(|k| concentration(k)*λ(k)).sum()+1./(0..S).map(|k| concentration(k)/λ(k)).sum());
+	//Transport{D, η, λ}
+	η
 }
-}*/
+}
 
 #[derive(Clone)] pub struct State<const S: usize> where [(); S-1]: {
 	pub temperature: f64,
-	pub amounts: [f64; S-1]
+	pub amounts: [f64; S/*-1*/]
 }
 
 pub struct Simulation<'t, const S: usize> where [(); S-1]: {
@@ -228,7 +230,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 	pub fn new(system: &'b [u8]) -> ::ron::Result<Self> where 'b: 't, [(); S]: {
 		let ron::System{species: species_data, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
 		let ron::Phase::IdealGas{species, state, ..} = phases.into_vec().into_iter().next().unwrap();
-		use std::convert::TryInto;
+		use {std::convert::TryInto, iter::into::IntoMap};
 		let species : [_; S] = species.as_ref().try_into().unwrap_or_else(|_| panic!("Compiled for {} species, got {}", S, species.len()));
 		let molar_masses = eval(species, |s| species_data.get(s).unwrap_or_else(|| panic!("{}", s)).composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
@@ -236,7 +238,6 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
 			ref ranges => panic!("{:?}", ranges),
 		}});
-		#[allow(unused_variables)]
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
 			for side in equation { for (specie, _) in side { assert!(species.contains(specie), "{}", specie) } }
 			let [reactants, products] = eval(equation, |e| eval(species, |s| *e.get(s).unwrap_or(&0) as f64));
@@ -255,18 +256,18 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				}},
 			}
 		}));
-		//let diameters = eval(species, |s| species_data[s].transport.diameter);
+		let diameters = eval(species, |s| species_data[s].transport.diameter);
 
 		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / ideal_gas_constant;
 		let amount = pressure_r / temperature;
 		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
-		let amounts = eval(mole_proportions.prefix(), |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
-		//let mass = map!(amounts, molar_masses; |n, W| n*W).sum();
+		let amounts = eval(mole_proportions/*.prefix()*/, |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
+		//let mass = {use iter::into::Sum; map!(amounts, molar_masses; |n, W| n*W).sum()};
 
 		Ok(Self{
 			species,
-			system: System{/*mass,*/ molar_masses, thermodynamics, reactions/*, diameters*/},
+			system: System{molar_masses, thermodynamics, reactions, diameters/*, mass*/},
 			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})
