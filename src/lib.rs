@@ -74,11 +74,11 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 pub struct System<const S: usize> where [(); S-1]: {
-	mass: f64
+	//mass: f64,
 	pub molar_masses: [f64; S],
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
-	pub diameters: [f64; S];
+	//diameters: [f64; S],
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
@@ -175,7 +175,7 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 	}
 }
 
-struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 };
+/*struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 };
 impl<const S: usize> System<S> {
 fn transport(&self, T: f64, amounts: [f64; S]) -> Transport<S> {
 	use std::f64::consts::PI;
@@ -204,8 +204,7 @@ fn transport(&self, T: f64, amounts: [f64; S]) -> Transport<S> {
 	let λ = 1./2.*((0..S).map(|k| concentrations[k]*λ(k)).sum()+1./(0..S).map(|k| concentrations[k]/λ(k)).sum());
 	Transport{D, η, λ}
 }
-}
-
+}*/
 
 #[derive(Clone)] pub struct State<const S: usize> where [(); S-1]: {
 	pub temperature: f64,
@@ -256,18 +255,18 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				}},
 			}
 		}));
-		let diameters = eval(species, |s| species_data[s].transport.diameter);
+		//let diameters = eval(species, |s| species_data[s].transport.diameter);
 
 		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / ideal_gas_constant;
 		let amount = pressure_r / temperature;
 		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions.prefix(), |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
-		let mass = map!(amounts, molar_masses; |n, W| n*W).sum();
+		//let mass = map!(amounts, molar_masses; |n, W| n*W).sum();
 
 		Ok(Self{
 			species,
-			system: System{mass, molar_masses, thermodynamics, reactions, diameters},
+			system: System{/*mass,*/ molar_masses, thermodynamics, reactions/*, diameters*/},
 			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})

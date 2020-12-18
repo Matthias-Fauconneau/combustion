@@ -83,7 +83,7 @@ species: {
       (4.0172109, 0.0022398201, -6.336581e-7, 1.142464e-10, -1.07909e-14, 111.856713, 3.78510215)
     ],
   ),
-  transport: (well_depth: 107.4, diameter: 3.458, , geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth: 107.4, diameter: 3.458, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "H2O2": (
   composition: {H: 2, O: 2},
@@ -94,7 +94,7 @@ species: {
       (4.16500285, 0.0049083169, -1.901392e-6, 3.71186e-10, -2.87908e-14, -17861.7877, 2.91615662)
     ],
   ),
-  transport: (well_depth: 107.4, diameter: 3.458, , geometry: Nonlinear(rotational_relaxation: 3.8))
+  transport: (well_depth: 107.4, diameter: 3.458, geometry: Nonlinear(rotational_relaxation: 3.8))
 ),
 "C": (
 	composition: {C: 1},
@@ -116,7 +116,7 @@ species: {
       (2.87846473, 9.70913681e-04, 1.44445655e-07, -1.30687849e-10, 1.76079383e-14, 7.10124364e+04, 5.48497999)
     ],
   ),
-	transport: (well_depth: 80., diameter: 2.75, geometry: Linear)
+	transport: (well_depth: 80., diameter: 2.75, geometry: Linear())
 ),
 "CH2": (
 	composition: {H: 2, C: 1},
@@ -127,7 +127,7 @@ species: {
       (2.87410113, 3.65639292e-03, -1.40894597e-06, 2.60179549e-10, -1.87727567e-14, 4.6263604e+04, 6.17119324)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear)
+  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
 ),
 "CH2(S)": (
 	composition: {H: 2, C: 1},
@@ -138,7 +138,7 @@ species: {
       (2.29203842, 4.65588637e-03, -2.01191947e-06, 4.17906e-10, -3.39716365e-14, 5.09259997e+04, 8.62650169)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear)
+  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
 ),
 "CH3": (
 	composition: {H: 3, C: 1},
@@ -149,7 +149,7 @@ species: {
       (2.28571772, 7.23990037e-03, -2.98714348e-06, 5.95684644e-10, -4.67154394e-14, 1.67755843e+04, 8.48007179)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear)
+  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
 ),
 "CH4": (
 	composition: {H: 4, C: 1},
@@ -193,7 +193,7 @@ species: {
       (2.77217438, 4.95695526e-03, -2.48445613e-06, 5.89161778e-10, -5.33508711e-14, 4011.91815, 9.79834492)
     ],
   ),
-  transport: (well_depth: 498., geometry: Nonlinear(diameter: 3.59))
+  transport: (well_depth: 498., diameter: 3.59, geometry: Nonlinear())
 ),
 "CH2O": (
 	composition: {H: 2, C: 1, O: 1},
