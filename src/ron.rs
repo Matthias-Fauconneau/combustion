@@ -14,10 +14,15 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 	pub pieces: Box<[[f64; 7]]>,
 }
 
-#[derive(Deserialize, Debug)] enum Transport {
-	Atom { well_depth: f64, diameter: f64},
-	Linear { well_depth: f64, diameter: f64, #[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64},
-	Nonlinear { well_depth: f64, diameter: f64, #[serde(default)] rotational_relaxation: f64},
+#[derive(Deserialize, Debug)] pub enum Geometry {
+	Atom,
+	Linear {#[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64},
+	Nonlinear {#[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64, #[serde(default)] dipole: f64},
+}
+#[derive(Deserialize, Debug)] pub struct Transport {
+	well_depth: f64,
+	diameter: f64,
+	geometry: Geometry,
 }
 #[derive(Deserialize, Debug)] pub struct Specie {
 	pub composition: Map<Element, u8>,

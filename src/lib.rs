@@ -74,9 +74,11 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 pub struct System<const S: usize> where [(); S-1]: {
+	mass: f64
 	pub molar_masses: [f64; S],
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>,
+	pub diameters: [f64; S];
 }
 
 impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
@@ -94,7 +96,8 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 		let ref H_T = eval(H.prefix(), |H| H/T);
 		let ref G = eval!(species.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
 		//let ref dT_G = eval!(species.prefix(); |s| s.dT_Gibbs_free_energy(T));
-		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/); // Skips most abundant specie (last index) (will be deduced from conservation)
+		const volume : f64 = 1.;
+		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / volume); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - concentrations.sum():f64;
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| f64::ln(x));
@@ -172,6 +175,38 @@ impl<const S: usize> System<S> where [(); S-1]:, [(); 1+S-1]: {
 	}
 }
 
+struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 };
+impl<const S: usize> System<S> {
+fn transport(&self, T: f64, amounts: [f64; S]) -> Transport<S> {
+	use std::f64::consts::PI;
+	const kB : f64 = 1.380649e-23; // J/K
+	const NA : f64 = 6.02214076e23;
+	// L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys. 35:1676, 1961.
+	fn Ω11(T: f64) -> f64 { 1.0548*f64::pow(T, -0.15504) + f64::pow(T+0.55909, -2.1705) }
+	fn Ω22(T: f64) -> f64 { 1.0413*f64::pow(T, -0.1193) + f64::pow(T+0.43628, -1.6041) }
+	let Self{mass, diameters} = self;
+	let T = kB* T / well_depth;
+	let σ = |diameter| PI * sq(diameter);
+	let D = |i,j| 3./16. * sqrt(2.*PI/(m[i]*m[j])/(m[i]+m[j])) * f64::pow(kB*T, 3./2.) / (P * σ((diameters[i]+diameters[j])/2.)  * Ω11(T)); // Self-diffusion coefficient, without polar corrections [Chapman–Enskog]
+	const volume: f64 = 1.;
+	let mass = |i| amounts[i] * molar_masses[i];
+	let concentration = |i| amounts[i] / volume;
+	let density = mass / volume;
+	let mass_fraction = |i| concentration(i) * molar_masses[i] / density;
+	let D = generate([i| (1-mass_fraction(i))/ (0..S).filter(|j| j != i).map(|j| concentration(j)/D(i,j)).sum());
+	let η = generate(|i| 5./16. * sqrt(PI * mass[i] / NA * kB * T) / (Ω22(T) * σ(diameters[i])));
+	Cv // molar volumic heat capacity
+	let λmono = |i| 5./2.*Cv*η(i);
+	let W = molar_masses;
+	let rsqrt = |x| 1/f64::sqrt(x);
+	let Φ = |k,j| rsqrt(8.)*rsqrt(1.+(W[k]/W[j]))*sq(1+f64::sqrt(η[k]/η[j]*f64::sqrt(W[j]/W[k])));
+	let η = (0..S).map(|k| concentrations[k]*η(k) / (0..S).map(|j| Φ(k,j)*concentrations[j]).sum()).sum();
+	let λ = 1./2.*((0..S).map(|k| concentrations[k]*λ(k)).sum()+1./(0..S).map(|k| concentrations[k]/λ(k)).sum());
+	Transport{D, η, λ}
+}
+}
+
+
 #[derive(Clone)] pub struct State<const S: usize> where [(); S-1]: {
 	pub temperature: f64,
 	pub amounts: [f64; S-1]
@@ -221,16 +256,18 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				}},
 			}
 		}));
+		let diameters = eval(species, |s| species_data[s].transport.diameter);
 
 		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / ideal_gas_constant;
 		let amount = pressure_r / temperature;
 		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions.prefix(), |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
+		let mass = map!(amounts, molar_masses; |n, W| n*W).sum();
 
 		Ok(Self{
 			species,
-			system: System{molar_masses, thermodynamics, reactions},
+			system: System{mass, molar_masses, thermodynamics, reactions, diameters},
 			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})
