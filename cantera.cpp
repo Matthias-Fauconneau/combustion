@@ -1,26 +1,9 @@
 #include <vector>
 #include <string>
-using namespace std;
-
-struct IndexIterator { size_t index;
-
-	size_t operator*() { return index; }
-	void operator++() { index += 1; }
-	bool operator !=(const IndexIterator& o) const { return index != o.index; }
-};
-
-struct Range {
-	public: size_t start;
-	public: size_t end_;
-
-	inline IndexIterator begin() const { return {start}; }
-	inline IndexIterator end() const { return {end_}; }
-};
-auto Range_new(size_t size) -> Range { return {.start=0, .end_=size}; }
-
-#include <cantera/zerodim.h>
+#include <cantera/kinetics/Kinetics.h>
 #include <cantera/thermo/IdealGasPhase.h>
 #include <cantera/transport/MultiTransport.h>
+using namespace std;
 
 extern "C"
 void cantera(double pressure, double temperature, const char* mole_proportions, double& viscosity, double& thermal_conductivity, size_t& species_len, const char**& species_data, double*& thermal_diffusion_coefficients_data) try {
@@ -29,7 +12,7 @@ void cantera(double pressure, double temperature, const char* mole_proportions, 
 	auto kinetics = mechanism->kinetics();
 	species_len = kinetics->nTotalSpecies();
 	auto species = new std::vector<const char*>();
-	for(auto k: Range_new(kinetics->nTotalSpecies())) { species->push_back((new std::string(kinetics->kineticsSpeciesName(k)))->data()); }
+	for(auto k=0; k<kinetics->nTotalSpecies(); k++) { species->push_back((new std::string(kinetics->kineticsSpeciesName(k)))->data()); }
 	species_data = species->data();
 	auto phase = mechanism->thermo();
 	phase->setState_TPX(temperature, pressure, mole_proportions);
