@@ -61,7 +61,7 @@ species: {
       (3.09288767, 5.4842972e-4, 1.2650523e-7, -8.79462e-11, 1.174124e-14, 3858.657, 4.4766961)
     ],
   ),
-  transport: (well_depth: 80., diameter: 2.75, geometry: Linear(polarizability: 0., rotational_relaxation: 0.))
+  transport: (well_depth: 80., diameter: 2.75, geometry: Linear)
 ),
 "H2O": (
   composition: {H: 2, O: 1},

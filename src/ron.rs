@@ -22,7 +22,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 #[derive(Deserialize, Debug)] pub struct Transport {
 	pub well_depth: f64,
 	pub diameter: f64,
-	geometry: Geometry,
+	pub geometry: Geometry,
 }
 #[derive(Deserialize, Debug)] pub struct Specie {
 	pub composition: Map<Element, u8>,

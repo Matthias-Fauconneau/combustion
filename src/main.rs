@@ -11,7 +11,7 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 	const S : usize = 35; // Number of species
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, state: combustion::State{temperature, amounts}, pressure_r, species, ..} = Simulation::new(&system)?;
-	let pressure = pressure_r * combustion::ideal_gas_constant;
+	let pressure = pressure_r * (combustion::kB*combustion::NA);
 	let ([viscosity, _thermal_conductivity], ref _thermal_diffusion_coefficients) = {
 		use itertools::Itertools;
 		let mole_proportions = format!("{}", species.iter().zip(&amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
@@ -29,5 +29,5 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 	};
 	//dbg!(([viscosity, thermal_conductivity], /*thermal_diffusion_coefficients*/));
 	//dbg!(system.transport(pressure, temperature, amounts));
-	assert_eq!(system.transport(pressure, temperature, amounts), viscosity);
+	assert_eq!(system.transport(pressure, temperature, &amounts), viscosity);
 }
