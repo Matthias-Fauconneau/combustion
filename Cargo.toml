@@ -14,3 +14,4 @@ fehler = ''
 itertools = ''
 rayon= ''
 nalgebra = ''
+trace = {path='../trace'}#{git='https://github.com/Matthias-Fauconneau/trace'}

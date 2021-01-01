@@ -7,6 +7,7 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 }
 
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
+	trace::rstack_self()?;
 	let system = std::fs::read("CH4+O2.ron")?;
 	const S : usize = 35; // Number of species
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
@@ -17,7 +18,7 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 		let mole_proportions = format!("{}", species.iter().zip(&amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
 		let mole_proportions = std::ffi::CString::new(mole_proportions).unwrap();
 		use std::ptr::null;
-		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());//:([f64; 2], usize, *const *const std::os::raw::c_char, *const f64)
+		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());
 		unsafe {
 			dbg!(pressure, temperature, &mole_proportions);
 			cantera(pressure, temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names, &mut thermal_diffusion_coefficients);
