@@ -16,12 +16,12 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 
 #[derive(Deserialize, Debug)] pub enum Geometry {
 	Atom,
-	Linear {#[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64},
-	Nonlinear {#[serde(default)] polarizability: f64, #[serde(default)] rotational_relaxation: f64, #[serde(default)] dipole: f64},
+	Linear {#[serde(default,rename="polarizability_A3")] polarizability_Å3: f64, #[serde(default)] rotational_relaxation: f64},
+	Nonlinear {#[serde(default,rename="polarizability_A3")] polarizability_Å3: f64, #[serde(default)] rotational_relaxation: f64, #[serde(default)] permanent_dipole_moment_Debye: f64},
 }
 #[derive(Deserialize, Debug)] pub struct Transport {
-	pub well_depth: f64,
-	pub diameter: f64,
+	pub well_depth_K: f64,
+	#[serde(rename="diameter_A")] pub diameter_Å: f64,
 	pub geometry: Geometry,
 }
 #[derive(Deserialize, Debug)] pub struct Specie {

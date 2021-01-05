@@ -17,7 +17,7 @@ species: {
       (2.50000001, -2.30843e-11, 1.615619e-14, -4.73515e-18, 4.981974e-22, 25473.6599, -0.446682914)
     ],
   ),
-  transport: (well_depth: 145., diameter: 2.5, geometry: Atom)
+  transport: (well_depth_K: 145., diameter_A: 2.5, geometry: Atom)
 ),
 "H2": (
   composition: {H: 2},
@@ -28,7 +28,7 @@ species: {
       (3.3372792, -4.940247e-5, 4.9945678e-7, -1.79566e-10, 2.002554e-14, -950.158922, -3.20502331)
     ],
   ),
-  transport: (well_depth: 38., diameter: 2.92, geometry: Linear(polarizability: 0.79, rotational_relaxation: 280.))
+  transport: (well_depth_K: 38., diameter_A: 2.92, geometry: Linear(polarizability_A3: 0.79, rotational_relaxation: 280.))
 ),
 "O": (
   composition: {O: 1},
@@ -39,7 +39,7 @@ species: {
       (2.56942078, -8.597411e-5, 4.1948459e-8, -1.00178e-11, 1.228337e-15, 29217.5791, 4.78433864)
     ],
   ),
-  transport: (well_depth: 80., diameter: 2.72, geometry: Atom)
+  transport: (well_depth_K: 80., diameter_A: 2.72, geometry: Atom)
 ),
 "O2": (
   composition: {O: 2},
@@ -50,7 +50,7 @@ species: {
       (3.28253784, 0.0014830875, -7.579667e-7, 2.094706e-10, -2.16718e-14, -1088.45772, 5.45323129)
     ],
   ),
-  transport: (well_depth: 107.4, diameter: 3.458, geometry: Linear(polarizability: 1.6, rotational_relaxation: 3.8))
+  transport: (well_depth_K: 107.4, diameter_A: 3.458, geometry: Linear(polarizability_A3: 1.6, rotational_relaxation: 3.8))
 ),
 "OH": (
   composition: {O: 1, H: 1},
@@ -61,7 +61,7 @@ species: {
       (3.09288767, 5.4842972e-4, 1.2650523e-7, -8.79462e-11, 1.174124e-14, 3858.657, 4.4766961)
     ],
   ),
-  transport: (well_depth: 80., diameter: 2.75, geometry: Linear())
+  transport: (well_depth_K: 80., diameter_A: 2.75, geometry: Linear())
 ),
 "H2O": (
   composition: {H: 2, O: 1},
@@ -72,7 +72,7 @@ species: {
       (3.03399249, 0.002176918, -1.640725e-7, -9.7042e-11, 1.68201e-14, -30004.2971, 4.9667701)
     ],
   ),
-  transport: (well_depth: 572.4, diameter: 2.605, geometry: Nonlinear(dipole: 1.844, rotational_relaxation: 4.)),
+  transport: (well_depth_K: 572.4, diameter_A: 2.605, geometry: Nonlinear(permanent_dipole_moment_Debye: 1.844, rotational_relaxation: 4.)),
 ),
 "HO2": (
   composition: {H: 1, O: 2},
@@ -83,7 +83,7 @@ species: {
       (4.0172109, 0.0022398201, -6.336581e-7, 1.142464e-10, -1.07909e-14, 111.856713, 3.78510215)
     ],
   ),
-  transport: (well_depth: 107.4, diameter: 3.458, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 107.4, diameter_A: 3.458, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "H2O2": (
   composition: {H: 2, O: 2},
@@ -94,7 +94,7 @@ species: {
       (4.16500285, 0.0049083169, -1.901392e-6, 3.71186e-10, -2.87908e-14, -17861.7877, 2.91615662)
     ],
   ),
-  transport: (well_depth: 107.4, diameter: 3.458, geometry: Nonlinear(rotational_relaxation: 3.8))
+  transport: (well_depth_K: 107.4, diameter_A: 3.458, geometry: Nonlinear(rotational_relaxation: 3.8))
 ),
 "C": (
 	composition: {C: 1},
@@ -105,7 +105,7 @@ species: {
       (2.49266888, 4.79889284e-05, -7.2433502e-08, 3.74291029e-11, -4.87277893e-15, 8.54512953e+04, 4.80150373)
     ],
   ),
-	transport: (well_depth: 71.4, diameter: 3.298, geometry: Atom)
+	transport: (well_depth_K: 71.4, diameter_A: 3.298, geometry: Atom)
 ),
 "CH": (
 	composition: {H: 1, C: 1},
@@ -116,7 +116,7 @@ species: {
       (2.87846473, 9.70913681e-04, 1.44445655e-07, -1.30687849e-10, 1.76079383e-14, 7.10124364e+04, 5.48497999)
     ],
   ),
-	transport: (well_depth: 80., diameter: 2.75, geometry: Linear())
+	transport: (well_depth_K: 80., diameter_A: 2.75, geometry: Linear())
 ),
 "CH2": (
 	composition: {H: 2, C: 1},
@@ -127,7 +127,7 @@ species: {
       (2.87410113, 3.65639292e-03, -1.40894597e-06, 2.60179549e-10, -1.87727567e-14, 4.6263604e+04, 6.17119324)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
+  transport: (well_depth_K: 144., diameter_A: 3.8, geometry: Linear())
 ),
 "CH2(S)": (
 	composition: {H: 2, C: 1},
@@ -138,7 +138,7 @@ species: {
       (2.29203842, 4.65588637e-03, -2.01191947e-06, 4.17906e-10, -3.39716365e-14, 5.09259997e+04, 8.62650169)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
+  transport: (well_depth_K: 144., diameter_A: 3.8, geometry: Linear())
 ),
 "CH3": (
 	composition: {H: 3, C: 1},
@@ -149,7 +149,7 @@ species: {
       (2.28571772, 7.23990037e-03, -2.98714348e-06, 5.95684644e-10, -4.67154394e-14, 1.67755843e+04, 8.48007179)
     ],
   ),
-  transport: (well_depth: 144., diameter: 3.8, geometry: Linear())
+  transport: (well_depth_K: 144., diameter_A: 3.8, geometry: Linear())
 ),
 "CH4": (
 	composition: {H: 4, C: 1},
@@ -160,7 +160,7 @@ species: {
       (0.074851495, 0.0133909467, -5.73285809e-06, 1.22292535e-09, -1.0181523e-13, -9468.34459, 18.437318)
     ],
   ),
-  transport: (well_depth: 141.4, diameter: 3.746, geometry: Nonlinear(polarizability: 2.6, rotational_relaxation: 13.))
+  transport: (well_depth_K: 141.4, diameter_A: 3.746, geometry: Nonlinear(polarizability_A3: 2.6, rotational_relaxation: 13.))
 ),
 "CO": (
 	composition: {C: 1, O: 1},
@@ -171,7 +171,7 @@ species: {
       (2.71518561, 2.06252743e-03, -9.98825771e-07, 2.30053008e-10, -2.03647716e-14, -1.41518724e+04, 7.81868772)
     ],
   ),
-  transport: (well_depth: 98.1, diameter: 3.65, geometry: Linear(polarizability: 1.95, rotational_relaxation: 1.8))
+  transport: (well_depth_K: 98.1, diameter_A: 3.65, geometry: Linear(polarizability_A3: 1.95, rotational_relaxation: 1.8))
 ),
 "CO2": (
 	composition: {C: 1, O: 2},
@@ -182,7 +182,7 @@ species: {
       (3.85746029, 4.41437026e-03, -2.21481404e-06, 5.23490188e-10, -4.72084164e-14, -4.8759166e+04, 2.27163806)
     ],
   ),
-  transport: (well_depth: 244., diameter: 3.763, geometry: Linear(polarizability: 2.65, rotational_relaxation: 2.1))
+  transport: (well_depth_K: 244., diameter_A: 3.763, geometry: Linear(polarizability_A3: 2.65, rotational_relaxation: 2.1))
 ),
 "HCO": (
 	composition: {H: 1, C: 1, O: 1},
@@ -193,7 +193,7 @@ species: {
       (2.77217438, 4.95695526e-03, -2.48445613e-06, 5.89161778e-10, -5.33508711e-14, 4011.91815, 9.79834492)
     ],
   ),
-  transport: (well_depth: 498., diameter: 3.59, geometry: Nonlinear())
+  transport: (well_depth_K: 498., diameter_A: 3.59, geometry: Nonlinear())
 ),
 "CH2O": (
 	composition: {H: 2, C: 1, O: 1},
@@ -204,7 +204,7 @@ species: {
       (1.76069008, 9.20000082e-03, -4.42258813e-06, 1.00641212e-09, -8.8385564e-14, -1.39958323e+04, 13.656323)
     ],
   ),
-  transport: (well_depth: 498., diameter: 3.59, geometry: Nonlinear())
+  transport: (well_depth_K: 498., diameter_A: 3.59, geometry: Nonlinear())
 ),
 "CH2OH": (
 	composition: {H: 3, C: 1, O: 1},
@@ -215,7 +215,7 @@ species: {
       (3.69266569, 8.64576797e-03, -3.7510112e-06, 7.87234636e-10, -6.48554201e-14, -3242.50627, 5.81043215)
     ],
   ),
-  transport: (well_depth: 417., diameter: 3.69, geometry: Nonlinear(dipole: 1.7, rotational_relaxation: 2.))
+  transport: (well_depth_K: 417., diameter_A: 3.69, geometry: Nonlinear(permanent_dipole_moment_Debye: 1.7, rotational_relaxation: 2.))
 ),
 "CH3O": (
 	composition: {H: 3, C: 1, O: 1},
@@ -226,7 +226,7 @@ species: {
       (3.770799, 7.871497e-03, -2.656384e-06, 3.944431e-10, -2.112616e-14, 127.83252, 2.929575)
     ],
   ),
-  transport: (well_depth: 417., diameter: 3.69, geometry: Nonlinear(dipole: 1.7, rotational_relaxation: 2.))
+  transport: (well_depth_K: 417., diameter_A: 3.69, geometry: Nonlinear(permanent_dipole_moment_Debye: 1.7, rotational_relaxation: 2.))
 ),
 "CH3OH": (
 	composition: {H: 4, C: 1, O: 1},
@@ -237,7 +237,7 @@ species: {
       (1.78970791, 0.0140938292, -6.36500835e-06, 1.38171085e-09, -1.1706022e-13, -2.53748747e+04, 14.5023623)
     ],
   ),
-  transport: (well_depth: 481.8, diameter: 3.626, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 481.8, diameter_A: 3.626, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "C2H": (
 	composition: {H: 1, C: 2},
@@ -248,7 +248,7 @@ species: {
       (3.16780652, 4.75221902e-03, -1.83787077e-06, 3.04190252e-10, -1.7723277e-14, 6.7121065e+04, 6.63589475)
     ],
   ),
-  transport: (well_depth: 209., diameter: 4.1, geometry: Linear(rotational_relaxation: 2.5))
+  transport: (well_depth_K: 209., diameter_A: 4.1, geometry: Linear(rotational_relaxation: 2.5))
 ),
 "C2H2": (
 	composition: {H: 2, C: 2},
@@ -259,7 +259,7 @@ species: {
       (4.14756964, 5.96166664e-03, -2.37294852e-06, 4.67412171e-10, -3.61235213e-14, 2.59359992e+04, -1.23028121)
     ],
   ),
-  transport: (well_depth: 209., diameter: 4.1, geometry: Linear(rotational_relaxation: 2.5))
+  transport: (well_depth_K: 209., diameter_A: 4.1, geometry: Linear(rotational_relaxation: 2.5))
 ),
 "C2H3": (
 	composition: {H: 3, C: 2},
@@ -270,7 +270,7 @@ species: {
       (3.016724, 0.0103302292, -4.68082349e-06, 1.01763288e-09, -8.62607041e-14, 3.46128739e+04, 7.78732378)
     ],
   ),
-  transport: (well_depth: 209., diameter: 3.1, geometry: Linear(rotational_relaxation: 2.5))
+  transport: (well_depth_K: 209., diameter_A: 3.1, geometry: Linear(rotational_relaxation: 2.5))
 ),
 "C2H4": (
 	composition: {H: 4, C: 2},
@@ -281,7 +281,7 @@ species: {
       (2.03611116, 0.0146454151, -6.71077915e-06, 1.47222923e-09, -1.25706061e-13, 4939.88614, 10.3053693)
     ],
   ),
-  transport: (well_depth: 280.8, diameter: 3.971, geometry: Nonlinear(rotational_relaxation: 1.5))
+  transport: (well_depth_K: 280.8, diameter_A: 3.971, geometry: Nonlinear(rotational_relaxation: 1.5))
 ),
 "C2H5": (
 	composition: {H: 5, C: 2},
@@ -292,7 +292,7 @@ species: {
       (1.95465642, 0.0173972722, -7.98206668e-06, 1.75217689e-09, -1.49641576e-13, 1.285752e+04, 13.4624343)
     ],
   ),
-  transport: (well_depth: 252.3, diameter: 4.302, geometry: Linear(rotational_relaxation: 1.5))
+  transport: (well_depth_K: 252.3, diameter_A: 4.302, geometry: Linear(rotational_relaxation: 1.5))
 ),
 "C2H6": (
 	composition: {H: 5, C: 2},
@@ -303,7 +303,7 @@ species: {
       (1.0718815, 0.0216852677, -1.00256067e-05, 2.21412001e-09, -1.9000289e-13, -1.14263932e+04, 15.1156107)
     ],
   ),
-  transport: (well_depth: 252.3, diameter: 4.302, geometry: Nonlinear(rotational_relaxation: 1.5))
+  transport: (well_depth_K: 252.3, diameter_A: 4.302, geometry: Nonlinear(rotational_relaxation: 1.5))
 ),
 "HCCO": (
 	composition: {H: 1, C: 2, O: 1},
@@ -314,7 +314,7 @@ species: {
       (5.6282058, 4.0853401e-03, -1.5934547e-06, 2.8626052e-10, -1.9407832e-14, 1.9327215e+04, -3.9302595)
     ],
   ),
-  transport: (well_depth: 150., diameter: 2.5, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 150., diameter_A: 2.5, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "CH2CO": (
 	composition: {H: 2, C: 2, O: 1},
@@ -325,7 +325,7 @@ species: {
       (4.51129732, 9.00359745e-03, -4.16939635e-06, 9.23345882e-10, -7.94838201e-14, -7551.05311, 0.632247205)
     ],
   ),
-	transport: (well_depth: 436., diameter: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
+	transport: (well_depth_K: 436., diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
 ),
 "HCCOH": (
 	composition: {H: 2, C: 2, O: 1},
@@ -336,7 +336,7 @@ species: {
       (5.9238291, 6.79236e-03, -2.5658564e-06, 4.4987841e-10, -2.9940101e-14, 7264.626, -7.6017742)
     ],
   ),
-  transport: (well_depth: 150., diameter: 2.5, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 150., diameter_A: 2.5, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "CH2CHO": (
 	composition: {H: 3, C: 2, O: 1},
@@ -347,7 +347,7 @@ species: {
       (5.97567, 8.130591e-03, -2.743624e-06, 4.070304e-10, -2.176017e-14, 490.3218, -5.045251)
     ],
   ),
-	transport: (well_depth: 436., diameter: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
+	transport: (well_depth_K: 436., diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
 ),
 "CH3CHO": (
 	composition: {H: 4, C: 2, O: 1},
@@ -358,7 +358,7 @@ species: {
       (5.4041108, 0.011723059, -4.2263137e-06, 6.8372451e-10, -4.0984863e-14, -2.2593122e+04, -3.4807917)
     ],
   ),
-	transport: (well_depth: 436., diameter: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
+	transport: (well_depth_K: 436., diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2.))
 ),
 "C3H7": (
 	composition: {H: 8, C: 3},
@@ -369,7 +369,7 @@ species: {
       (7.7026987, 0.016044203, -5.283322e-06, 7.629859e-10, -3.9392284e-14, 8298.4336, -15.48018)
     ],
   ),
-  transport: (well_depth: 266.8, diameter: 4.982, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 266.8, diameter_A: 4.982, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "C3H8": (
 	composition: {H: 8, C: 3},
@@ -380,7 +380,7 @@ species: {
       (7.5341368, 0.018872239, -6.2718491e-06, 9.1475649e-10, -4.7838069e-14, -1.6467516e+04, -17.892349)
     ],
   ),
-  transport: (well_depth: 266.8, diameter: 4.982, geometry: Nonlinear(rotational_relaxation: 1.))
+  transport: (well_depth_K: 266.8, diameter_A: 4.982, geometry: Nonlinear(rotational_relaxation: 1.))
 ),
 "Ar": (
   composition: {Ar: 1},
@@ -390,7 +390,7 @@ species: {
       (2.5, 0., 0., 0., 0., -745.375, 4.366)
     ],
   ),
-  transport: (well_depth: 136.5, diameter: 3.33, geometry: Atom),
+  transport: (well_depth_K: 136.5, diameter_A: 3.33, geometry: Atom),
 )
 },
 reactions: [

@@ -1,4 +1,4 @@
-#![feature(type_ascription, array_map, non_ascii_idents)]#![allow(mixed_script_confusables,non_snake_case)]
+#![feature(type_ascription, array_map, non_ascii_idents)]#![allow(mixed_script_confusables, non_snake_case)]
 extern "C" {
 fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::raw::c_char,
 									viscosity: &mut f64, thermal_conductivity: &mut f64,
@@ -7,11 +7,12 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 }
 
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
-	trace::rstack_self()?;
+	trace::rstack_self()?; trace::sigfpe();
 	let system = std::fs::read("CH4+O2.ron")?;
 	const S : usize = 35; // Number of species
 	type Simulation<'t> = combustion::Simulation::<'t, S>;
 	let Simulation{system, state: combustion::State{temperature, amounts}, pressure_r, species, ..} = Simulation::new(&system)?;
+	trace::unmask_SSE_exceptions();
 	let pressure = pressure_r * (combustion::kB*combustion::NA);
 	let ([viscosity, _thermal_conductivity], ref _thermal_diffusion_coefficients) = {
 		use itertools::Itertools;

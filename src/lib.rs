@@ -10,6 +10,7 @@ use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enu
 
 pub const kB : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
+const Cm_per_Debye : f64 = 3.33564e30; //C·m (Coulomb=A⋅s)
 
 #[derive(Debug)] pub struct NASA7(pub [[f64; 7]; 2]);
 impl NASA7 {
@@ -29,9 +30,9 @@ pub struct System<const S: usize> where [(); S-1]: {
 	pub thermodynamics: [NASA7; S],
 	pub reactions: Box<[Reaction<S>]>, // .net[S-1]
 	diameter: [f64; S],
-	well_depth: [f64; S],
+	well_depth_J: [f64; S],
 	polarizability: [f64; S],
-	dipole: [f64; S],
+	permanent_dipole_moment: [f64; S],
 	//rotational_relaxation: [f64; S],
 	//internal_degrees_of_freedom: [f64; S],
 }
@@ -92,12 +93,12 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				}},
 			}
 		}));
-		let diameter = eval(species, |s| species_data[s].transport.diameter);
-		let well_depth = eval(species, |s| species_data[s].transport.well_depth);
+		let diameter = eval(species, |s| species_data[s].transport.diameter_Å*1e-10);
+		let well_depth_J = eval(species, |s| species_data[s].transport.well_depth_K * kB);
 		use self::ron::Geometry::*;
-		let polarizability = eval(species, |s| if let Linear{polarizability,..}|Nonlinear{polarizability,..} = species_data[s].transport.geometry { polarizability } else { 0. });
+		let polarizability = eval(species, |s| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = species_data[s].transport.geometry { polarizability_Å3*1e-30 } else { 0. });
+		let permanent_dipole_moment = eval(species, |s| if let Nonlinear{permanent_dipole_moment_Debye,..} = species_data[s].transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
 		let _rotational_relaxation = eval(species, |s| if let Nonlinear{rotational_relaxation,..} = species_data[s].transport.geometry { rotational_relaxation } else { 0. });
-		let dipole = eval(species, |s| if let Nonlinear{dipole,..} = species_data[s].transport.geometry { dipole } else { 0. });
 		let _internal_degrees_of_freedom = eval(species, |s| match species_data[s].transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
 		let ron::InitialState{temperature, pressure, mole_proportions} = state;
 		let pressure_r = pressure / (kB*NA);
@@ -107,7 +108,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 
 		Ok(Self{
 			species,
-			system: System{molar_mass, thermodynamics, reactions, diameter, well_depth, polarizability, dipole, /*rotational_relaxation, internal_degrees_of_freedom*/},
+			system: System{molar_mass, thermodynamics, reactions, diameter, well_depth_J, polarizability, permanent_dipole_moment, /*rotational_relaxation, internal_degrees_of_freedom*/},
 			time_step, pressure_r,
 			state: State{temperature, amounts}
 		})
