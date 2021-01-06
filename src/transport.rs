@@ -1,5 +1,8 @@
-fn linear_interpolation(x: &[f64; 2], y: &[f64; 2], x0: f64) -> f64 { assert!(x[0] != x[1]); y[0] + (y[1]-y[0])/(x[1]-x[0])*(x0-x[0]) }
-//fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 { ((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1] }
+//fn linear_interpolation(x: &[f64; 2], y: &[f64; 2], x0: f64) -> f64 { assert!(x[0] != x[1]); y[0] + (y[1]-y[0])/(x[1]-x[0])*(x0-x[0]) }
+fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
+	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
+	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
+}
 
 fn eval_poly<const N: usize>(P: &[f64; N], x: f64) -> f64 { P.dot(generate(|k| x.powi(k as i32))) }
 
@@ -15,7 +18,7 @@ trait Vector<const N: usize> = vec::Vector<N>+iter::IntoIterator<Item=f64>;
 }
 // Regression with 1/y² weights (towards relative vertical error)
 fn polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Copy) -> [f64; D] { weighted_polynomial_regression(x, y, map(y, |y| 1./sq(y))) }
-fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(map(t, x), map(t, y)) }
+//fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(map(t, x), map(t, y)) }
 
 mod collision_integrals; // Reduced collision integrals table computed from Chapman-Enskog theory with Stockmayer potential by L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys.
 use super::{kB, NA};
@@ -24,14 +27,15 @@ const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
 const ε0 : f64 = 1./(light_speed*light_speed*μ0); // F/m (Farad=s⁴A²/(m²kg)*/
 use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log, pow, powi}};
 use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}};
+use super::System;
 
-//struct Transport<const S: usize> { D: [f64; S], η: f64, λ: f64 }
-impl<const S: usize> super::System<S> where [(); S-1]: {
-	pub fn transport(&self, _pressure: f64, temperature: f64, amounts: &[f64; S]) -> f64 {//Transport<S> {
+#[derive(Debug, Clone, Copy)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub thermal_diffusion_coefficients: [f64; S] }
+impl<const S: usize> System<S> where [(); S-1]: {
+	pub fn transport(&self, pressure_R: f64, temperature: f64, amounts: &[f64; S]) -> Transport<S> {
 		let header_log_T⃰ = eval(collision_integrals::header_T⃰.copied(), log);
 		// Least square fits polynomials in δ⃰, for each T⃰  row of the collision integrals tables
-		let [Ω⃰22,_A⃰ ,_B⃰,_C⃰] = {use collision_integrals::*; [&Ω⃰22,&A⃰ ,&B⃰,&C⃰].map(|table| table.map(|T⃰_row| polynomial_regression(header_δ⃰.copied(), T⃰_row)))};
-		let Self{molar_mass, thermodynamics: _, diameter, well_depth_J, polarizability, permanent_dipole_moment, /*rotational_relaxation, internal_degrees_of_freedom,*/ ..} = self;
+		let [Ω⃰22,A⃰ ,_B⃰,_C⃰] = {use collision_integrals::*; [&Ω⃰22,&A⃰ ,&B⃰,&C⃰].map(|table| table.map(|T⃰_row| polynomial_regression(header_δ⃰.copied(), T⃰_row)))};
+		let Self{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
 		let χ = |a, b| { // Corrections to the effective diameter and well depth to account for interaction between a polar and a non-polar molecule
 			if (permanent_dipole_moment[a]>0.) == (permanent_dipole_moment[b]>0.) { 1. } else {
 				let (polar, non_polar) = if permanent_dipole_moment[a] != 0. { (a,b) } else { (b,a) };
@@ -46,22 +50,27 @@ impl<const S: usize> super::System<S> where [(); S-1]: {
 		let collision_integral = |table : &[[f64; /*8 FIXME*/1]; 39], a, b, T| {
 			let log_T⃰ = log(T⃰ (a, a, T));
 			//assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap(), "{} {} {} {} {}", header_log_T⃰ .first().unwrap(), log_T⃰ ,  *header_log_T⃰ .last().unwrap(), T, T⃰ (a, a, T));
-			let i = min((1+header_log_T⃰ [1..header_log_T⃰.len()].iter().position(|&header_log_T⃰ | log_T⃰ < header_log_T⃰ ).unwrap())-1, header_log_T⃰.len()-/*3*/2);
 			use std::convert::TryInto;
-			let header_log_T⃰ : &[_; /*3*/2] = header_log_T⃰[i..][../*3*/2].try_into().unwrap();
-			assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap(), "{} {} {} {} {}", header_log_T⃰ .first().unwrap(), log_T⃰ ,  header_log_T⃰ .last().unwrap(), T, T⃰ (a, a, T));
-			let polynomials: &[_; /*3*/2] = &table[i..][../*3*/2].try_into().unwrap();
 			let δ⃰ = reduced_dipole_moment(a, b);
+			/*let i = min((1+header_log_T⃰ [1..header_log_T⃰.len()].iter().position(|&header_log_T⃰ | log_T⃰ < header_log_T⃰ ).unwrap())-1, header_log_T⃰.len()-/*3*/2);
+			let header_log_T⃰ : &[_; /*3*/2] = header_log_T⃰[i..][../*3*/2].try_into().unwrap();
+			let polynomials: &[_; /*3*/2] = &table[i..][../*3*/2].try_into().unwrap();
+			let image = linear_interpolation(header_log_T⃰, &polynomials.map(|P| eval_poly(&P, δ⃰ )), log_T⃰);*/
+			let i = min((1+header_log_T⃰ [1..header_log_T⃰.len()].iter().position(|&header_log_T⃰ | log_T⃰ < header_log_T⃰ ).unwrap())-1, header_log_T⃰.len()-3);
+			let header_log_T⃰ : &[_; 3] = header_log_T⃰[i..][..3].try_into().unwrap();
+			let polynomials: &[_; 3] = &table[i..][..3].try_into().unwrap();
+			let image = quadratic_interpolation(header_log_T⃰, &polynomials.map(|P| eval_poly(&P, δ⃰ )), log_T⃰);
+			assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap(), "{} {} {} {} {}", header_log_T⃰ .first().unwrap(), log_T⃰ ,  header_log_T⃰ .last().unwrap(), T, T⃰ (a, a, T));
 			assert!(*collision_integrals::header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *collision_integrals::header_δ⃰ .last().unwrap(), "{} {} {}", collision_integrals::header_δ⃰ .first().unwrap(), δ⃰ , collision_integrals::header_δ⃰ .last().unwrap());
-			let image = /*quadratic*/linear_interpolation(dbg!(header_log_T⃰), &dbg!(dbg!(polynomials).map(|P| eval_poly(&P, δ⃰ ))), dbg!(log_T⃰));
-			assert!(image > 0., "{}", image);
+			assert!(image > 0., "{:?}", (image, log_T⃰, header_log_T⃰, polynomials, δ⃰));
 			image
 		};
 		let Ω⃰22 = |a, b, T| collision_integral(&Ω⃰22, a, b, T);
 		let viscosity = |a, T| 5./16. * sqrt(π * molar_mass[a]/NA * kB * T) / (Ω⃰22(a, a, T) * π * sq(diameter[a]));
-		/*let reduced_mass = |a, b| molar_mass[a]/NA * molar_mass[b]/NA / (molar_mass[a]/NA + molar_mass[b]/NA); // reduced_mass (a,a) = W/2NA
-		let _Ω⃰11 = |a, b, T| Ω⃰22(a, b, T)/collision_integral(&A⃰, a, b, T);
-		let conductivity = |a, T| {
+		//amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(viscosity(a,temperature)); } );
+		let reduced_mass = |a, b| molar_mass[a]/NA * molar_mass[b]/NA / (molar_mass[a]/NA + molar_mass[b]/NA); // reduced_mass (a,a) = W/2NA
+		let Ω⃰11 = |a, b, T| Ω⃰22(a, b, T)/collision_integral(&A⃰, a, b, T);
+		let thermal_conductivity = |a: usize, T| {
 			let self_diffusion_coefficient = 3./16. * sqrt(2.*π/reduced_mass(a,a)) * pow(kB*T, 3./2.) / (π * sq(diameter[a]) * Ω⃰11(a, a, T));
 			let f_internal = molar_mass[a]/NA/(kB*T) * self_diffusion_coefficient / viscosity(a, T);
 			let T⃰ = T⃰ (a, a, T);
@@ -74,27 +83,33 @@ impl<const S: usize> super::System<S> where [(); S-1]: {
 			let Cv_internal = thermodynamics[a].specific_heat_capacity(T) - 5./2. - internal_degrees_of_freedom[a];
 			(viscosity(a, T)/(molar_mass[a]/NA))*kB*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 		};
-		let diffusion_coefficient = |a, b, T| {
-			3./16. * sqrt(2.*π/reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(reduced_diameter)*Ω⃰11(a, b, T))
-		};*/
+		amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(thermal_conductivity(a,temperature)); } );
+		let _thermal_diffusion_coefficient = |a, b, T| {
+			3./16. * sqrt(2.*π/reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(reduced_diameter(a,b))*Ω⃰11(a, b, T))
+		};
 
-		// polynomial fit in the temperature range for every specie (pairs)
-		for a in 0..S {use collision_integrals::*; dbg!(header_T⃰[header_T⃰.len()-2] *  well_depth_J[a] / kB); }
+		/*// polynomial fit in the temperature range for every specie (pairs)
+		//for a in 0..S {use collision_integrals::*; dbg!(header_T⃰[header_T⃰.len()-2] *  well_depth_J[a] / kB); }
 		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
-		const D : usize = /*4 FIXME*/1;
+		const D : usize = /*4 FIXME*/4;
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
-		let sqrt_viscosity_sqrt_T_polynomials : [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(dbg!(viscosity(a,T))/dbg!(sqrt(T))))).collect();
+		let sqrt_viscosity_sqrt_T_polynomials : [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(viscosity(a,T))/sqrt(sqrt(T)))).collect();
 		//let conductivity_polynomials = generate(|a| polyfit(|T| conductivity(a, T)/sqrt(T)));
-		//let diffusion_coefficient_polynomials = generate(|a| iter::box_collect((0..=a).map(|b| polyfit(|T| diffusion_coefficient(a,b,T)/pow(T, 3./2.)))));
-
+		//let diffusion_coefficient_polynomials = generate(|a| iter::box_collect((0..=a).map(|b| polyfit(|T| diffusion_coefficient(a,b,T)/pow(T, 3./2.)))));*/
 		let T = temperature;
-		let sqrt_viscosity = |a| sq(sqrt(T) * eval_poly(&sqrt_viscosity_sqrt_T_polynomials[a], log(T)));
-		amounts.dot(generate(|k|
+		//let sqrt_viscosity = |a| sqrt(sqrt(T)) * eval_poly(&sqrt_viscosity_sqrt_T_polynomials[a], log(T));
+		let sqrt_viscosity = |a| sqrt(viscosity(a, T));
+		let viscosity = amounts.dot(generate(|k|
 			sq(sqrt_viscosity(k)) /
 			amounts.dot(generate(|j|
 				sq(1. + (sqrt_viscosity(k)/sqrt_viscosity(j)) * sqrt(sqrt(molar_mass[j]/molar_mass[k]))) /
 				(sqrt(8.) * sqrt(1. + molar_mass[k]/molar_mass[j])))
-			)
-		))
+			))
+		);
+		let amount = pressure_R / T * System::<S>::volume;
+		assert_eq!(amounts.iter().sum::<f64>(), amount);
+		let thermal_conductivity = 1./2. * (amounts.dot(generate(|k| thermal_conductivity(k, T))) / amount + amount / amounts.dot(generate(|k| 1. / thermal_conductivity(k, T))));
+		let thermal_diffusion_coefficients = [0.; S];
+		Transport{viscosity, thermal_conductivity, thermal_diffusion_coefficients}
 	}}
