@@ -9,16 +9,18 @@ fn eval_poly<const N: usize>(P: &[f64; N], x: f64) -> f64 { P.dot(generate(|k| x
 trait Vector<const N: usize> = vec::Vector<N>+iter::IntoIterator<Item=f64>;
  fn weighted_polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
 	use nalgebra::{DMatrix, DVector, SVD};
-	let w = DVector::from_iterator(N, w.into_iter());
-	let A = DMatrix::from_iterator(N, D, x.into_iter().zip(w.iter()).map(|(x, w)| (0..D).map(move |k| w*x.powi(k as i32))).flatten());
-	let b = DVector::from_iterator(N, y.into_iter().zip(w.iter()).map(|(x, w)| w*x));
+	let ref w = DVector::from_iterator(N, w.into_iter());
+	//let A = DMatrix::from_iterator(N, D, x.into_iter().zip(w.iter()).map(|(x, w)| (0..D).map(move |k| w*x.powi(k as i32))).flatten());
+	let ref x = x.collect();
+	let A = DMatrix::from_iterator(N, D, (0..D).map(|k| x.iter().zip(w.iter()).map(move |(x, w)| w*x.powi(k as i32))).flatten());
+	let b = DVector::from_iterator(N, y.into_iter().zip(w.iter()).map(|(y, w)| w*y));
 	use std::convert::TryInto;
 	assert!(!A.iter().any(|a| a.is_nan()), "{}", A);
 	SVD::new(A, true, true).solve(&b, f64::EPSILON).unwrap().as_slice().try_into().unwrap()
 }
 // Regression with 1/y² weights (towards relative vertical error)
 fn polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Copy) -> [f64; D] { weighted_polynomial_regression(x, y, map(y, |y| 1./sq(y))) }
-//fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(map(t, x), map(t, y)) }
+fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(map(t, x), map(t, y)) }
 
 mod collision_integrals; // Reduced collision integrals table computed from Chapman-Enskog theory with Stockmayer potential by L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys.
 use super::{kB, NA};
@@ -29,7 +31,7 @@ use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log, pow, powi}
 use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}};
 use super::System;
 
-#[derive(Debug, Clone, Copy)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub thermal_diffusion_coefficients: [f64; S] }
+#[derive(Debug, Clone, Copy)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
 impl<const S: usize> System<S> where [(); S-1]: {
 	pub fn transport(&self, pressure_R: f64, temperature: f64, amounts: &[f64; S]) -> Transport<S> {
 		let header_log_T⃰ = eval(collision_integrals::header_T⃰.copied(), log);
@@ -83,33 +85,35 @@ impl<const S: usize> System<S> where [(); S-1]: {
 			let Cv_internal = thermodynamics[a].specific_heat_capacity(T) - 5./2. - internal_degrees_of_freedom[a];
 			(viscosity(a, T)/(molar_mass[a]/NA))*kB*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 		};
-		amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(thermal_conductivity(a,temperature)); } );
-		let _thermal_diffusion_coefficient = |a, b, T| {
+		//amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(thermal_conductivity(a,temperature)); } );
+		let binary_thermal_diffusion_coefficient = |a, b, T| {
 			3./16. * sqrt(2.*π/reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(reduced_diameter(a,b))*Ω⃰11(a, b, T))
 		};
 
-		/*// polynomial fit in the temperature range for every specie (pairs)
+		// polynomial fit in the temperature range for every specie (pairs)
 		//for a in 0..S {use collision_integrals::*; dbg!(header_T⃰[header_T⃰.len()-2] *  well_depth_J[a] / kB); }
-		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
-		const D : usize = /*4 FIXME*/4;
+		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., /*3000.*/1000.];
+		const D : usize = 4;
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
-		let sqrt_viscosity_sqrt_T_polynomials : [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(viscosity(a,T))/sqrt(sqrt(T)))).collect();
-		//let conductivity_polynomials = generate(|a| polyfit(|T| conductivity(a, T)/sqrt(T)));
-		//let diffusion_coefficient_polynomials = generate(|a| iter::box_collect((0..=a).map(|b| polyfit(|T| diffusion_coefficient(a,b,T)/pow(T, 3./2.)))));*/
+		let sqrt_viscosity_T14_polynomials : [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(viscosity(a,T))/sqrt(sqrt(T)))).collect();
+		let thermal_conductivity_sqrt_T_polynomials : [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| thermal_conductivity(a,T)/sqrt(T))).collect();
+		let binary_thermal_diffusion_coefficient_polynomials : [Box<[[f64; D]]>; S] = generate(|a| iter::box_collect((0..=a).map(|b| polynomial_fit::<_,_,_,D,N>(T, log, |T| binary_thermal_diffusion_coefficient(a,b,T)/pow(T,3./2.))))).collect();
+		let sqrt_viscosity = |a, T| sqrt(sqrt(T)) * eval_poly(&sqrt_viscosity_T14_polynomials[a], log(T));
+		//let sqrt_viscosity = |a| sqrt(viscosity(a, T));
+		let thermal_conductivity = |a, T| sqrt(T) * eval_poly(&thermal_conductivity_sqrt_T_polynomials[a], log(T));
+		let binary_thermal_diffusion_coefficient = |a:usize, b:usize, T:f64| pow(T,3./2.) * eval_poly(&binary_thermal_diffusion_coefficient_polynomials[if a>b {a} else { b }][if a>b {b} else {a}], log(T));
 		let T = temperature;
-		//let sqrt_viscosity = |a| sqrt(sqrt(T)) * eval_poly(&sqrt_viscosity_sqrt_T_polynomials[a], log(T));
-		let sqrt_viscosity = |a| sqrt(viscosity(a, T));
 		let viscosity = amounts.dot(generate(|k|
-			sq(sqrt_viscosity(k)) /
+			sq(sqrt_viscosity(k, T)) /
 			amounts.dot(generate(|j|
-				sq(1. + (sqrt_viscosity(k)/sqrt_viscosity(j)) * sqrt(sqrt(molar_mass[j]/molar_mass[k]))) /
+				sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(molar_mass[j]/molar_mass[k]))) /
 				(sqrt(8.) * sqrt(1. + molar_mass[k]/molar_mass[j])))
 			))
 		);
 		let amount = pressure_R / T * System::<S>::volume;
 		assert_eq!(amounts.iter().sum::<f64>(), amount);
 		let thermal_conductivity = 1./2. * (amounts.dot(generate(|k| thermal_conductivity(k, T))) / amount + amount / amounts.dot(generate(|k| 1. / thermal_conductivity(k, T))));
-		let thermal_diffusion_coefficients = [0.; S];
-		Transport{viscosity, thermal_conductivity, thermal_diffusion_coefficients}
+		let mixture_averaged_thermal_diffusion_coefficients = generate(|k| (1. - amounts[k]/amount) / amounts.dot(generate(|j| if j != k { 1. / binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))).collect();
+		Transport{viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients}
 	}}

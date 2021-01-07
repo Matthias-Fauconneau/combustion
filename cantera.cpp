@@ -6,9 +6,9 @@
 using namespace std;
 
 extern "C"
-void cantera(double pressure, double temperature, const char* mole_proportions, double& viscosity, double& thermal_conductivity, size_t& species_len, const char**& species_data, double*& thermal_diffusion_coefficients_data) try {
+void cantera(double pressure, double temperature, const char* mole_proportions, double& viscosity, double& thermal_conductivity, size_t& species_len, const char**& species_data, double*& mixture_averaged_thermal_diffusion_coefficients_data) try {
 	using namespace Cantera;
-	auto mechanism = newSolution("gri30.yaml", "gri30", "Multi");
+	auto mechanism = newSolution("gri30.yaml", "gri30", "mixture-averaged"/*Multi*/);
 	auto kinetics = mechanism->kinetics();
 	species_len = kinetics->nTotalSpecies();
 	auto species = new std::vector<const char*>();
@@ -19,8 +19,8 @@ void cantera(double pressure, double temperature, const char* mole_proportions, 
 	auto transport = mechanism->transport();
 	viscosity = transport->viscosity();
 	thermal_conductivity = transport->thermalConductivity();
-	auto thermal_diffusion_coefficients = new std::vector<double>();
-	thermal_diffusion_coefficients->resize(kinetics->nTotalSpecies());
-	transport->getThermalDiffCoeffs(thermal_diffusion_coefficients->data());
-	thermal_diffusion_coefficients_data = thermal_diffusion_coefficients->data();
+	auto mixture_averaged_thermal_diffusion_coefficients = new std::vector<double>();
+	mixture_averaged_thermal_diffusion_coefficients->resize(kinetics->nTotalSpecies());
+	transport->getThermalDiffCoeffs(mixture_averaged_thermal_diffusion_coefficients->data());
+	mixture_averaged_thermal_diffusion_coefficients_data = mixture_averaged_thermal_diffusion_coefficients->data();
 } catch (std::exception& err) { std::cerr << err.what() << std::endl; }

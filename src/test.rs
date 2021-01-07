@@ -8,9 +8,9 @@ use super::*;
         let temperature = 273.15+temperature_C;
         system.transport(pressure_R, temperature, &eval(&species, |specie| if specie==&single_specie {pressure_R / temperature * System::<35>::volume} else {0.}))
     };
-    let viscosity = |single_specie, T, expected| assert!(dbg!(f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected) < 0.07);
+    let viscosity = |single_specie, T, expected| { let e = f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected; println!("{}", e); assert!(e < 0.07); };
     viscosity("Ar",25., 22.58);
     viscosity("CH4",25., 11.07);
-    let thermal_conductivity = |single_specie, T, expected| { let got = transport(single_specie, T).thermal_conductivity; assert!(dbg!(f64::abs(got-expected)/expected) < 0.05, "{} {}", got, expected); };
+    let thermal_conductivity = |single_specie, T, expected| { let got = transport(single_specie, T).thermal_conductivity; let e = f64::abs(got-expected)/expected; println!("{}", e);  assert!(e < 0.05, "{} {}", got, expected); };
     thermal_conductivity("Ar",500., 0.03650);
 }
