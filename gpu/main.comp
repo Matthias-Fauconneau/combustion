@@ -126,6 +126,9 @@ struct System {
 	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
 	double[S][EFFICIENCIES] efficiencies;
 	Falloff[FALLOFF] falloff;
+	double[S][4] sqrt_viscosity_T14_polynomials;
+	double[S][4] thermal_conductivity_sqrt_T_polynomials;
+	double[S][4] binary_thermal_diffusion_coefficient_polynomials;
 };
 const System system = System(SYSTEM);
 layout(push_constant) uniform Constants {

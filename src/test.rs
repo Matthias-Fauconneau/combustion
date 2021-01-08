@@ -2,11 +2,12 @@ use super::*;
 
 #[test] fn test() {
     let system = std::fs::read("CH4+O2.ron").unwrap();
-    let Simulation{species, system, ..} = Simulation::<35>::new(&system).unwrap();
+    let Simulation{species_names, system, ..} = Simulation::<35>::new(&system).unwrap();
     let transport = |single_specie, temperature_C| {
         let pressure_R = 1e5/(kB*NA);
         let temperature = 273.15+temperature_C;
-        system.transport(pressure_R, temperature, &eval(&species, |specie| if specie==&single_specie {pressure_R / temperature * System::<35>::volume} else {0.}))
+        let amount = pressure_R / temperature * System::<35>::volume;
+        system.transport(pressure_R, &State{temperature, amounts: eval(species_names, |specie| if specie==single_specie {amount} else {0.})})
     };
     let viscosity = |single_specie, T, expected| { let e = f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected; println!("{}", e); assert!(e < 0.07); };
     viscosity("Ar",25., 22.58);

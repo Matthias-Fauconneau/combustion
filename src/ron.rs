@@ -1,14 +1,7 @@
 use serde::Deserialize;
 pub use {std::boxed::Box, linear_map::LinearMap as Map};
 #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, C, Ar }
-#[derive(Deserialize, Debug)] pub struct InitialState<'t> { pub temperature: f64, pub pressure: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64> }
-#[derive(Deserialize, Debug)] pub enum Phase<'t> {
-	IdealGas {
-		elements: Box<[Element]>,
-		species: Box<[&'t str]>,
-		#[serde(borrow)] state: InitialState<'t>,
-	}
-}
+#[derive(Deserialize, Debug)] pub struct State<'t> { pub temperature: f64, pub pressure: f64, #[serde(borrow)] pub mole_proportions: Map<&'t str, f64> }
 #[derive(Deserialize, Debug)] pub struct NASA7 {
 	pub temperature_ranges: Box<[f64]>,
 	pub pieces: Box<[[f64; 7]]>,
@@ -53,7 +46,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map};
 
 #[derive(Deserialize, Debug)] pub struct System<'t> {
 	pub time_step: f64,
-	#[serde(borrow)] pub phases: Box<[Phase<'t>]>,
+	#[serde(borrow)] pub state: State<'t>,
 	#[serde(borrow)] pub species: Map<&'t str, Specie>,
 	#[serde(borrow)] pub reactions: Box<[Reaction<'t>]>,
 }

@@ -4,9 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=CH4+O2.ron");
 	println!("cargo:rerun-if-changed=main.comp");
 	let system = std::fs::read("CH4+O2.ron")?;
-	type Simulation<'t> = combustion::Simulation::<'t, 35>;
-	let combustion::System{molar_masses, thermodynamics, reactions, ..} = Simulation::new(&system)?.system;
 	use combustion::*;
+	let System{molar_masses, thermodynamics, reactions, ..} = Simulation::<35>::new(&system)?.system;
 	struct Falloff<const S: usize> where [(); S-1]: {
 		reaction: Reaction<S>,
 		efficiency: usize,
@@ -19,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		pressure_modification: Box<[Reaction<S>]>,
 		efficiencies: Box<[[f64; S]]>,
 		falloff: Box<[Falloff<S>]>,
+		transport_polynomials: TransportPolynomials<S>,
 	}
 	let mut efficiencies_set = Vec::new();
 	let falloff = reactions.iter().filter_map(|reaction|
@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		pressure_modification: reactions.iter().filter(|r| matches!(r.model, Model::PressureModification{..})).copied().collect(),
 		efficiencies: efficiencies_set.into_boxed_slice(),
 		falloff,
+		transport_polyonmials
 	};
 	impl<const S: usize> std::fmt::Display for System<S> where [(); S-1]: {
 		fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

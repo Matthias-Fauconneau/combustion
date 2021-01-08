@@ -3,7 +3,7 @@
 #![feature(trait_alias)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports,uncommon_codepoints)]
 pub mod ron;
-mod transport; pub use transport::Transport;
+mod transport; pub use transport::{TransportPolynomials, Transport};
 mod reaction; use reaction::Reaction;
 use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
 use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
@@ -24,16 +24,21 @@ impl NASA7 {
 	//fn dT_Gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T) } // dT((H-TS)/RT)
 }
 
-pub struct System<const S: usize> where [(); S-1]: {
+pub struct Species<const S: usize> {
 	pub molar_mass: [f64; S],
 	pub thermodynamics: [NASA7; S],
-	pub reactions: Box<[Reaction<S>]>, // .net[S-1]
 	diameter: [f64; S],
 	well_depth_J: [f64; S],
 	polarizability: [f64; S],
 	permanent_dipole_moment: [f64; S],
 	rotational_relaxation: [f64; S],
 	internal_degrees_of_freedom: [f64; S],
+}
+
+pub struct System<const S: usize> where [(); S-1]: {
+	pub species: Species<S>,
+	pub reactions: Box<[Reaction<S>]>, // .net[S-1]
+	pub transport_polynomials: TransportPolynomials<S>,
 }
 impl<const S: usize> System<S> where [(); S-1]: {
 	const volume : f64 = 1.;
@@ -45,7 +50,7 @@ impl<const S: usize> System<S> where [(); S-1]: {
 }
 
 pub struct Simulation<'t, const S: usize> where [(); S-1]: {
-	pub species: [&'t str; S],
+	pub species_names: [&'t str; S],
 	pub system: System<S>,
 	pub time_step: f64,
 	pub pressure_R: f64,
@@ -64,23 +69,33 @@ impl From<ron::RateConstant> for reaction::RateConstant { fn from(ron::RateConst
 
 impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 	pub fn new(system: &'b [u8]) -> ::ron::Result<Self> where 'b: 't, [(); S]: {
-		let ron::System{species: species_data, reactions, phases, time_step} = ::ron::de::from_bytes(&system)?;
-		let ron::Phase::IdealGas{species, state, ..} = phases.into_vec().into_iter().next().unwrap();
+		let ron::System{species, reactions, time_step, state} = ::ron::de::from_bytes(&system)?;
+		let species: Vec<_> = species.into();
 		use {std::convert::TryInto, iter::into::IntoMap};
-		let species : [_; S] = species.as_ref().try_into().unwrap_or_else(|_| panic!("Compiled for {} species, got {}", S, species.len()));
-		let molar_mass = eval(species, |s| species_data.get(s).unwrap_or_else(|| panic!("{}", s)).composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
-		let thermodynamics = eval(species, |s| { let ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..} = &species_data[s]; match temperature_ranges[..] {
+		let ref species : [_; S] = {let len = species.len(); unwrap::unwrap!(species.try_into(), "Compiled for {} species, got {}", S, len)};
+		let molar_mass = eval(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
+		let thermodynamics = eval(species, |(_,ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
 			ref ranges => panic!("{:?}", ranges),
-		}});
+		});
+		let diameter = eval(species, |(_,s)| s.transport.diameter_Å*1e-10);
+		let well_depth_J = eval(species, |(_,s)| s.transport.well_depth_K * kB);
+		use self::ron::Geometry::*;
+		let polarizability = eval(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
+		let permanent_dipole_moment = eval(species, |(_,s)| if let Nonlinear{permanent_dipole_moment_Debye,..} = s.transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
+		let rotational_relaxation = eval(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
+		let internal_degrees_of_freedom = eval(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
+		let species_names = eval(species, |(name,_)| *name);
+		let species = Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom};
+		let transport_polynomials = species.transport_polynomials();
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
-			for side in equation { for (specie, _) in side { assert!(species.contains(specie), "{}", specie) } }
-			let [reactants, products] = eval(equation, |e| eval(species, |s| *e.get(s).unwrap_or(&0) as f64));
+			for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
+			let [reactants, products] = eval(equation, |e| eval(species_names, |s| *e.get(s).unwrap_or(&0) as f64));
 			let net = iter::vec::Sub::sub(products.prefix(), reactants.prefix());
 			let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
 			let Σnet = Σproducts-Σreactants;
-			let from = |efficiencies:Map<_,_>| eval(&species, |specie| *efficiencies.get(specie).unwrap_or(&1.));
+			let from = |efficiencies:Map<_,_>| eval(species_names, |specie| *efficiencies.get(specie).unwrap_or(&1.));
 			Reaction{
 				reactants, products, net, Σreactants, Σproducts, Σnet,
 				rate_constant: rate_constant.into(),
@@ -92,22 +107,17 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 				}},
 			}
 		}));
-		let diameter = eval(species, |s| species_data[s].transport.diameter_Å*1e-10);
-		let well_depth_J = eval(species, |s| species_data[s].transport.well_depth_K * kB);
-		use self::ron::Geometry::*;
-		let polarizability = eval(species, |s| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = species_data[s].transport.geometry { polarizability_Å3*1e-30 } else { 0. });
-		let permanent_dipole_moment = eval(species, |s| if let Nonlinear{permanent_dipole_moment_Debye,..} = species_data[s].transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
-		let rotational_relaxation = eval(species, |s| if let Nonlinear{rotational_relaxation,..} = species_data[s].transport.geometry { rotational_relaxation } else { 0. });
-		let internal_degrees_of_freedom = eval(species, |s| match species_data[s].transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
-		let ron::InitialState{temperature, pressure, mole_proportions} = state;
+		let system = System{species, transport_polynomials, reactions};
+
+		let ron::State{temperature, pressure, mole_proportions} = state;
 		let pressure_R = pressure / (kB*NA);
 		let amount = pressure_R / temperature * System::<S>::volume;
-		let mole_proportions = eval(&species, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
+		let mole_proportions = eval(species_names, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions/*.prefix()*/, |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
 
 		Ok(Self{
-			species,
-			system: System{molar_mass, thermodynamics, reactions, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom},
+			species_names,
+			system,
 			time_step, pressure_R,
 			state: State{temperature, amounts}
 		})

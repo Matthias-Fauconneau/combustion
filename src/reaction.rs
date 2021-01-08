@@ -58,7 +58,7 @@ impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
 	pub fn dt_J(&self, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
 		//let a = S-1;
-		let Self{thermodynamics, reactions/*, molar_masses: W*/, ..} = self;
+		let Self{species: super::Species{thermodynamics, ..}, reactions/*, molar_masses: W*/, ..} = self;
 		//let rcpV = 1. / V;
 		let (T, amounts) = (y[0], y.suffix());
 		let C = pressure_R / T;
