@@ -44,9 +44,9 @@ impl<const S: usize> System<S> where [(); S-1]: {
 	const volume : f64 = 1.;
 }
 
-#[derive(Clone)] pub struct State<const S: usize> where [(); S-1]: {
+#[derive(Clone)] pub struct State<const S: usize> {
 	pub temperature: f64,
-	pub amounts: [f64; S/*-1*/]
+	pub amounts: [f64; S]
 }
 
 pub struct Simulation<'t, const S: usize> where [(); S-1]: {

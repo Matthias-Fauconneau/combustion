@@ -1,6 +1,14 @@
 #version 460
+double sq(double x) { return x*x; }
 double log(double x) { return double(log(float(x))); }
 double exp(double x) { return double(exp(float(x))); }
+double pow(double x, double y) { return double(pow(float(x), float(y))); }
+
+double dot(double[4] a, double[4] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
+double eval_poly(double [4] P, double x) {
+	double[4] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
+	return dot(P, generate_k);
+}
 
 const double ideal_gas_constant = 8.31446261815324;
 
@@ -120,8 +128,8 @@ void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, ino
 
 struct TransportPolynomials {
 	double[S][4] sqrt_viscosity_T14;
-	double[S][4] thermal_conductivity_sqrt_T;
-	double[S][S][4] binary_thermal_diffusion_coefficient;
+	double[S][4] thermal_conductivity_T12;
+	double[S][S][4] binary_thermal_diffusion_coefficients_T32;
 };
 struct System {
 	double[S] molar_mass;
@@ -136,18 +144,29 @@ struct System {
 const System system =
 #include "system.h"
 ;
+const double volume = 1.;
+
+double sqrt_viscosity(uint a, double T) { return sqrt(sqrt(T)) * eval_poly(system.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
+double thermal_conductivity(uint a, double T) { return sqrt(T) * eval_poly(system.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
+double binary_thermal_diffusion_coefficient(uint a, uint b, double T) { return pow(T,3./2.) * eval_poly(system.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a][b], log(T)); }
+
 layout(push_constant) uniform Constants {
 double pressure_R;
 } constants;
 layout(set = 0, binding = 0) buffer Temperature { double data[]; } temperature;
-layout(set = 0, binding = 1) buffer Amount { double data[]; } amounts[S-1];
+layout(set = 0, binding = 1) buffer Amount { double data[]; } _amounts[S/*-1*/];
 layout(set = 0, binding = 2) buffer d_Temperature { double data[]; } d_temperature;
 layout(set = 0, binding = 3) buffer d_Amount { double data[]; } d_amounts[S-1];
+layout(set = 0, binding = 4) buffer Viscosity { double data[]; } viscosity;
+layout(set = 0, binding = 5) buffer ThermalConductivity { double data[]; } _thermal_conductivity;
+layout(set = 0, binding = 6) buffer MixtureAveragedThermalDiffusionCoeffficent { double data[]; } mixture_averaged_thermal_diffusion_coefficients[S];
+
 //layout(set = 0, binding = 2) buffer Jacobian { writeonly double data[]; } jacobian[(1+S-1)*(1+S-1)];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
 	//double rcpV = 1. / V;
 	double T = temperature.data[i];
+#if 0
 	double C = constants.pressure_R / T;
 	//double rcpC = 1. / C;
 	//double rcp_amount = rcpV * rcpC;
@@ -158,8 +177,7 @@ void main() {
 	for(uint k=0;k<H_T.length();k++) H_T[k] = H[k] / T;
 	double[S-1] G;
 	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - specific_entropy(system.thermodynamics[k], T);
-	/*double[S-1] dT_G;
-	for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);*/
+	//double[S-1] dT_G; for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);
 	double[S-1] active_concentrations;
 	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i];
 	double sumC = 0.;
@@ -173,15 +191,12 @@ void main() {
 	for(uint k=0;k<log_concentrations.length();k++) log_concentrations[k] = log(concentrations[k]);
 	double[S-1] net_rates;
 	for(uint k=0;k<net_rates.length();k++) net_rates[k] = 0.;
-	/*double[S-1] dT_net_rates;
-	for(uint k=0;k<dT_net_rates.length();k++) dT_net_rates[k] = 0.;
-	double[S-1][S-1] dn_net_rates;
-	for(uint k=0;k<dn_net_rates.length();k++) for(uint l=0;l<dn_net_rates.length();l++) dn_net_rates[k][l] = 0.;*/
+	//double[S-1] dT_net_rates; for(uint k=0;k<dT_net_rates.length();k++) dT_net_rates[k] = 0.;
+	//double[S-1][S-1] dn_net_rates; for(uint k=0;k<dn_net_rates.length();k++) for(uint l=0;l<dn_net_rates.length();l++) dn_net_rates[k][l] = 0.;
 	for(uint j=0;j<system.elementary.length();j++) {
 		Elementary r = system.elementary[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		/*double zero[S];
-		for(uint k=0;k<zero.length();k++) zero[k] = 0.;*/
+		//double zero[S]; for(uint k=0;k<zero.length();k++) zero[k] = 0.;
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*zero, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, 1.);
 	}
 	for(uint j=0;j<system.three_body.length();j++) {
@@ -234,6 +249,32 @@ void main() {
 	for(uint k=0;k<dTdtn.length();k++) J[1+k][0] = dTdtn[k];
 	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) J[2+k][l] = dndtn[l][k]; // Transpose back
 	for(uint k=0;k<1+S-1;k++) for(uint l=0;l<1+S-1;l++) jacobian[k*(1+S-1)+l].data[i] = J[k][l];*/
+#endif
+	double[S] amounts; for(int k=0;k<amounts.length();k++) amounts[k] = _amounts[k].data[i];
+	double[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
+		double[S] generate_j;
+		for(uint j=0;j<generate_j.length();j++) {
+			generate_j[j] = sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(system.molar_mass[j]/system.molar_mass[k]))) /
+				(sqrt(8.) * sqrt(1. + system.molar_mass[k]/system.molar_mass[j]));
+		}
+		generate_k[k] = sq(sqrt_viscosity(k, T)) / dot(amounts, generate_j);
+	}
+	viscosity.data[i] = dot(amounts, generate_k);
+	double amount = constants.pressure_R / T * volume;
+	double[S] thermal_conductivities; for(uint k=0;k<thermal_conductivities.length();k++) { thermal_conductivities[k] = thermal_conductivity(k, T); }
+	double[S] rcp_thermal_conductivities; for(uint k=0;k<rcp_thermal_conductivities.length();k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(k, T); }
+	_thermal_conductivity.data[i] = 1./2. * (dot(amounts, thermal_conductivities) + amount / dot(amounts, rcp_thermal_conductivities));
+	for(uint k=0;k<mixture_averaged_thermal_diffusion_coefficients.length();k++) {
+		double[S] generate_j;
+		 for(uint j=0;j<generate_j.length();j++) {
+			 if (j != k) {
+				generate_j[j] = 1. / binary_thermal_diffusion_coefficient(k, j, T);
+			 } else {
+				generate_j[j] = 0.;
+			}
+		 }
+		mixture_averaged_thermal_diffusion_coefficients[k].data[i]  = (1. - amounts[k]/amount) / dot(amounts, generate_j);
+	}
 }
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
