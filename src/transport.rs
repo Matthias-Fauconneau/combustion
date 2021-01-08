@@ -28,7 +28,11 @@ use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enu
 use super::{Species, System, State};
 
 const D : usize = 4;
-pub struct TransportPolynomials<const S: usize> {pub sqrt_viscosity_T14: [[f64; D]; S], pub thermal_conductivity_T12: [[f64; D]; S], pub binary_thermal_diffusion_coefficients_T32: [[[f64; D]; S]; S] }
+#[derive(Debug)] pub struct TransportPolynomials<const S: usize> {
+	pub sqrt_viscosity_T14: [[f64; D]; S],
+	pub thermal_conductivity_T12: [[f64; D]; S],
+	pub binary_thermal_diffusion_coefficients_T32: [[[f64; D]; S]; S]
+}
 impl<const S: usize> Species<S> {
 	pub fn transport_polynomials(&self) -> TransportPolynomials<S> {
 		use super::{kB, NA};
@@ -110,7 +114,7 @@ impl<const S: usize> TransportPolynomials<S> {
 	fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else { b }][if a>b {b} else {a}], log(T)) }
 }
 
-#[derive(Debug, Clone, Copy)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
+#[derive(Debug, PartialEq)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
 impl<const S: usize> System<S> where [(); S-1]: {
 	pub fn transport(&self, pressure_R: f64, State{temperature, amounts}: &State<S>) -> Transport<S> {
 		let Self{species: Species{molar_mass, ..}, transport_polynomials, ..} = self;

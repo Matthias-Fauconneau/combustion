@@ -118,19 +118,24 @@ void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, ino
 	}
 }
 
+struct TransportPolynomials {
+	double[S][4] sqrt_viscosity_T14;
+	double[S][4] thermal_conductivity_sqrt_T;
+	double[S][S][4] binary_thermal_diffusion_coefficient;
+};
 struct System {
-	double[S] molar_masses;
+	double[S] molar_mass;
 	double[S][2][7] thermodynamics;
 	Elementary[ELEMENTARY] elementary;
 	ThreeBody[THREE_BODY] three_body;
 	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
-	double[S][EFFICIENCIES] efficiencies;
+	double[EFFICIENCIES][S] efficiencies;
 	Falloff[FALLOFF] falloff;
-	double[S][4] sqrt_viscosity_T14_polynomials;
-	double[S][4] thermal_conductivity_sqrt_T_polynomials;
-	double[S][4] binary_thermal_diffusion_coefficient_polynomials;
+	TransportPolynomials transport_polynomials;
 };
-const System system = System(SYSTEM);
+const System system =
+#include "system.h"
+;
 layout(push_constant) uniform Constants {
 double pressure_R;
 } constants;
@@ -209,14 +214,14 @@ void main() {
 	double dtT = - rcp_sumCCp * dot(H, net_rates);
 	double Cpa = Cp[a];
 	double Ha = specific_enthalpy(system.thermodynamics[a], T);
-	double HaWa = Ha/system.molar_masses[a];
+	double HaWa = Ha/system.molar_mass[a];
 	double HaWaWH[S-1];
-	for(uint k=0;k<HaWaWH.length();k++) HaWaWH[k] = HaWa*system.molar_masses[k] - H[k];
-	double Cpa_Wa = Cpa / system.molar_masses[a];
+	for(uint k=0;k<HaWaWH.length();k++) HaWaWH[k] = HaWa*system.molar_mass[k] - H[k];
+	double Cpa_Wa = Cpa / system.molar_mass[a];
 	double[S-1] Cpa_T_dT_Cp;
 	for(uint k=0;k<Cpa_T_dT_Cp.length();k++) Cpa_T_dT_Cp[k] = Cpa/T - dT_specific_heat_capacity(system.thermodynamics[k], T);
 	double[S-1] WCpa_Wa_Cp;
-	for(uint k=0;k<WCpa_Wa_Cp.length();k++) WCpa_Wa_Cp[k] = system.molar_masses[k]*Cpa_Wa - Cp[k];
+	for(uint k=0;k<WCpa_Wa_Cp.length();k++) WCpa_Wa_Cp[k] = system.molar_mass[k]*Cpa_Wa - Cp[k];
 	double dTdtT = rcp_sumCCp * (dtT * dot(active_concentrations, Cpa_T_dT_Cp) + dot(HaWaWH, dT_net_rates) + dot(WCpa_Wa_Cp, net_rates)); //R/R
 	J[0][0] = dTdtT;
 	double dndtT[S-1];

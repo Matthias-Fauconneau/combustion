@@ -4,7 +4,7 @@
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports,uncommon_codepoints)]
 pub mod ron;
 mod transport; pub use transport::{TransportPolynomials, Transport};
-mod reaction; use reaction::Reaction;
+mod reaction; pub use reaction::{Reaction, Model, RateConstant};
 use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
 use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
 

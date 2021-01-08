@@ -1,17 +1,17 @@
-#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents)]#![allow(non_snake_case)]
+#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents, array_methods)]#![allow(non_snake_case)]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=CH4+O2.ron");
 	println!("cargo:rerun-if-changed=main.comp");
 	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
-	let System{molar_masses, thermodynamics, reactions, ..} = Simulation::<35>::new(&system)?.system;
-	struct Falloff<const S: usize> where [(); S-1]: {
+	let combustion::System{species: Species{molar_mass, thermodynamics, ..}, transport_polynomials, reactions, ..} = Simulation::<35>::new(&system)?.system;
+	#[derive(Debug)] struct Falloff<const S: usize> where [(); S-1]: {
 		reaction: Reaction<S>,
 		efficiency: usize,
 	};
-	struct System<const S: usize> where [(); S-1]: {
-		molar_masses: [f64; S],
+	#[derive(Debug)] struct System<const S: usize> where [(); S-1]: {
+		molar_mass: [f64; S],
 		thermodynamics: [NASA7; S],
 		elementary: Box<[Reaction<S>]>,
 		three_body: Box<[Reaction<S>]>,
@@ -29,51 +29,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	).collect();
 
 	let system = System{
-		molar_masses,
+		molar_mass,
 		thermodynamics,
 		elementary: reactions.iter().filter(|r| matches!(r.model, Model::Elementary{})).copied().collect(),
 		three_body: reactions.iter().filter(|r| matches!(r.model, Model::ThreeBody{..})).copied().collect(),
 		pressure_modification: reactions.iter().filter(|r| matches!(r.model, Model::PressureModification{..})).copied().collect(),
 		efficiencies: efficiencies_set.into_boxed_slice(),
 		falloff,
-		transport_polyonmials
+		transport_polynomials,
 	};
-	impl<const S: usize> std::fmt::Display for System<S> where [(); S-1]: {
-		fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			use itertools::Itertools;
-			let fmt = |reactions:&[Reaction<S>]| {
-				let variant = {use Model::*; match reactions.first().unwrap().model {Elementary => "Elementary", ThreeBody{..} => "ThreeBody", PressureModification{..} => "PressureModification", Falloff{..} => "Falloff"}};
-				format!("{}[]({})", variant, reactions.iter().format_with(",\\\n", |r, f| {
-					let fmt = |r:RateConstant| format!("RateConstant({}, {}, {})", r.log_preexponential_factor, r.temperature_exponent, r.activation_temperature);
-					f(&format_args!("{}(Reaction(double[]({}), double[]({}), double[]({}), {}, {}, {}, {})",
-						variant, r.reactants.iter().format(", "), r.products.iter().format(", "), r.net.iter().format(", "), r.Σreactants, r.Σproducts, r.Σnet, fmt(r.rate_constant)))?;
-					{use Model::*; match r.model {
-						Elementary => f(&")"),
-						ThreeBody{efficiencies} => f(&format_args!(", double[]({}))", efficiencies.iter().format(", "))),
-						PressureModification{efficiencies, k0} => f(&format_args!(", double[]({}), {})", efficiencies.iter().format(", "), fmt(k0))),
-						Falloff{..} => unreachable!(), //Falloff{efficiencies, k0, troe: ron::Troe{A, T3, T1, T2}} => f(&format_args!(", double[]({}), {}, {}, {}, {}, {})", efficiencies.iter().format(", "), fmt(k0), A, T3, T1, T2)),
-					}}
-				}))
-			};
-			let fmt_falloff = |falloff:&[Falloff<S>]| {
-				format!("Falloff[]({})", falloff.iter().format_with(",\\\n", |falloff, f| {
-					let r = falloff.reaction;
-					let fmt = |r:RateConstant| format!("RateConstant({}, {}, {})", r.log_preexponential_factor, r.temperature_exponent, r.activation_temperature);
-					f(&format_args!("Falloff(Reaction(double[]({}), double[]({}), double[]({}), {}, {}, {}, {})",
-						r.reactants.iter().format(", "), r.products.iter().format(", "), r.net.iter().format(", "), r.Σreactants, r.Σproducts, r.Σnet, fmt(r.rate_constant)))?;
-					{use Model::*; match r.model {
-						Falloff{efficiencies: _, k0, troe: ron::Troe{A, T3, T1, T2}} => f(&format_args!(", {}, {}, {}, {}, {}, {})", falloff.efficiency, fmt(k0), A, T3, T1, T2)),
-						_ => unreachable!(),
-					}}
-				}))
-			};
-			write!(f, "double[]({}),\\\ndouble[][][]({}),\\\n{},\\\n{},\\\n{},\\\ndouble[][]({}),\\\n{}",
-									self.molar_masses.iter().format(", "),
-									self.thermodynamics.iter().format_with(", ", |t, f|
-										f(&format_args!("double[][]({})", t.0.iter().format_with(", ", |t, f| f(&format_args!("double[]({})", t.iter().format(", "))))))),
-									fmt(&self.elementary), fmt(&self.three_body), fmt(&self.pressure_modification), self.efficiencies.iter().format_with(", ",|e,f| f(&format_args!("double[]({})", e.iter().format(", ")))), fmt_falloff(&self.falloff))
-    }
+	trait GLSL {
+		fn r#type(&self) -> String { std::any::type_name::<Self>().rsplit("::").next().unwrap().to_string() }
+		fn glsl(&self) -> String;
 	}
+	impl GLSL for f64 { fn r#type(&self) -> String { "double".to_string() } fn glsl(&self) -> String { format!("{}", self) } }
+	impl<T: GLSL> GLSL for &[T] {
+		fn r#type(&self) -> String { format!("{}[]", self.first().unwrap().r#type()) }
+		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\\\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
+	}
+	impl<T: GLSL, const N: usize> GLSL for [T; N] {
+		fn r#type(&self) -> String { format!("{}[]", self.first().unwrap().r#type()) }
+		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\\\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
+	}
+	impl<const S: usize> GLSL for Reaction<S> where [(); S-1]: {
+		fn r#type(&self) -> String { use Model::*; match self.model {Elementary => "Elementary", ThreeBody{..} => "ThreeBody", PressureModification{..} => "PressureModification", Falloff{..} => "Falloff"}.to_string()}
+		fn glsl(&self) -> String {
+			impl GLSL for RateConstant { fn glsl(&self) -> String { format!("{}({}, {}, {})", self.r#type(), self.log_preexponential_factor, self.temperature_exponent, self.activation_temperature) } }
+			format!("{}(Reaction({}, {}, {}, {}, {}, {}, {}){}", self.r#type(), self.reactants.glsl(), self.products.glsl(), self.net.glsl(), self.Σreactants, self.Σproducts, self.Σnet, self.rate_constant.glsl(),
+				{use Model::*; match self.model {
+					Elementary => format!(")"),
+					ThreeBody{efficiencies} => format!(", {})", efficiencies.as_slice().glsl()),
+					PressureModification{efficiencies, k0} => format!(", {}, {})", efficiencies.as_slice().glsl(), k0.glsl()),
+					Falloff{..} => format!(""),
+				}}
+			)
+		}
+	}
+	impl<const S: usize> GLSL for Falloff<S> where [(); S-1]: {
+		fn r#type(&self) -> String { "Falloff".to_string() }
+ 		fn glsl(&self) -> String {
+			if let Model::Falloff{efficiencies: _, k0, troe: ron::Troe{A, T3, T1, T2}} = self.reaction.model {
+				format!("{}, {}, {}, {}, {}, {}, {})", self.reaction.glsl(), self.efficiency, k0.glsl(), A, T3, T1, T2)
+			} else { unreachable!() }
+		}
+	}
+	impl<const S: usize> GLSL for TransportPolynomials<S> {
+		fn r#type(&self) -> String { "TransportPolynomials".to_string() }
+ 		fn glsl(&self) -> String { format!("{}({},{},{})", self.r#type(), self.sqrt_viscosity_T14.as_slice().glsl(), self.thermal_conductivity_T12.glsl(), self.binary_thermal_diffusion_coefficients_T32.glsl()) }
+	}
+	impl GLSL for NASA7 { fn r#type(&self) -> String { self.0.r#type() } fn glsl(&self) -> String { self.0.glsl() } }
+	impl<const S: usize> GLSL for System<S> where [(); S-1]: {
+		fn r#type(&self) -> String { "System".to_string() }
+		fn glsl(&self) -> String {
+			format!("{}({},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{})", self.r#type(),
+				self.molar_mass.glsl(),
+				self.thermodynamics.glsl(),
+				self.elementary.as_ref().glsl(),
+				self.three_body.as_ref().glsl(),
+				self.pressure_modification.as_ref().glsl(),
+				self.efficiencies.as_ref().glsl(),
+				self.falloff.as_ref().glsl(),
+				self.transport_polynomials.glsl()
+			)
+		}
+	}
+	println!("SPECIES {:?}", Some(&system.thermodynamics.len().to_string()));
+	println!("ELEMENTARY {:?}", Some(&system.elementary.len().to_string()));
+	println!("THREE_BODY {:?}", Some(&system.three_body.len().to_string()));
+	println!("PRESSURE_MODIFICATION {:?}", Some(&system.pressure_modification.len().to_string()));
+	println!("EFFICIENCIES {:?}", Some(&system.efficiencies.len().to_string()));
+	println!("FALLOFF {:?}", Some(&system.falloff.len().to_string()));
+
 	let mut options = shaderc::CompileOptions::new().unwrap();
 	options.add_macro_definition("SPECIES", Some(&system.thermodynamics.len().to_string()));
 	options.add_macro_definition("ELEMENTARY", Some(&system.elementary.len().to_string()));
@@ -82,8 +108,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	options.add_macro_definition("EFFICIENCIES", Some(&system.efficiencies.len().to_string()));
 	options.add_macro_definition("FALLOFF", Some(&system.falloff.len().to_string()));
 	let OUT_DIR = std::env::var("OUT_DIR").unwrap();
-	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("model.h"), system.to_string())?;
-	options.add_macro_definition("SYSTEM", Some(&system.to_string()));
+	//std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("system.h"), format!("const System system = {};\n", system.glsl()))?;
+	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("system.h"), system.glsl())?;
+	options.set_include_callback(|_,_,_,_| Ok(shaderc::ResolvedInclude{resolved_name:"system.h".to_string(), content: system.glsl()}));
+	//std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("main.comp"), include_str!("main.comp").replace("SYSTEM", &system.glsl()))?;
+	//options.add_macro_definition("SYSTEM", Some(&system.glsl()));
 	std::fs::write(std::path::PathBuf::from(OUT_DIR).join("main.spv"),
 											shaderc::Compiler::new().unwrap().compile_into_spirv(include_str!("main.comp"), shaderc::ShaderKind::Compute, "main.comp", "main", Some(&options))?.as_binary_u8())?;
 	Ok(())

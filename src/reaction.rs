@@ -43,7 +43,7 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 }
 
-#[derive(Clone, Copy)] pub struct Reaction<const S: usize> where [(); S-1]: {
+#[derive(Clone, Copy, Debug)] pub struct Reaction<const S: usize> where [(); S-1]: {
 	pub reactants: [f64; S],
 	pub products: [f64; S],
 	pub net: [f64; S-1],
