@@ -1,4 +1,4 @@
-#![allow(incomplete_features)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents, array_methods)]#![allow(non_snake_case)]
+#![allow(incomplete_features, non_snake_case)]#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents, array_methods)]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=CH4+O2.ron");
@@ -45,11 +45,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	impl GLSL for f64 { fn r#type(&self) -> String { "double".to_string() } fn glsl(&self) -> String { format!("{}", self) } }
 	impl<T: GLSL> GLSL for &[T] {
 		fn r#type(&self) -> String { format!("{}[]", self.first().unwrap().r#type()) }
-		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\\\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
+		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
 	}
 	impl<T: GLSL, const N: usize> GLSL for [T; N] {
 		fn r#type(&self) -> String { format!("{}[]", self.first().unwrap().r#type()) }
-		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\\\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
+		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }
 	}
 	impl<const S: usize> GLSL for Reaction<S> where [(); S-1]: {
 		fn r#type(&self) -> String { use Model::*; match self.model {Elementary => "Elementary", ThreeBody{..} => "ThreeBody", PressureModification{..} => "PressureModification", Falloff{..} => "Falloff"}.to_string()}
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	impl<const S: usize> GLSL for System<S> where [(); S-1]: {
 		fn r#type(&self) -> String { "System".to_string() }
 		fn glsl(&self) -> String {
-			format!("{}({},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{},\\\n{})", self.r#type(),
+			format!("{}({},\n{},\n{},\n{},\n{},\n{},\n{},\n{})", self.r#type(),
 				self.molar_mass.glsl(),
 				self.thermodynamics.glsl(),
 				self.elementary.as_ref().glsl(),

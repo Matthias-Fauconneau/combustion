@@ -1,5 +1,4 @@
 #version 460
-#extension GL_EXT_debug_printf : enable
 double sq(double x) { return x*x; }
 double log(double x) { return double(log(float(x))); }
 double exp(double x) { return double(exp(float(x))); }
@@ -132,6 +131,7 @@ struct TransportPolynomials {
 	double[S][4] thermal_conductivity_T12;
 	double[S][S][4] binary_thermal_diffusion_coefficients_T32;
 };
+
 struct System {
 	double[S] molar_mass;
 	double[S][2][7] thermodynamics;
@@ -273,7 +273,6 @@ void main() {
 			} else {
 				generate_j[j] = 0.;
 			}
-			debugPrintfEXT("%f", generate_j[j]);
 		}
 		mixture_averaged_thermal_diffusion_coefficients[k].data[i]  = (1. - amounts[k]/amount) / dot(amounts, generate_j);
 	}
