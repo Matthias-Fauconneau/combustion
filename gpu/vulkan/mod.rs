@@ -21,16 +21,16 @@ impl Device {
 		unsafe {
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(&InstanceCreateInfo::builder().application_info(
-				&ApplicationInfo::builder().api_version(make_version(1, 0, 0)).application_name(main).application_version(0).engine_name(main))
-				.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()]).enabled_extension_names(&[DebugUtils::name().as_ptr()]),
+				&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main))
+				.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
+				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
+				.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
+				,
 				None)?;
 			let debug_utils = DebugUtils::new(&entry, &instance);
-			unsafe extern "system" fn vulkan_debug_callback(severity: DebugUtilsMessageSeverityFlagsEXT,
-																																												r#type: DebugUtilsMessageTypeFlagsEXT,
-																																												data: *const DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> Bool32 {
+			unsafe extern "system" fn vulkan_debug_callback(severity: DebugUtilsMessageSeverityFlagsEXT, r#type: DebugUtilsMessageTypeFlagsEXT, data: *const DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> Bool32 {
 				let data = *data;
-				println!("{:?}:\n{:?} [{:?} ({})] : {:?}\n", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)), data.message_id_number,
-																																										Some(data.p_message).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)) );
+				println!("{:?}:\n{:?} [{:?} ({})] : {:?}\n", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)), data.message_id_number, Some(data.p_message).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)) );
 				FALSE
 			}
 
@@ -46,6 +46,7 @@ impl Device {
 			let device = instance.create_device(device, &DeviceCreateInfo::builder()
 				.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
 				.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
+				.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()])
 				, None)?;
 			let queue = device.get_device_queue(queue_family_index, 0);
 			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)?;

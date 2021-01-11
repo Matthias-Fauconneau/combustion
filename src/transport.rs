@@ -111,7 +111,7 @@ impl<const S: usize> Species<S> {
 impl<const S: usize> TransportPolynomials<S> {
 	fn sqrt_viscosity(&self, a: usize, T: f64) -> f64 { sqrt(sqrt(T)) * eval_poly(&self.sqrt_viscosity_T14[a], log(T)) }
 	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {  sqrt(T) * eval_poly(&self.thermal_conductivity_T12[a], log(T)) }
-	fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else { b }][if a>b {b} else {a}], log(T)) }
+	fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], log(T)) }
 }
 
 #[derive(Debug, PartialEq)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }

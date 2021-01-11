@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	#[derive(Debug)] struct Falloff<const S: usize> where [(); S-1]: {
 		reaction: Reaction<S>,
 		efficiency: usize,
-	};
+	}
 	#[derive(Debug)] struct System<const S: usize> where [(); S-1]: {
 		molar_mass: [f64; S],
 		thermodynamics: [NASA7; S],
