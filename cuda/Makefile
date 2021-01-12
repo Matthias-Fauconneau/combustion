@@ -3,7 +3,7 @@
 all: main
 
 main.ptx: %.ptx: %.cu model.h
-	nvcc -DSPECIES=9 -DELEMENTARY=22 -DTHREE_BODY=5 -DFALLOFF=1 --ptx $< -o $@
+	nvcc -DSPECIES=35 -DELEMENTARY=181 -DTHREE_BODY=6 -DPRESSURE_MODIFICATION=1 -DEFFICIENCIES=4 -DFALLOFF=25 --ptx $< -o $@
 
 main: %: %.cpp %.ptx
 	LD_LIBRARY_PATH=/opt/cuda/lib64 c++ $< -o $@ -lcuda -g -I/opt/cuda/include

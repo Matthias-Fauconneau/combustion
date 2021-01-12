@@ -9,6 +9,7 @@ fn cantera(pressure: f64, temperature: f64, mole_proportions: *const std::os::ra
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
+	
 	let Simulation{system, state, pressure_R, species_names, ..} = Simulation::<35>::new(&system)?;
 	let transport = system.transport(pressure_R, &state);
 	let cantera = {

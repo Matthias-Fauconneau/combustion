@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			impl CUDA for RateConstant { fn cuda(&self) -> String { format!("{}{{{}, {}, {}}}", self.r#type(), self.log_preexponential_factor, self.temperature_exponent, self.activation_temperature) } }
 			format!("{}{{Reaction{{{}, {}, {}, {}, {}, {}, {}}}{}", self.r#type(), self.reactants.cuda(), self.products.cuda(), self.net.cuda(), self.Σreactants, self.Σproducts, self.Σnet, self.rate_constant.cuda(),
 				{use Model::*; match self.model {
-					Elementary => format!(")"),
+					Elementary => format!("}}"),
 					ThreeBody{efficiencies} => format!(", {}}}", efficiencies.as_slice().cuda()),
 					PressureModification{efficiencies, k0} => format!(", {}, {}}}", efficiencies.as_slice().cuda(), k0.cuda()),
 					Falloff{..} => format!(""),
@@ -93,25 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			)
 		}
 	}
-	/*		let fmt = |reactions:&[Reaction<S>]| {
-				let variant = {use Model::*; match reactions.first().unwrap().model {Elementary => "Elementary", ThreeBody{..} => "ThreeBody", Falloff{..} => "Falloff"}};
-				format!("{{{}}}", reactions.iter().format_with(",\n", |r, f| {
-					let fmt = |r:RateConstant| format!("RateConstant{{{}, {}, {}}}", r.log_preexponential_factor, r.temperature_exponent, r.activation_temperature);
-					f(&format_args!("{}{{Reaction{{{{{}}}, {{{}}}, {{{}}}, {}, {}, {}, {}}}",
-						variant, r.reactants.iter().format(", "), r.products.iter().format(", "), r.net.iter().format(", "), r.Σreactants, r.Σproducts, r.Σnet, fmt(r.rate_constant)))?;
-					{use Model::*; match r.model {Elementary => f(&"}"),
-						ThreeBody{efficiencies} => f(&format_args!(", {{{}}}}}", efficiencies.iter().format(", "))),
-						Falloff{efficiencies, k0, troe: ron::Troe{A, T3, T1, T2}} => f(&format_args!(", {{{}}}, {}, {}, {}, {}, {}}}", efficiencies.iter().format(", "), fmt(k0), A, T3, T1, T2)),
-					}}
-				}))
-			};
-			write!(f, "{{{}}},\n{{{}}},\n{},\n{},\n{}",
-									self.molar_masses.iter().format(", "),
-									self.thermodynamics.iter().format_with(", ", |t, f|
-										f(&format_args!("{{{}}}", t.0.iter().format_with(", ", |t, f| f(&format_args!("{{{}}}\n", t.iter().format(", "))))))),
-									fmt(&self.elementary), fmt(&self.three_body), fmt(&self.falloff))
-		}
-	}*/
 	println!("SPECIES {}", system.thermodynamics.len());
 	println!("ELEMENTARY {}", system.elementary.len());
 	println!("THREE_BODY {}", system.three_body.len());
