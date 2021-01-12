@@ -114,7 +114,7 @@ impl<const S: usize> TransportPolynomials<S> {
 	fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], log(T)) }
 }
 
-#[derive(Debug, PartialEq)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
+#[derive(Debug)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
 impl<const S: usize> System<S> where [(); S-1]: {
 	pub fn transport(&self, pressure_R: f64, State{temperature, amounts}: &State<S>) -> Transport<S> {
 		let Self{species: Species{molar_mass, ..}, transport_polynomials, ..} = self;

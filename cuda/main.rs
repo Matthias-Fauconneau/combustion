@@ -41,7 +41,7 @@
 		let time = (end-start).as_secs_f32();
 		let gpu_f : [_;1+S-1] = *(box_collect(std::iter::once({let ref mut host = vec![0.; len]; d_temperature.copy_to(host).unwrap(); host[0] }).chain({
 			let mut host = vec![0.; (S-1)*len]; d_amounts.copy_to(&mut host).unwrap(); (0..(S-1)).map(move |n| host[n*len])
-		})).try_into().unwrap():Box<_>);
+		})).try_into().unwrap());
 		use itertools::Itertools;
 		if gpu_f != f.0 { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.iter().format(" ")); }
 		println!("{:.0}K in {:.1}ms = {:.0}M/s", len as f32/1e3, time*1e3, (len as f32)/time/1e6);

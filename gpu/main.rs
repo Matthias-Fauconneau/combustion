@@ -1,17 +1,36 @@
-#![feature(default_free_fn, in_band_lifetimes, bindings_after_at)] #![allow(non_snake_case)]
+#![feature(default_free_fn, in_band_lifetimes, bindings_after_at, unboxed_closures)] #![allow(non_snake_case)]
 mod vulkan;
+
+fn time<T:Fn<()>>(task: T) -> (T::Output, f32) {
+	let start = std::time::Instant::now();
+	let result = task();
+	(result, (std::time::Instant::now()-start).as_secs_f32())
+}
+
+fn print_time<T:Fn<()>>(task: T, header: impl std::fmt::Display) -> T::Output {
+	let (result, time) = time(task);
+	println!("{}: {:.1}ms", header, time*1e3);
+	result
+}
+
+macro_rules! time { ($task:expr) => { print_time(|| { $task }, stringify!($task)) } }
+
+fn benchmark(task: impl Fn(), times: usize, header: impl std::fmt::Display) { println!("{}: {:.1}ms", header, time(|| for _ in 0..times { task(); }).1/(times as f32)*1e3); }
+
+macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task; }, $times, stringify!($task)) } }
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	use iter::{vec::{eval, generate, Vector}, box_collect};
 	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
-	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = Simulation::<35>::new(&system)?;
-	let transport = system.transport(pressure_R, &state);
+	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = time!(Simulation::<35>::new(&system))?;
+	let transport =  system.transport(pressure_R, &state);
+	benchmark!(system.transport(pressure_R, &state), 100);
 
 	use vulkan::{Device, Buffer};
 	let ref device = Device::new()?;
-	let stride = 1;
-	let len = 1/stride*stride;
+	let stride = 32;
+	let len = 10_000/stride*stride;
 	let temperature = Buffer::new(device, (0..len).map(|_| temperature))?;
 	let amounts_buffers = eval(amounts, |n| Buffer::new(device, (0..len).map(|_| n)).unwrap());
 	let ref_amounts = box_collect(amounts_buffers.iter().map(|n| n));
@@ -24,10 +43,10 @@ mod vulkan;
 	let ref_mixture_averaged_thermal_diffusion_coefficients = box_collect(mixture_averaged_thermal_diffusion_coefficients.iter().map(|n| n));
 	let ref buffers = [&[&temperature] as &[_], &ref_amounts, &[&d_temperature] as &[_], &ref_d_amounts, &[&viscosity] as &[_], &[&thermal_conductivity] as &[_], &ref_mixture_averaged_thermal_diffusion_coefficients];
 	let ref constants = [pressure_R];
-	let ref pipeline = device.pipeline(constants, buffers)?;
+	let ref pipeline = time!(device.pipeline(constants, buffers))?; // Compiles SPIRV -> Gen
 	device.bind(pipeline.descriptor_set, buffers)?;
 	let command_buffer  = device.command_buffer(pipeline, constants, stride, len)?;
-	for _ in 0..1 {
+	for _ in 0..2 {
 		let time = device.submit_and_wait(command_buffer)?;
 		let all_same = |buffer:&Buffer| {
 			let buffer = buffer.map(device).unwrap();
@@ -40,7 +59,17 @@ mod vulkan;
 			thermal_conductivity: all_same(&thermal_conductivity),
 			mixture_averaged_thermal_diffusion_coefficients: eval(&mixture_averaged_thermal_diffusion_coefficients, |buffer| all_same(buffer)),
 		};
-		if gpu_transport != transport { println!("{:?}\n{:?}", transport, gpu_transport); }
-		println!("{:.0}K in {:.1}ms = {:.0}M/s", len as f32/1e3, time*1e3, (len as f32)/1e6/time);
+		trait Error { fn error(&self, o: &Self) -> f64; }
+		impl Error for f64 { fn error(&self, o: &Self) -> f64 { f64::abs(self-o) } }
+		impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap()).unwrap() } }
+		impl<const S: usize> Error for Transport<S> {
+			 fn error(&self, o: &Self) -> f64 {
+				self.viscosity.error(&o.viscosity).max(
+				self.thermal_conductivity.error(&o.thermal_conductivity).max(
+				self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients) ))
+			}
+		}
+		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
+		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
 }
