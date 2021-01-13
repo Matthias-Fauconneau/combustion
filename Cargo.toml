@@ -12,7 +12,6 @@ linear-map = {version='', features = ['serde_impl']}
 ron = ''
 fehler = ''
 itertools = ''
-rayon= ''
-nalgebra = ''
 unwrap = ''
-#trace = {path='../trace'}#{git='https://github.com/Matthias-Fauconneau/trace'}
+nalgebra = ''
+sundials-sys = ''
