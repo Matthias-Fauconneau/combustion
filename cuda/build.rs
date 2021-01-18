@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let OUT_DIR = std::env::var("OUT_DIR").unwrap();
 	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("model.h"), system.cuda())?;
-	std::process::Command::new("/opt/cuda/bin/nvcc").args(&["-I", &OUT_DIR,
+	std::process::Command::new("nvcc").args(&["-I", &OUT_DIR,
 		&format!("-DSPECIES={}", system.thermodynamics.len()),
 		&format!("-DELEMENTARY={}", system.elementary.len()),
 		&format!("-DTHREE_BODY={}", system.three_body.len()),
