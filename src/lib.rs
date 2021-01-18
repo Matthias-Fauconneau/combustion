@@ -1,5 +1,5 @@
 #![allow(incomplete_features)]
-#![feature(const_generics, const_evaluatable_checked, type_ascription, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
+#![feature(const_generics, const_evaluatable_checked, type_ascription, array_methods, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
 #![feature(trait_alias)]
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports,uncommon_codepoints)]
 pub mod ron;
@@ -44,7 +44,7 @@ impl<const S: usize> System<S> where [(); S-1]: {
 	const volume : f64 = 1.;
 }
 
-#[derive(Clone)] pub struct State<const S: usize> {
+#[derive(Clone, Copy)] pub struct State<const S: usize> {
 	pub temperature: f64,
 	pub amounts: [f64; S]
 }
@@ -121,6 +121,63 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 			time_step, pressure_R,
 			state: State{temperature, amounts}
 		})
+	}
+}
+
+//internal compiler error: compiler/rustc_middle/src/ich/impls_ty.rs:94:17: StableHasher: unexpected region '_#0r
+/*impl<const S: usize> From<&State<S>> for [f64; 1+S-1] where [(); S-1]: { fn from(State{temperature, amounts}: &State<S>) -> Self {
+	use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([*temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
+} }*/
+impl<const S: usize> From<State<S>> for [f64; 1+S-1] where [(); S-1]: { fn from(State{temperature, amounts}: State<S>) -> Self {
+	use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
+} }
+impl<const S: usize> State<S> {
+	pub fn new(total_amount: f64, u: [f64; 1+S-1]) -> Self where [(); S-1]: {
+		let amounts: &[_; S-1] = u.suffix();
+		State{temperature: u[0], amounts: from_iter(amounts.copied().chain([total_amount - iter::into::Sum::<f64>::sum(amounts)]))}
+	}
+}
+
+use {sundials_sys::*, std::ffi::c_void as void};
+
+//use std::convert::TryInto;
+fn n_vector(v: &[f64]) -> N_Vector { unsafe{N_VMake_Serial(v.len() as i64, v.as_ptr() as *mut _)} }
+fn r#ref<'t, const N: usize>(v: N_Vector) -> &'t [f64; N] { unsafe{std::slice::from_raw_parts(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()	}
+fn r#mut<'t, const N: usize>(v: N_Vector) -> &'t mut [f64; N] { unsafe{std::slice::from_raw_parts_mut(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()	}
+
+#[derive(derive_more::Deref)] pub struct CVODE ( //<const S: usize> where [(); S-1]: {
+	//system: System<S>,
+	//cvode:
+	*mut void,
+);
+
+impl CVODE { //<const S: usize> CVODE<S> {
+	pub fn new<const S: usize>(Simulation{system, pressure_R, state, ..}: &Simulation<S>) -> Self where [(); S-1]:, [(); 1+S-1]: {
+		let cvode = unsafe{CVodeCreate(CV_BDF)};
+		#[derive(Clone, Copy)] struct UserData<'t, const S: usize> where [(); S-1]: {system: &'t System<S>, pressure_R: f64}
+		extern "C" fn rhs<const S: usize>(_t: f64, y: N_Vector, /*mut*/ ydot: N_Vector, user_data: *mut void) -> i32 where [(); S-1]:, [(); 1+S-1]: {
+			let UserData{system, pressure_R} = unsafe{*(user_data as *const UserData<S>)};
+			let (derivative, /*jacobian*/) = system.derivative/*and_jacobian*/(pressure_R, r#ref(y));
+			r#mut::<{1+S-1}>(ydot).copy_from_slice(&derivative);
+			0
+		}
+		fn to_str<'t>(s: *const i8) -> &'t str { unsafe{std::ffi::CStr::from_ptr(s)}.to_str().unwrap() }
+		extern "C" fn err(_error_code: i32, _module: *const i8, function: *const i8, msg: *mut i8, _user_data: *mut void) { panic!("{}: {}", to_str(function), to_str(msg)); }
+		unsafe{CVodeSetErrHandlerFn(cvode, Some(err), std::ptr::null_mut())};
+		macro_rules! from { ($s:expr) => { ($s.into():[_; 1+S-1]).as_slice() } } //&((*state).into():[_; 1+S-1])
+		assert_eq!(unsafe{CVodeInit(cvode, Some(rhs::<S>), /*t0:*/ 0., n_vector(from!(*state)))}, CV_SUCCESS);
+		assert_eq!(unsafe{CVodeSStolerances(cvode, /*relative_tolerance:*/ 1e-8, /*absolute_tolerance:*/ 1e-14)}, CV_SUCCESS);
+		assert_eq!(unsafe{CVodeSetUserData(cvode, ((&UserData{system, pressure_R: *pressure_R} as *const UserData::<S>) as *const void) as *mut void)}, CV_SUCCESS);
+		let N = 1+S-1;
+		let A = unsafe{SUNDenseMatrix(N as i64, N as i64)};
+		let /*mut*/ y = n_vector(from!(*state));
+		assert_eq!(unsafe{CVodeSetLinearSolver(cvode, SUNDenseLinearSolver(y, A), A)}, CV_SUCCESS);
+		CVODE(cvode)
+	}
+	pub fn step<const S: usize>(&mut self, target_t: f64, y: &[f64; 1+S-1]) -> (f64, [f64; 1+S-1]) where [(); 1+S-1]: {
+		let /*mut*/ y = n_vector(y);
+		let mut reached_t = f64::NAN; unsafe{CVode(self.0, target_t, y, &mut reached_t, CV_ONE_STEP)};
+		(reached_t, *r#ref(y))
 	}
 }
 

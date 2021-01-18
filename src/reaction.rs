@@ -55,12 +55,12 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
-	pub fn derivative/*_and_jacobian*/(&self, pressure_R: f64, y: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
+	pub fn derivative/*_and_jacobian*/(&self, pressure_R: f64, u: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
 		//let a = S-1;
 		let Self{species: super::Species{thermodynamics, ..}, reactions/*, molar_masses: W*/, ..} = self;
 		//let rcpV = 1. / V;
-		let (T, amounts) = (y[0], y.suffix());
+		let (T, amounts) = (u[0], u.suffix());
 		let C = pressure_R / T;
 		//let rcp_C = 1. / C;
 		//let rcp_amount = rcpV * rcp_C;
