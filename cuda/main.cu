@@ -178,8 +178,8 @@ for (uint i = blockIdx.x * /*workgroup size*/blockDim.x + /*SIMD lane*/threadIdx
 		}
 		generate_k[k] = sq(sqrt_viscosity(system, k, T)) / dot(amounts, generate_j);
 	}
-#if 0
 	viscosity[i] = dot(amounts, generate_k);
+#if 0
 	double amount = pressure_R / T * volume;
 	double thermal_conductivities[SPECIES]; for(uint k=0;k<SPECIES;k++) { thermal_conductivities[k] = thermal_conductivity(system, k, T); }
 	double rcp_thermal_conductivities[SPECIES]; for(uint k=0;k<SPECIES;k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(system, k, T); }
