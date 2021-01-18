@@ -1,11 +1,11 @@
 To build and run:
-'''sh
+```sh
 cargo run
-'''
+```
 Requires CUDA and Rust (Cargo) 
-'''sh
+```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-'''
+```
 
 build.rs: Sets chemical data (CH4+O2) as CUDA constants
 CH4+O2.ron: Chemical data
