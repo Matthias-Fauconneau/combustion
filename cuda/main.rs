@@ -1,15 +1,12 @@
-#![feature(type_ascription, array_map, array_methods)]
+#![feature(type_ascription, array_map, array_methods, bindings_after_at)] #![allow(non_snake_case)]
 #[fehler::throws(anyhow::Error)] fn main() {
-	use {std::convert::TryInto, iter::{array_from_iter as from_iter, box_collect}};
+	use iter::{box_collect, vec::ConstRange, into::map, array_from_iter as from_iter};
 	let system = std::fs::read("H2+O2.ron")?;
-	pub const S : usize = 9;
+	use combustion::*;
+	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = Simulation::<35>::new(&system)?;
+	let transport =  system.transport(pressure_R, &state);
 
-	type Simulation<'t> = combustion::Simulation::<'t, S>;
-	let Simulation{system, pressure_r, state: combustion::State{temperature, amounts}, ..} = Simulation::new(&system)?;
-	let state = {use iter::into::IntoChain; from_iter([temperature].chain(amounts))};
-	let f = system.dt_J(pressure_r, &state);
-
-	std::process::Command::new("gpu-on").spawn()?.wait()?;
+	let _ = std::process::Command::new("gpu-on").spawn()?.wait();
 	//assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_ok());
 	std::process::Command::new("nvidia-modprobe").spawn()?.wait()?;
 	assert!(std::str::from_utf8(&std::fs::read("/proc/modules")?)?.lines().any(|line| line.starts_with("nvidia ")));
@@ -33,17 +30,40 @@
 	for _ in 0..1/*0*/ {
 		let start = std::time::Instant::now();
 		unsafe {
-			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, pressure_r,
+			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, pressure_R,
 									 temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), d_temperature.as_device_ptr(), d_amounts.as_device_ptr(), viscosity.as_device_ptr(), thermal_conductivity.as_device_ptr(), mixture_averaged_thermal_diffusion_coefficients.as_device_ptr()))?;
 		}
 		stream.synchronize()?;
 		let end = std::time::Instant::now();
 		let time = (end-start).as_secs_f32();
-		let gpu_f : [_;1+S-1] = *(box_collect(std::iter::once({let ref mut host = vec![0.; len]; d_temperature.copy_to(host).unwrap(); host[0] }).chain({
-			let mut host = vec![0.; (S-1)*len]; d_amounts.copy_to(&mut host).unwrap(); (0..(S-1)).map(move |n| host[n*len])
-		})).try_into().unwrap());
-		use itertools::Itertools;
-		if gpu_f != f.0 { println!("{:.8e}\n{:.8e}", f.0.iter().format(" "), gpu_f.iter().format(" ")); }
+		/*let gpu_f: [_;1+S-1] = from_iter([{
+			let ref mut host = vec![0.; len];
+			d_temperature.copy_to(host).unwrap();
+			host[0]
+		}].chain({
+			let mut host = vec![0.; (S-1)*len];
+			d_amounts.copy_to(&mut host).unwrap();
+			generate(move |n| host[n*len])
+		}));*/
+		let gpu_transport = Transport{
+			viscosity: {
+				let ref mut host = vec![0.; len];
+				viscosity.copy_to(host).unwrap();
+				host[0]
+			},
+			thermal_conductivity: {
+				let ref mut host = vec![0.; len];
+				thermal_conductivity.copy_to(host).unwrap();
+				host[0]
+			},
+			mixture_averaged_thermal_diffusion_coefficients: {
+				let mut host = vec![0.; mixture_averaged_thermal_diffusion_coefficients.len()];
+				mixture_averaged_thermal_diffusion_coefficients.copy_to(&mut host).unwrap();
+				from_iter(map(ConstRange::<35>, move |n| host[n*len]))
+			}
+		};
+		use combustion::Error;
+		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
 		println!("{:.0}K in {:.1}ms = {:.0}M/s", len as f32/1e3, time*1e3, (len as f32)/time/1e6);
 	}
 }

@@ -129,11 +129,22 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 	use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([*temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
 } }*/
 impl<const S: usize> From<State<S>> for [f64; 1+S-1] where [(); S-1]: { fn from(State{temperature, amounts}: State<S>) -> Self {
-	use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
+	use iter::{array_from_iter as from_iter, into	::IntoChain}; from_iter([temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
 } }
 impl<const S: usize> State<S> {
 	pub fn new(total_amount: f64, u: [f64; 1+S-1]) -> Self where [(); S-1]: {
 		let amounts: &[_; S-1] = u.suffix();
 		State{temperature: u[0], amounts: from_iter(amounts.copied().chain([total_amount - iter::into::Sum::<f64>::sum(amounts)]))}
+	}
+}
+
+pub trait Error { fn error(&self, o: &Self) -> f64; }
+impl Error for f64 { fn error(&self, o: &Self) -> f64 { f64::abs(self-o) } }
+impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap()).unwrap() } }
+impl<const S: usize> Error for Transport<S> {
+		fn error(&self, o: &Self) -> f64 {
+		self.viscosity.error(&o.viscosity).max(
+		self.thermal_conductivity.error(&o.thermal_conductivity).max(
+		self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients) ))
 	}
 }

@@ -59,16 +59,6 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task; },
 			thermal_conductivity: all_same(&thermal_conductivity),
 			mixture_averaged_thermal_diffusion_coefficients: eval(&mixture_averaged_thermal_diffusion_coefficients, |buffer| all_same(buffer)),
 		};
-		trait Error { fn error(&self, o: &Self) -> f64; }
-		impl Error for f64 { fn error(&self, o: &Self) -> f64 { f64::abs(self-o) } }
-		impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap()).unwrap() } }
-		impl<const S: usize> Error for Transport<S> {
-			 fn error(&self, o: &Self) -> f64 {
-				self.viscosity.error(&o.viscosity).max(
-				self.thermal_conductivity.error(&o.thermal_conductivity).max(
-				self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients) ))
-			}
-		}
 		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
