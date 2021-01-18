@@ -1,12 +1,12 @@
-#![feature(type_ascription, array_map, array_methods, bindings_after_at)] #![allow(non_snake_case)]
+#![feature(type_ascription, array_map, array_methods, bindings_after_at, try_blocks)] #![allow(non_snake_case)]
 #[fehler::throws(anyhow::Error)] fn main() {
 	use iter::{box_collect, vec::ConstRange, into::map, array_from_iter as from_iter};
-	let system = std::fs::read("H2+O2.ron")?;
+	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
 	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = Simulation::<35>::new(&system)?;
 	let transport =  system.transport(pressure_R, &state);
 
-	let _ = std::process::Command::new("gpu-on").spawn()?.wait();
+	let _ : anyhow::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
 	//assert!(std::fs::read("/sys/devices/virtual/hwmon/hwmon4/temp9_input").is_ok());
 	std::process::Command::new("nvidia-modprobe").spawn()?.wait()?;
 	assert!(std::str::from_utf8(&std::fs::read("/proc/modules")?)?.lines().any(|line| line.starts_with("nvidia ")));

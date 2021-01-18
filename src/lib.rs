@@ -140,7 +140,7 @@ impl<const S: usize> State<S> {
 
 pub trait Error { fn error(&self, o: &Self) -> f64; }
 impl Error for f64 { fn error(&self, o: &Self) -> f64 { f64::abs(self-o) } }
-impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap()).unwrap() } }
+impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap_or_else(||panic!("{} {}", s, o))).unwrap() } }
 impl<const S: usize> Error for Transport<S> {
 		fn error(&self, o: &Self) -> f64 {
 		self.viscosity.error(&o.viscosity).max(
