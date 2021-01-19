@@ -1,5 +1,5 @@
 [package]
-name = "combustion-plot"
+name = "combustion-cantera"
 version = "0.0.0"
 authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
@@ -9,8 +9,8 @@ fehler = ''
 anyhow = ''
 iter = {path='../../iter'}
 combustion = {path='..'}
-ui = {path='../../ui', features=['plot']}
+itertools = ''
 
 [[bin]]
-name= 'plot'
+name= 'cantera'
 path= 'main.rs'

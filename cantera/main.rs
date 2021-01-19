@@ -2,9 +2,7 @@
 use combustion::*;
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
-	let simulation @ Simulation{time_step, state, ..} = Simulation::<35>::new(&system)?;
-	dbg!(CVODE::new(&simulation).step(time_step, &state.into()));
-	//test_transport_cantera(&simulation);
+	test_transport_cantera(&Simulation::<35>::new(&system)?);
 }
 
 #[allow(dead_code)] fn test_transport_cantera<const S: usize>(Simulation{system, state, pressure_R, species_names, ..}: &Simulation<S>) where [(); S-1]: {

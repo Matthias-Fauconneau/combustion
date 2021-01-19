@@ -124,6 +124,8 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 	}
 }
 
+#[cfg(test)] mod test;
+
 //internal compiler error: compiler/rustc_middle/src/ich/impls_ty.rs:94:17: StableHasher: unexpected region '_#0r
 /*impl<const S: usize> From<&State<S>> for [f64; 1+S-1] where [(); S-1]: { fn from(State{temperature, amounts}: &State<S>) -> Self {
 	use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([*temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))

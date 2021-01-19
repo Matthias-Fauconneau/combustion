@@ -11,7 +11,5 @@ serde = ''
 linear-map = {version='', features = ['serde_impl']}
 ron = ''
 fehler = ''
-itertools = ''
 unwrap = ''
 nalgebra = ''
-derive_more = ''
