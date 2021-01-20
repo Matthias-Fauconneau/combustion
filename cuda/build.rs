@@ -110,6 +110,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		&format!("-DEFFICIENCIES={}", system.efficiencies.len()),
 		&format!("-DFALLOFF={}", system.falloff.len()),
 		"--ptx","main.cu","-o",&format!("{}/main.ptx",OUT_DIR)
-	]).spawn()?.wait()?.success().then_some(()).ok_or(anyhow::anyhow!(""))?;
+	]).spawn()?.wait()?.success().then_some(()).unwrap();
 	Ok(())
 }

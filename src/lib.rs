@@ -134,7 +134,7 @@ impl<const S: usize> From<State<S>> for [f64; 1+S-1] where [(); S-1]: { fn from(
 	use iter::{array_from_iter as from_iter, into	::IntoChain}; from_iter([temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1]))
 } }
 impl<const S: usize> State<S> {
-	pub fn new(total_amount: f64, u: [f64; 1+S-1]) -> Self where [(); S-1]: {
+	pub fn new(total_amount: f64, u: &[f64; 1+S-1]) -> Self where [(); S-1]: {
 		let amounts: &[_; S-1] = u.suffix();
 		State{temperature: u[0], amounts: from_iter(amounts.copied().chain([total_amount - iter::into::Sum::<f64>::sum(amounts)]))}
 	}

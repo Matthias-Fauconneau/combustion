@@ -16,7 +16,7 @@ pub struct Device {
 impl std::ops::Deref for Device { type Target = ash::Device; fn deref(&self) -> &Self::Target { &self.device } }
 
 impl Device {
-	#[fehler::throws(anyhow::Error)] pub fn new() -> Self {
+	#[fehler::throws(Box<dyn std::error::Error>)] pub fn new() -> Self {
 		let ref main = CStr::from_bytes_with_nul(b"main\0")?;
 		unsafe {
 			let entry = Entry::new()?;

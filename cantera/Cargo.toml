@@ -1,15 +1,15 @@
 [package]
-name = "combustion-cantera"
-version = "0.0.0"
-authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
-edition = "2018"
+name= 'combustion-cantera'
+description= 'Validates transport properties against Cantera'
+version= '0.0.0'
+authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition= '2018'
 
 [dependencies]
-fehler = ''
-anyhow = ''
-iter = {path='../../iter'}
-combustion = {path='..'}
-itertools = ''
+fehler= ''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+combustion= {path='..'}
+itertools= ''
 
 [[bin]]
 name= 'cantera'

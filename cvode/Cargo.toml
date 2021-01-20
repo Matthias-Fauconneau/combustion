@@ -1,16 +1,12 @@
 [package]
-name= "combustion-cvode"
-version= "0.0.0"
-authors= ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
-edition= "2018"
+name= 'cvode'
+description= 'Interface to Sundials CVODE'
+version= '0.0.0'
+authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition= '2018'
 
 [dependencies]
-fehler= ''
-anyhow= ''
-iter= {path='../../iter'}
-combustion= {path='..'}
-sundials-sys= ''
+sundials-sys= {git='https://github.com/jasondark/sundials-sys', default-features=false, features=['cvode']}
 
-[[bin]]
-name= 'cvode'
-path= 'main.rs'
+[lib]
+path= 'lib.rs'

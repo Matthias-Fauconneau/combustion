@@ -1,13 +1,13 @@
 #![feature(type_ascription, array_map, array_methods, bindings_after_at, try_blocks)] #![allow(non_snake_case)]
-#[fehler::throws(anyhow::Error)] fn main() {
+#[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use iter::{box_collect, vec::ConstRange, into::map, array_from_iter as from_iter};
 	let system = std::fs::read("CH4+O2.ron").expect("CH4+O2.ron");
 	use combustion::*;
 	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = Simulation::<35>::new(&system).expect("parse");
 	let transport =  system.transport(pressure_R, &state);
 
-	let _ : anyhow::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
-	let _ : anyhow::Result<_> = try { std::process::Command::new("nvidia-modprobe").spawn()?.wait()? };
+	let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
+	let _ : std::io::Result<_> = try { std::process::Command::new("nvidia-modprobe").spawn()?.wait()? };
 	if let Ok(modules) = std::fs::read("/proc/modules") { assert!(std::str::from_utf8(&modules).unwrap().lines().any(|line| line.starts_with("nvidia "))) };
 	use rustacuda::{prelude::*, launch};
 	rustacuda::init(CudaFlags::empty()).expect("CUDA");

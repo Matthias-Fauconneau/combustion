@@ -1,33 +1,19 @@
-#![feature(box_syntax)]
+#![allow(incomplete_features, non_snake_case)]#![feature(const_generics, const_evaluatable_checked)]
 
-#[fehler::throws(anyhow::Error)] fn main() {
-	let system = std::fs::read("H2+O2.ron")?;
+#[fehler::throws(Box<dyn std::error::Error>)] fn main() {
+	{use trace::*; rstack_self()?; unmask_SSE_exceptions(); trace_signal_floating_point_exception();}
+	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
-	let simulation @ Simulation{species_names, time_step, state, ..} = Simulation::<35>::new(&system)?;
-	let system = CVODE::new(&simulation);
-	fn from<const S: usize>(State{temperature, amounts}: State<S>) -> Box<[Box<[f64]>]> { box [box [temperature] as Box<[_]>, amounts] as Box<[_]> }
-	/*impl<const S: usize> From<State<S>> for [f64; 1+S-1] /*where [(); S-1]:, [(); 1+S-1]:*/ {
-	fn from(State{temperature, amounts}: State) -> Self { use iter::{array_from_iter as from_iter, into::IntoChain}; from_iter([*temperature].chain(amounts[..S-1].try_into().unwrap():[_;S-1])) }
-}*/
-	//fn from*
-	let mut app = ui::app::App::new(ui::plot::Plot::new(box [&["T"] as &[_], &species_names], vec![(0., from(state))]))?;
-	let mut time = 0.;
-	app.idle = box move |plot| {
-		/*for _ in 0..100000*/ { system.step(time_step, &state.into()); time += system.time_step; }
+	let Simulation{species_names, system, pressure_R, time_step, mut state, ..} = Simulation::<35>::new(&system)?;
+	let ref u: [f64; 1+35-1] = state.into();
+	let mut cvode = cvode::CVODE::new(move |u| system.rate/*and_jacobian*/(pressure_R, u).map(|(rate, /*jacobian*/)| rate), u);
+	fn from<const S: usize>(State{temperature, amounts}: State<S>) -> Box<[Box<[f64]>]> { Box::new( [Box::new([temperature]) as Box<[_]>, Box::new(amounts)] ) as Box<[_]> }
+	let mut app = ui::app::App::new(ui::plot::Plot::new(Box::new( [&["T"] as &[_], &species_names] ), vec![(0., from(state))]))?;
+	app.idle = Box::new( move |plot| {
+		let (time, u) = cvode.step(time_step, &state.into());
+		state = State::<35>::new(state.amounts.iter().sum(), &u);
 		plot.values.push( (time*1e9/*ns*/, from(state)) );
-		/*let density = system.average_molar_mass * system.pressure / (ideal_gas_constant * state.temperature);
-		use iter::from_iter;
-		#[allow(non_snake_case)] let B = from_iter(system.thermodynamics.iter().map(|thermodynamic| thermodynamic.b(state.temperature)));
-		let concentrations = from_iter(scale(density, mul(recip(system.molar_masses.iter().copied()), state.mass_fractions.iter().copied())));
-		for reaction in system.reactions.iter() {
-			let Rate{forward_base_rate, reverse_base_rate, efficiency} = reaction.rate(state.temperature, &B, &concentrations);
-			let base_rate = forward_base_rate - reverse_base_rate;
-			let net_rate = efficiency * base_rate;
-			//println!("{:e}", net_rate);
-			if net_rate > 1e-20 { /*println!("{:e}", net_rate);*/ return true; }
-		}
-		false*/
 		true
-	};
+	} );
 	app.run()?
 }

@@ -1,15 +1,16 @@
 [package]
 name= 'combustion'
+description= 'Chemical reaction kinetics (adiabatic constant-pressure ideal gas batch reactor)'
 version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [dependencies]
-iter = {git='https://github.com/Matthias-Fauconneau/iter'}
-num = {git='https://github.com/Matthias-Fauconneau/num'}
-serde = ''
-linear-map = {version='', features = ['serde_impl']}
-ron = ''
-fehler = ''
-unwrap = ''
-nalgebra = ''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+serde= ''
+linear-map= {version='', features = ['serde_impl']}
+ron= ''
+unwrap= ''
+nalgebra= ''
+fehler= ''

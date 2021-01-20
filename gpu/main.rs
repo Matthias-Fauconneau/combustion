@@ -19,7 +19,7 @@ fn benchmark(task: impl Fn(), times: usize, header: impl std::fmt::Display) { pr
 
 macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task; }, $times, stringify!($task)) } }
 
-#[fehler::throws(anyhow::Error)] fn main() {
+#[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use iter::{vec::{eval, generate, Vector}, box_collect};
 	let system = std::fs::read("CH4+O2.ron")?;
 	use combustion::*;

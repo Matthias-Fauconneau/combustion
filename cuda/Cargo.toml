@@ -10,13 +10,11 @@ rustacuda= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools= ''
 fehler= ''
-anyhow= ''
 
 [build-dependencies]
 combustion= {path='..'}
 itertools= ''
 fehler= ''
-anyhow= ''
 
 [[bin]]
 name= 'cuda'
