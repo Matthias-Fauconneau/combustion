@@ -9,6 +9,8 @@ edition= '2018'
 fehler= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 combustion= {path='..'}
+cvode= {path='../cvode'}
+ui= {git='https://github.com/Matthias-Fauconneau/ui', features=['plot']}
 itertools= ''
 
 [[bin]]

@@ -41,10 +41,10 @@ pub struct System<const S: usize> where [(); S-1]: {
 	pub transport_polynomials: TransportPolynomials<S>,
 }
 impl<const S: usize> System<S> where [(); S-1]: {
-	const volume : f64 = 1.;
+	pub const volume : f64 = 1.;
 }
 
-#[derive(Clone, Copy)] pub struct State<const S: usize> {
+#[derive(Clone, Copy, Debug, PartialEq)] pub struct State<const S: usize> {
 	pub temperature: f64,
 	pub amounts: [f64; S]
 }
