@@ -1,33 +1,50 @@
 #![allow(mixed_script_confusables, non_snake_case, incomplete_features)]#![feature(type_ascription, array_map, non_ascii_idents, const_generics, const_evaluatable_checked)]
+use {fehler::throws, anyhow::Error};
 use combustion::*;
-#[fehler::throws(Box<dyn std::error::Error>)] fn main() {
+
+#[throws] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
-	test_reaction_cantera(&Simulation::<35>::new(&system)?);
-	//test_transport_cantera(&Simulation::<35>::new(&system)?);
+	test_reaction_cantera(&Simulation::<35>::new(&system)?)?;
+	//test_transport_cantera(&Simulation::<35>::new(&system)?)?;
 }
 
-#[allow(dead_code)] fn test_reaction_cantera<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state, ..}: &Simulation<S>) where [(); S-1]:, [(); 1+S-1]: {
-	let (cantera_rate, cantera_state) = {
-		use itertools::Itertools;
+mod cantera {
+extern "C" { pub fn reaction(pressure: &mut f64, temperature: &mut f64, mole_proportions: *const std::os::raw::c_char, time_step: f64, species_len: &mut usize, species: &mut *const *const std::os::raw::c_char,
+																			 net_productions_rates: &mut *const f64, concentrations: &mut *const f64); }
+extern "C" { pub fn transport(pressure: f64, temperature: f64, mole_proportions: *const std::os::raw::c_char,
+																				viscosity: &mut f64, thermal_conductivity: &mut f64,
+																				species_len: &mut usize, species: &mut *const *const std::os::raw::c_char, mixture_averaged_thermal_diffusion_coefficients: &mut *const f64); }
+}
+
+#[throws] fn test_reaction_cantera<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state, ..}: &Simulation<S>) where [(); S-1]:, [(); 1+S-1]: {
+	assert!(System::<S>::volume == 1.);
+	use {iter::Suffix, std::convert::TryInto, itertools::Itertools, num::relative_error};
+	let (ref cantera_rate, cantera_state) = {
 		let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
-		let mole_proportions = std::ffi::CString::new(mole_proportions).unwrap();
+		let mole_proportions = std::ffi::CString::new(mole_proportions)?;
 		use std::ptr::null;
 		let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations) = (0, null(), null(), null());
 		unsafe {
 			let mut pressure = pressure_R * (combustion::kB*combustion::NA);
 			let mut temperature = state.temperature;
-			extern "C" { fn reaction(pressure: &mut f64, temperature: &mut f64, mole_proportions: *const std::os::raw::c_char, time_step: f64, species_len: &mut usize, species: &mut *const *const std::os::raw::c_char,
-																						 net_productions_rates: &mut *const f64, concentrations: &mut *const f64); }
-			reaction(&mut pressure, &mut temperature, mole_proportions.as_ptr(), *time_step, &mut species_len, &mut specie_names, &mut net_productions_rates, &mut concentrations);
+			cantera::reaction(&mut pressure, &mut temperature, mole_proportions.as_ptr(), *time_step, &mut species_len, &mut specie_names, &mut net_productions_rates, &mut concentrations);
 			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
 			let order = |o:&[_]| iter::vec::eval(species_names, |s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}", s, species_names))]);
-			let net_productions_rates = order(std::slice::from_raw_parts(net_productions_rates, species_len));
+			let net_productions_rates = order(std::slice::from_raw_parts(net_productions_rates, species_len)).map(|c| c*1000.); // kmol/m^3/s => mol/s [1m^3]
 			let concentrations = order(std::slice::from_raw_parts(concentrations, species_len));
-			(net_productions_rates, State{temperature, amounts: iter::vec::eval(concentrations, |c| c * System::<35>::volume)})
+			(iter::vec::eval(net_productions_rates, |dtC| dtC * System::<S>::volume)[0..S-1].try_into()?:[_;S-1], State{temperature, amounts: iter::vec::eval(concentrations, |c| c * System::<S>::volume)})
 		}
 	};
 	let (rate, /*jacobian*/) = system.rate/*and_jacobian*/(*pressure_R, &(*state).into()).unwrap();
-	dbg!(rate, cantera_rate);
+	let rate: &[_; S-1] = rate.suffix();
+	let table = species_names.iter().zip(rate.iter().zip(cantera_rate)).filter(|(_,(&a,&b))| a != 0. || b != 0.).map(|(&header,(&a,&b))| {
+		fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
+		let column = [header.to_owned(), to_string(a), to_string(b), to_string(relative_error(a,b))];
+		let width = column.iter().map(|s| s.len()).max().unwrap();
+		(column, width)
+	}).collect::<Box<_>>();
+	fn print<const R: usize>(table: &[([String; R], usize)]) { for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); } }
+	print(&table);
 	assert!(rate == cantera_rate);
 
 	let ref u: [f64; 1+S-1] = (*state).into();
@@ -39,20 +56,18 @@ use combustion::*;
 	assert!(state == cantera_state);
 }
 
-#[allow(dead_code)] fn test_transport_cantera<const S: usize>(Simulation{system, state, pressure_R, species_names, ..}: &Simulation<S>) where [(); S-1]: {
+#[allow(dead_code)] #[throws] fn test_transport_cantera<const S: usize>(Simulation{system, state, pressure_R, species_names, ..}: &Simulation<S>) where [(); S-1]: {
 	let transport = system.transport(*pressure_R, &state);
 	let cantera = {
 		use itertools::Itertools;
 		let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
-		let mole_proportions = std::ffi::CString::new(mole_proportions).unwrap();
+		let mole_proportions = std::ffi::CString::new(mole_proportions)?;
 		use std::ptr::null;
 		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut mixture_averaged_thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());
 		unsafe {
 			let pressure = pressure_R * (combustion::kB*combustion::NA);
-			extern "C" { fn transport(pressure: f64, temperature: f64, mole_proportions: *const std::os::raw::c_char,
-				viscosity: &mut f64, thermal_conductivity: &mut f64,
-				species_len: &mut usize, species: &mut *const *const std::os::raw::c_char, mixture_averaged_thermal_diffusion_coefficients: &mut *const f64); }
-			transport(pressure, state.temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names, &mut mixture_averaged_thermal_diffusion_coefficients);
+			cantera::transport(pressure, state.temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names,
+																		&mut mixture_averaged_thermal_diffusion_coefficients);
 			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
 			let order = |o:&[_]| iter::vec::eval(species_names, |s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}", s, species_names))]);
 			let mixture_averaged_thermal_diffusion_coefficients = order(std::slice::from_raw_parts(mixture_averaged_thermal_diffusion_coefficients, species_len));
