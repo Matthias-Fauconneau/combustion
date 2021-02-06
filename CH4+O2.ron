@@ -1,19 +1,8 @@
 #![enable(unwrap_newtypes)]
 (
 time_step: 1e-8,
-state: (temperature: 1000, pressure: 101325, mole_proportions: {"CH4": 1, "O2": 2, "Ar": 2}),
+state: (temperature: 1000, pressure: 101325, mole_proportions: {"CH4": 1, "O2": 2, "AR": 2}),
 species: {
-"H": (
-	composition: {H: 1},
-	thermodynamic: (
-		temperature_ranges: [200, 1000, 3500],
-			pieces: [
-			(2.5, 7.053328e-13, -1.99592e-15, 2.300816e-18, -9.27732e-22, 25473.6599, -0.446682853),
-			(2.50000001, -2.30843e-11, 1.615619e-14, -4.73515e-18, 4.981974e-22, 25473.6599, -0.446682914),
-		],
-	),
-	transport: (well_depth_K: 145, diameter_A: 2.5, geometry: Atom)
-),
 "H2": (
 	composition: {H: 2},
 	thermodynamic: (
@@ -25,6 +14,17 @@ species: {
 	),
 	transport: (well_depth_K: 38, diameter_A: 2.92, geometry: Linear(polarizability_A3: 0.79, rotational_relaxation: 280))
 ),
+"H": (
+	composition: {H: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 3500],
+			pieces: [
+			(2.5, 7.053328e-13, -1.99592e-15, 2.300816e-18, -9.27732e-22, 25473.6599, -0.446682853),
+			(2.50000001, -2.30843e-11, 1.615619e-14, -4.73515e-18, 4.981974e-22, 25473.6599, -0.446682914),
+		],
+	),
+	transport: (well_depth_K: 145, diameter_A: 2.05, geometry: Atom)
+),
 "O": (
 	composition: {O: 1},
 	thermodynamic: (
@@ -34,7 +34,7 @@ species: {
 			(2.56942078, -8.597411e-5, 4.1948459e-8, -1.00178e-11, 1.228337e-15, 29217.5791, 4.78433864),
 		],
 	),
-	transport: (well_depth_K: 80, diameter_A: 2.72, geometry: Atom)
+	transport: (well_depth_K: 80, diameter_A: 2.75, geometry: Atom)
 ),
 "O2": (
 	composition: {O: 2},
@@ -103,7 +103,7 @@ species: {
 	transport: (well_depth_K: 71.4, diameter_A: 3.298, geometry: Atom)
 ),
 "CH": (
-	composition: {H: 1, C: 1},
+	composition: {C: 1, H: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -114,7 +114,7 @@ species: {
 	transport: (well_depth_K: 80, diameter_A: 2.75, geometry: Linear())
 ),
 "CH2": (
-	composition: {H: 2, C: 1},
+	composition: {C: 1, H: 2},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -125,7 +125,7 @@ species: {
 	transport: (well_depth_K: 144, diameter_A: 3.8, geometry: Linear())
 ),
 "CH2(S)": (
-	composition: {H: 2, C: 1},
+	composition: {C: 1, H: 2},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -136,7 +136,7 @@ species: {
 	transport: (well_depth_K: 144, diameter_A: 3.8, geometry: Linear())
 ),
 "CH3": (
-	composition: {H: 3, C: 1},
+	composition: {C: 1, H: 3},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -147,7 +147,7 @@ species: {
 	transport: (well_depth_K: 144, diameter_A: 3.8, geometry: Linear())
 ),
 "CH4": (
-	composition: {H: 4, C: 1},
+	composition: {C: 1, H: 4},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -199,10 +199,10 @@ species: {
 			(1.76069008, 0.0092000008, -4.422588e-6, 1.0064121e-9, -8.83856e-14, -13995.8323, 13.656323),
 		],
 	),
-	transport: (well_depth_K: 498, diameter_A: 3.59, geometry: Nonlinear())
+	transport: (well_depth_K: 498, diameter_A: 3.59, geometry: Nonlinear(rotational_relaxation: 2))
 ),
 "CH2OH": (
-	composition: {H: 3, C: 1, O: 1},
+	composition: {C: 1, H: 3, O: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -213,9 +213,9 @@ species: {
 	transport: (well_depth_K: 417, diameter_A: 3.69, geometry: Nonlinear(rotational_relaxation: 2, permanent_dipole_moment_Debye: 1.7))
 ),
 "CH3O": (
-	composition: {H: 3, C: 1, O: 1},
+	composition: {C: 1, H: 3, O: 1},
 	thermodynamic: (
-		temperature_ranges: [200, 1000, 3500],
+		temperature_ranges: [300, 1000, 3000],
 			pieces: [
 			(2.106204, 0.007216595, 5.338472e-6, -7.377636e-9, 2.07561e-12, 978.6011, 13.152177),
 			(3.770799, 0.007871497, -2.656384e-6, 3.944431e-10, -2.11262e-14, 127.83252, 2.929575),
@@ -224,7 +224,7 @@ species: {
 	transport: (well_depth_K: 417, diameter_A: 3.69, geometry: Nonlinear(rotational_relaxation: 2, permanent_dipole_moment_Debye: 1.7))
 ),
 "CH3OH": (
-	composition: {H: 4, C: 1, O: 1},
+	composition: {C: 1, H: 4, O: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -235,7 +235,7 @@ species: {
 	transport: (well_depth_K: 481.8, diameter_A: 3.626, geometry: Nonlinear(rotational_relaxation: 1))
 ),
 "C2H": (
-	composition: {H: 1, C: 2},
+	composition: {C: 2, H: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -246,7 +246,7 @@ species: {
 	transport: (well_depth_K: 209, diameter_A: 4.1, geometry: Linear(rotational_relaxation: 2.5))
 ),
 "C2H2": (
-	composition: {H: 2, C: 2},
+	composition: {C: 2, H: 2},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -257,7 +257,7 @@ species: {
 	transport: (well_depth_K: 209, diameter_A: 4.1, geometry: Linear(rotational_relaxation: 2.5))
 ),
 "C2H3": (
-	composition: {H: 3, C: 2},
+	composition: {C: 2, H: 3},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -265,10 +265,10 @@ species: {
 			(3.016724, 0.0103302292, -4.680823e-6, 1.0176329e-9, -8.62607e-14, 34612.8739, 7.78732378),
 		],
 	),
-	transport: (well_depth_K: 209, diameter_A: 3.1, geometry: Linear(rotational_relaxation: 2.5))
+	transport: (well_depth_K: 209, diameter_A: 4.1, geometry: Nonlinear(rotational_relaxation: 1))
 ),
 "C2H4": (
-	composition: {H: 4, C: 2},
+	composition: {C: 2, H: 4},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -279,7 +279,7 @@ species: {
 	transport: (well_depth_K: 280.8, diameter_A: 3.971, geometry: Nonlinear(rotational_relaxation: 1.5))
 ),
 "C2H5": (
-	composition: {H: 5, C: 2},
+	composition: {C: 2, H: 5},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -287,10 +287,10 @@ species: {
 			(1.95465642, 0.0173972722, -7.982067e-6, 1.7521769e-9, -1.49642e-13, 12857.52, 13.4624343),
 		],
 	),
-	transport: (well_depth_K: 252.3, diameter_A: 4.302, geometry: Linear(rotational_relaxation: 1.5))
+	transport: (well_depth_K: 252.3, diameter_A: 4.302, geometry: Nonlinear(rotational_relaxation: 1.5))
 ),
 "C2H6": (
-	composition: {H: 5, C: 2},
+	composition: {C: 2, H: 6},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -303,7 +303,7 @@ species: {
 "HCCO": (
 	composition: {H: 1, C: 2, O: 1},
 	thermodynamic: (
-		temperature_ranges: [200, 1000, 3500],
+		temperature_ranges: [300, 1000, 4000],
 			pieces: [
 			(2.2517214, 0.017655021, -2.37291e-5, 1.7275759e-8, -5.06648e-12, 20059.449, 12.490417),
 			(5.6282058, 0.0040853401, -1.593455e-6, 2.862605e-10, -1.94078e-14, 19327.215, -3.9302595),
@@ -312,7 +312,7 @@ species: {
 	transport: (well_depth_K: 150, diameter_A: 2.5, geometry: Nonlinear(rotational_relaxation: 1))
 ),
 "CH2CO": (
-	composition: {H: 2, C: 2, O: 1},
+	composition: {C: 2, H: 2, O: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 3500],
 			pieces: [
@@ -323,40 +323,227 @@ species: {
 	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
 ),
 "HCCOH": (
-	composition: {H: 2, C: 2, O: 1},
+	composition: {C: 2, O: 1, H: 2},
 	thermodynamic: (
-		temperature_ranges: [200, 1000, 3500],
+		temperature_ranges: [300, 1000, 5000],
 			pieces: [
 			(1.2423733, 0.031072201, -5.086686e-5, 4.3137131e-8, -1.40146e-11, 8031.6143, 13.874319),
 			(5.9238291, 0.00679236, -2.565856e-6, 4.498784e-10, -2.99401e-14, 7264.626, -7.6017742),
 		],
 	),
-	transport: (well_depth_K: 150, diameter_A: 2.5, geometry: Nonlinear(rotational_relaxation: 1))
-),
-"CH2CHO": (
-	composition: {H: 3, C: 2, O: 1},
-	thermodynamic: (
-		temperature_ranges: [300, 1000, 5000],
-			pieces: [
-			(3.409062, 0.010738574, 1.891492e-6, -7.158583e-9, 2.867385e-12, 1521.4766, 9.55829),
-			(5.97567, 0.008130591, -2.743624e-6, 4.070304e-10, -2.17602e-14, 490.3218, -5.045251),
-		],
-	),
 	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
 ),
-"CH3CHO": (
-	composition: {H: 4, C: 2, O: 1},
+"N": (
+	composition: {N: 1},
 	thermodynamic: (
 		temperature_ranges: [200, 1000, 6000],
 			pieces: [
-			(4.7294595, -0.003193286, 4.7534921e-5, -5.745861e-8, 2.193111e-11, -21572.878, 4.1030159),
-			(5.4041108, 0.011723059, -4.226314e-6, 6.837245e-10, -4.09849e-14, -22593.122, -3.4807917),
+			(2.5, 0, 0, 0, 0, 56104.637, 4.1939087),
+			(2.4159429, 1.7489065e-4, -1.190237e-7, 3.022624e-11, -2.0361e-15, 56133.773, 4.6496096),
 		],
 	),
-	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
+	transport: (well_depth_K: 71.4, diameter_A: 3.298, geometry: Atom)
+),
+"NH": (
+	composition: {N: 1, H: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(3.4929085, 3.1179198e-4, -1.489048e-6, 2.4816442e-9, -1.0357e-12, 41880.629, 1.8483278),
+			(2.7836928, 0.001329843, -4.247805e-7, 7.83485e-11, -5.50445e-15, 42120.848, 5.7407799),
+		],
+	),
+	transport: (well_depth_K: 80, diameter_A: 2.65, geometry: Linear(rotational_relaxation: 4))
+),
+"NH2": (
+	composition: {N: 1, H: 2},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.2040029, -0.002106139, 7.1068348e-6, -5.61152e-9, 1.644072e-12, 21885.91, -0.14184248),
+			(2.8347421, 0.0032073082, -9.33908e-7, 1.370295e-10, -7.92061e-15, 22171.957, 6.5204163),
+		],
+	),
+	transport: (well_depth_K: 80, diameter_A: 2.65, geometry: Nonlinear(polarizability_A3: 2.26, rotational_relaxation: 4))
+),
+"NH3": (
+	composition: {N: 1, H: 3},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.2860274, -0.004660523, 2.1718513e-5, -2.280889e-8, 8.263805e-12, -6741.7285, -0.62537277),
+			(2.6344521, 0.005666256, -1.727868e-6, 2.386716e-10, -1.25788e-14, -6544.6958, 6.5662928),
+		],
+	),
+	transport: (well_depth_K: 481, diameter_A: 2.92, geometry: Nonlinear(rotational_relaxation: 10, permanent_dipole_moment_Debye: 1.47))
+),
+"NNH": (
+	composition: {N: 2, H: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.3446927, -0.004849707, 2.0059459e-5, -2.172646e-8, 7.946954e-12, 28791.973, 2.977941),
+			(3.7667544, 0.0028915082, -1.041662e-6, 1.684259e-10, -1.00919e-14, 28650.697, 4.4705067),
+		],
+	),
+	transport: (well_depth_K: 71.4, diameter_A: 3.798, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"NO": (
+	composition: {N: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.2184763, -0.004638976, 1.1041022e-5, -9.336135e-9, 2.803577e-12, 9844.623, 2.2808464),
+			(3.2606056, 0.0011911043, -4.291705e-7, 6.945767e-11, -4.03361e-15, 9920.9746, 6.3693027),
+		],
+	),
+	transport: (well_depth_K: 97.53, diameter_A: 3.621, geometry: Linear(polarizability_A3: 1.76, rotational_relaxation: 4))
+),
+"NO2": (
+	composition: {N: 1, O: 2},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(3.9440312, -0.001585429, 1.6657812e-5, -2.047543e-8, 7.835056e-12, 2896.6179, 6.3119917),
+			(4.8847542, 0.0021723956, -8.280691e-7, 1.574751e-10, -1.05109e-14, 2316.4983, -0.11741695),
+		],
+	),
+	transport: (well_depth_K: 200, diameter_A: 3.5, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"N2O": (
+	composition: {N: 2, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(2.2571502, 0.011304728, -1.367132e-5, 9.6819806e-9, -2.93072e-12, 8741.7744, 10.757992),
+			(4.8230729, 0.0026270251, -9.585087e-7, 1.600071e-10, -9.77523e-15, 8073.4048, -2.2017207),
+		],
+	),
+	transport: (well_depth_K: 232.4, diameter_A: 3.828, geometry: Linear(rotational_relaxation: 1))
+),
+"HNO": (
+	composition: {H: 1, N: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.5334916, -0.005669617, 1.8473207e-5, -1.713709e-8, 5.545457e-12, 11548.297, 1.7498417),
+			(2.9792509, 0.0034944059, -7.854978e-7, 5.747959e-11, -1.93359e-16, 11750.582, 8.6063728),
+		],
+	),
+	transport: (well_depth_K: 116.7, diameter_A: 3.492, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"CN": (
+	composition: {C: 1, N: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(3.6129351, -9.555133e-4, 2.1442977e-6, -3.15163e-10, -4.64304e-13, 51708.34, 3.9804995),
+			(3.7459805, 4.3450775e-5, 2.9705984e-7, -6.86518e-11, 4.413417e-15, 51536.188, 2.7867601),
+		],
+	),
+	transport: (well_depth_K: 75, diameter_A: 3.856, geometry: Linear(rotational_relaxation: 1))
+),
+"HCN": (
+	composition: {H: 1, C: 1, N: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(2.2589886, 0.01005117, -1.335176e-5, 1.0092349e-8, -3.0089e-12, 14712.633, 8.9164419),
+			(3.8022392, 0.0031464228, -1.063219e-6, 1.661976e-10, -9.79976e-15, 14407.292, 1.5754601),
+		],
+	),
+	transport: (well_depth_K: 569, diameter_A: 3.63, geometry: Linear(rotational_relaxation: 1))
+),
+"H2CN": (
+	composition: {H: 2, C: 1, N: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 4000],
+			pieces: [
+			(2.851661, 0.0056952331, 1.07114e-6, -1.622612e-9, -2.35111e-13, 28637.82, 8.9927511),
+			(5.209703, 0.0029692911, -2.855589e-7, -1.63555e-10, 3.043259e-14, 27677.109, -4.444478),
+		],
+	),
+	transport: (well_depth_K: 569, diameter_A: 3.63, geometry: Linear(rotational_relaxation: 1))
+),
+"HCNN": (
+	composition: {C: 1, N: 2, H: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(2.5243194, 0.015960619, -1.881635e-5, 1.212554e-8, -3.23574e-12, 54261.984, 11.67587),
+			(5.8946362, 0.0039895959, -1.598238e-6, 2.92494e-10, -2.00947e-14, 53452.941, -5.1030502),
+		],
+	),
+	transport: (well_depth_K: 150, diameter_A: 2.5, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"HCNO": (
+	composition: {H: 1, N: 1, C: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(2.64727989, 0.0127505342, -1.047942e-5, 4.4143284e-9, -7.57521e-13, 19299.0252, 10.7332972),
+			(6.59860456, 0.0030277863, -1.077043e-6, 1.716665e-10, -1.01439e-14, 17966.1339, -10.3306599),
+		],
+	),
+	transport: (well_depth_K: 232.4, diameter_A: 3.828, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"HOCN": (
+	composition: {H: 1, N: 1, C: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(3.78604952, 0.0068866792, -3.214879e-6, 5.171958e-10, 1.193608e-14, -2826.984, 5.63292162),
+			(5.89784885, 0.0031678939, -1.118011e-6, 1.772431e-10, -1.04339e-14, -3706.53331, -6.18167825),
+		],
+	),
+	transport: (well_depth_K: 232.4, diameter_A: 3.828, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"HNCO": (
+	composition: {H: 1, N: 1, C: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(3.63096317, 0.0073028236, -2.2805e-6, -6.61271e-10, 3.622358e-13, -15587.3636, 6.19457727),
+			(6.22395134, 0.00317864, -1.093788e-6, 1.707352e-10, -9.95022e-15, -16659.9344, -8.38224741),
+		],
+	),
+	transport: (well_depth_K: 232.4, diameter_A: 3.828, geometry: Nonlinear(rotational_relaxation: 1))
+),
+"NCO": (
+	composition: {N: 1, C: 1, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(2.8269308, 0.0088051688, -8.386613e-6, 4.8016964e-9, -1.33136e-12, 14682.477, 9.5504646),
+			(5.1521845, 0.0023051761, -8.803315e-7, 1.47891e-10, -9.0978e-15, 14004.123, -2.544266),
+		],
+	),
+	transport: (well_depth_K: 232.4, diameter_A: 3.828, geometry: Linear(rotational_relaxation: 1))
+),
+"N2": (
+	composition: {N: 2},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(3.298677, 0.0014082404, -3.963222e-6, 5.641515e-9, -2.44485e-12, -1020.8999, 3.950372),
+			(2.92664, 0.0014879768, -5.68476e-7, 1.009704e-10, -6.75335e-15, -922.7977, 5.980528),
+		],
+	),
+	transport: (well_depth_K: 97.53, diameter_A: 3.621, geometry: Linear(polarizability_A3: 1.76, rotational_relaxation: 4))
+),
+"AR": (
+	composition: {Ar: 1},
+	thermodynamic: (
+		temperature_ranges: [300, 1000, 5000],
+			pieces: [
+			(2.5, 0, 0, 0, 0, -745.375, 4.366),
+			(2.5, 0, 0, 0, 0, -745.375, 4.366),
+		],
+	),
+	transport: (well_depth_K: 136.5, diameter_A: 3.33, geometry: Atom)
 ),
 "C3H7": (
-	composition: {H: 8, C: 3},
+	composition: {C: 3, H: 7},
 	thermodynamic: (
 		temperature_ranges: [300, 1000, 5000],
 			pieces: [
@@ -367,7 +554,7 @@ species: {
 	transport: (well_depth_K: 266.8, diameter_A: 4.982, geometry: Nonlinear(rotational_relaxation: 1))
 ),
 "C3H8": (
-	composition: {H: 8, C: 3},
+	composition: {C: 3, H: 8},
 	thermodynamic: (
 		temperature_ranges: [300, 1000, 5000],
 			pieces: [
@@ -377,255 +564,380 @@ species: {
 	),
 	transport: (well_depth_K: 266.8, diameter_A: 4.982, geometry: Nonlinear(rotational_relaxation: 1))
 ),
-"Ar": (
-	composition: {Ar: 1},
+"CH2CHO": (
+	composition: {O: 1, H: 3, C: 2},
 	thermodynamic: (
-		temperature_ranges: [300, 5000],
+		temperature_ranges: [300, 1000, 5000],
 			pieces: [
-			(2.5, 0, 0, 0, 0, -745.375, 4.366),
+			(3.409062, 0.010738574, 1.891492e-6, -7.158583e-9, 2.867385e-12, 1521.4766, 9.55829),
+			(5.97567, 0.008130591, -2.743624e-6, 4.070304e-10, -2.17602e-14, 490.3218, -5.045251),
 		],
 	),
-	transport: (well_depth_K: 136.5, diameter_A: 3.33, geometry: Atom)
+	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
+),
+"CH3CHO": (
+	composition: {C: 2, H: 4, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.7294595, -0.003193286, 4.7534921e-5, -5.745861e-8, 2.193111e-11, -21572.878, 4.1030159),
+			(5.4041108, 0.011723059, -4.226314e-6, 6.837245e-10, -4.09849e-14, -22593.122, -3.4807917),
+		],
+	),
+	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
 ),
 },
 reactions: [
-(equation: ({"O": 2}, {"O2": 1}), rate_constant: (A: 1.2e5, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 2.4, "H2O": 15.4, "Ar": 0.83})),
-(equation: ({"O": 1, "H": 1}, {"OH": 1}), rate_constant: (A: 5e5, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "Ar": 0.7})),
-(equation: ({"H2": 1, "O": 1}, {"H": 1, "OH": 1}), rate_constant: (A: 0.0387, beta: 2.7, Ea: 6260), model: Elementary),
-(equation: ({"HO2": 1, "O": 1}, {"O2": 1, "OH": 1}), rate_constant: (A: 2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H2O2": 1, "O": 1}, {"HO2": 1, "OH": 1}), rate_constant: (A: 9.63, beta: 2, Ea: 4000), model: Elementary),
-(equation: ({"H": 1, "O2": 1}, {"HO2": 1}), rate_constant: (A: 2.8e6, beta: -0.86, Ea: 0), model: ThreeBody(efficiencies: {"O2": 0, "H2O": 0, "Ar": 0})),
-(equation: ({"H": 1, "O2": 2}, {"HO2": 1, "O2": 1}), rate_constant: (A: 2.08e7, beta: -1.24, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "H2O": 1, "O2": 1}, {"H2O": 1, "HO2": 1}), rate_constant: (A: 1.126e7, beta: -0.76, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "O2": 1, "Ar": 1}, {"HO2": 1, "Ar": 1}), rate_constant: (A: 7e5, beta: -0.8, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "O2": 1}, {"O": 1, "OH": 1}), rate_constant: (A: 2.65e10, beta: -0.6707, Ea: 1.7041e4), model: Elementary),
-(equation: ({"H": 2}, {"H2": 1}), rate_constant: (A: 1e6, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 0, "H2O": 0, "Ar": 0.63})),
-(equation: ({"H": 2, "H2": 1}, {"H2": 2}), rate_constant: (A: 9e4, beta: -0.6, Ea: 0), model: Elementary),
-(equation: ({"H": 2, "H2O": 1}, {"H2": 1, "H2O": 1}), rate_constant: (A: 6e7, beta: -1.25, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "OH": 1}, {"H2O": 1}), rate_constant: (A: 2.2e10, beta: -2, Ea: 0), model: ThreeBody(efficiencies: {"H2": 0.73, "H2O": 3.65, "Ar": 0.38})),
-(equation: ({"H": 1, "HO2": 1}, {"O": 1, "H2O": 1}), rate_constant: (A: 3.97e6, beta: 0, Ea: 671), model: Elementary),
-(equation: ({"H": 1, "HO2": 1}, {"H2": 1, "O2": 1}), rate_constant: (A: 4.48e7, beta: 0, Ea: 1068), model: Elementary),
-(equation: ({"H": 1, "HO2": 1}, {"OH": 2}), rate_constant: (A: 8.4e7, beta: 0, Ea: 635), model: Elementary),
-(equation: ({"H": 1, "H2O2": 1}, {"HO2": 1, "H2": 1}), rate_constant: (A: 12.1, beta: 2, Ea: 5200), model: Elementary),
-(equation: ({"H": 1, "H2O2": 1}, {"OH": 1, "H2O": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 3600), model: Elementary),
-(equation: ({"OH": 1, "H2": 1}, {"H": 1, "H2O": 1}), rate_constant: (A: 216, beta: 1.51, Ea: 3430), model: Elementary),
-(equation: ({"OH": 2}, {"H2O2": 1}), rate_constant: (A: 7.4e7, beta: -0.37, Ea: 0), model: 
-	 Falloff(k0: (A: 2.3e6, beta: -0.9, Ea: -1700), troe: (A: 0.7346, T3: 94, T1: 1756, T2: 5182), efficiencies: {"H2": 2, "H2O": 6, "Ar": 0.7})),
-(equation: ({"OH": 2}, {"O": 1, "H2O": 1}), rate_constant: (A: 0.0357, beta: 2.4, Ea: -2110), model: Elementary),
-(equation: ({"OH": 1, "HO2": 1}, {"O2": 1, "H2O": 1}), rate_constant: (A: 1.45e7, beta: 0, Ea: -500), model: Elementary),
-(equation: ({"OH": 1, "H2O2": 1}, {"HO2": 1, "H2O": 1}), rate_constant: (A: 2e6, beta: 0, Ea: 427), model: Elementary),
-(equation: ({"OH": 1, "H2O2": 1}, {"HO2": 1, "H2O": 1}), rate_constant: (A: 1.7e12, beta: 0, Ea: 2.941e4), model: Elementary),
-(equation: ({"HO2": 2}, {"O2": 1, "H2O2": 1}), rate_constant: (A: 1.3e5, beta: 0, Ea: -1630), model: Elementary),
-(equation: ({"HO2": 2}, {"O2": 1, "H2O2": 1}), rate_constant: (A: 4.2e8, beta: 0, Ea: 1.2e4), model: Elementary),
-(equation: ({"OH": 1, "HO2": 1}, {"O2": 1, "H2O": 1}), rate_constant: (A: 5e9, beta: 0, Ea: 1.733e4), model: Elementary),
-(equation: ({"O": 1, "CH": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 5.7e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH2": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 8e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH2(S)": 1}, {"H2": 1, "CO": 1}), rate_constant: (A: 1.5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH2(S)": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 1.5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH3": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 5.06e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH4": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 1.02e9, beta: 1.5, Ea: 8600), model: Elementary),
-(equation: ({"O": 1, "CO": 1}, {"CO2": 1}), rate_constant: (A: 1.8e4, beta: 0, Ea: 2385), model: PressureModification(k0: (A: 602, beta: 0, Ea: 3000), efficiencies: {"H2": 2, "O2": 6, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 3.5, "C2H6": 3, "Ar": 0.5})),
-(equation: ({"O": 1, "HCO": 1}, {"OH": 1, "CO": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "HCO": 1}, {"H": 1, "CO2": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH2O": 1}, {"OH": 1, "HCO": 1}), rate_constant: (A: 3.9e7, beta: 0, Ea: 3540), model: Elementary),
-(equation: ({"O": 1, "CH2OH": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH3O": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH3OH": 1}, {"OH": 1, "CH2OH": 1}), rate_constant: (A: 3.88e5, beta: 2.5, Ea: 3100), model: Elementary),
-(equation: ({"O": 1, "CH3OH": 1}, {"OH": 1, "CH3O": 1}), rate_constant: (A: 1.3e5, beta: 2.5, Ea: 5000), model: Elementary),
-(equation: ({"O": 1, "C2H": 1}, {"CH": 1, "CO": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "C2H2": 1}, {"H": 1, "HCCO": 1}), rate_constant: (A: 13.5, beta: 0, Ea: 1900), model: Elementary),
-(equation: ({"O": 1, "C2H2": 1}, {"OH": 1, "C2H": 1}), rate_constant: (A: 4.6e13, beta: -1.41, Ea: 2.895e4), model: Elementary),
-(equation: ({"O": 1, "C2H2": 1}, {"CO": 1, "CH2": 1}), rate_constant: (A: 6.94e6, beta: 2, Ea: 1900), model: Elementary),
-(equation: ({"O": 1, "C2H3": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 3e13, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "C2H4": 1}, {"CH3": 1, "HCO": 1}), rate_constant: (A: 1.25e7, beta: 1.83, Ea: 220), model: Elementary),
-(equation: ({"O": 1, "C2H5": 1}, {"CH3": 1, "CH2O": 1}), rate_constant: (A: 2.24e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "C2H6": 1}, {"OH": 1, "C2H5": 1}), rate_constant: (A: 89.8, beta: 1.92, Ea: 5690), model: Elementary),
-(equation: ({"O": 1, "HCCO": 1}, {"H": 1, "CO": 2}), rate_constant: (A: 1e8, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH2CO": 1}, {"OH": 1, "HCCO": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 8000), model: Elementary),
-(equation: ({"O": 1, "CH2CO": 1}, {"CH2": 1, "CO2": 1}), rate_constant: (A: 1.75e6, beta: 0, Ea: 1350), model: Elementary),
-(equation: ({"O2": 1, "CO": 1}, {"O": 1, "CO2": 1}), rate_constant: (A: 2.5e12, beta: 0, Ea: 4.78e4), model: Elementary),
-(equation: ({"O2": 1, "CH2O": 1}, {"HO2": 1, "HCO": 1}), rate_constant: (A: 1e8, beta: 0, Ea: 4e4), model: Elementary),
-(equation: ({"H": 2, "CO2": 1}, {"H2": 1, "CO2": 1}), rate_constant: (A: 5.5e14, beta: -2, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH": 1}, {"C": 1, "H2": 1}), rate_constant: (A: 1.65e8, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2": 1}, {"CH3": 1}), rate_constant: (A: 6e8, beta: 0, Ea: 0), model: 
-	 Falloff(k0: (A: 1.04e14, beta: -2.76, Ea: 1600), troe: (A: 0.562, T3: 91, T1: 5836, T2: 8552), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "CH2(S)": 1}, {"CH": 1, "H2": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH3": 1}, {"CH4": 1}), rate_constant: (A: 1.39e10, beta: -0.534, Ea: 536), model: 
-	 Falloff(k0: (A: 2.62e21, beta: -4.76, Ea: 2440), troe: (A: 0.783, T3: 74, T1: 2941, T2: 6964), efficiencies: {"H2": 2, "H2O": 6, "CH4": 3, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "CH4": 1}, {"CH3": 1, "H2": 1}), rate_constant: (A: 660, beta: 1.62, Ea: 1.084e4), model: Elementary),
-(equation: ({"H": 1, "HCO": 1}, {"CH": 1, "H2": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "HCO": 1}, {"CH2O": 1}), rate_constant: (A: 1.09e6, beta: 0.48, Ea: -260), model: 
-	 Falloff(k0: (A: 2.47e12, beta: -2.54, Ea: 425), troe: (A: 0.7824, T3: 271, T1: 2755, T2: 6570), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "HCO": 1}, {"H2": 1, "CO": 1}), rate_constant: (A: 7.34e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2O": 1}, {"CH2OH": 1}), rate_constant: (A: 5.4e5, beta: 0.454, Ea: 3600), model: 
-	 Falloff(k0: (A: 1.27e20, beta: -4.82, Ea: 6530), troe: (A: 0.7187, T3: 103, T1: 1291, T2: 4160), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"H": 1, "CH2O": 1}, {"CH3O": 1}), rate_constant: (A: 5.4e5, beta: 0.454, Ea: 2600), model: 
-	 Falloff(k0: (A: 2.2e18, beta: -4.8, Ea: 5560), troe: (A: 0.758, T3: 94, T1: 1555, T2: 4200), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"H": 1, "CH2O": 1}, {"HCO": 1, "H2": 1}), rate_constant: (A: 57.4, beta: 1.9, Ea: 2742), model: Elementary),
-(equation: ({"H": 1, "CH2OH": 1}, {"CH3OH": 1}), rate_constant: (A: 1.055e6, beta: 0.5, Ea: 86), model: 
-	 Falloff(k0: (A: 4.36e19, beta: -4.65, Ea: 5080), troe: (A: 0.6, T3: 100, T1: 9e4, T2: 1e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"H": 1, "CH2OH": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2OH": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 1.65e5, beta: 0.65, Ea: -284), model: Elementary),
-(equation: ({"H": 1, "CH2OH": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 3.28e7, beta: -0.09, Ea: 610), model: Elementary),
-(equation: ({"H": 1, "CH3O": 1}, {"CH3OH": 1}), rate_constant: (A: 2.43e6, beta: 0.515, Ea: 50), model: 
-	 Falloff(k0: (A: 4.66e29, beta: -7.44, Ea: 1.408e4), troe: (A: 0.7, T3: 100, T1: 9e4, T2: 1e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"H": 1, "CH3O": 1}, {"H": 1, "CH2OH": 1}), rate_constant: (A: 4.15e7, beta: 1.63, Ea: 1924), model: Elementary),
-(equation: ({"H": 1, "CH3O": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH3O": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 1.5e6, beta: 0.5, Ea: -110), model: Elementary),
-(equation: ({"H": 1, "CH3O": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 2.62e8, beta: -0.23, Ea: 1070), model: Elementary),
-(equation: ({"H": 1, "CH3OH": 1}, {"CH2OH": 1, "H2": 1}), rate_constant: (A: 1.7e7, beta: 2.1, Ea: 4870), model: Elementary),
-(equation: ({"H": 1, "CH3OH": 1}, {"CH3O": 1, "H2": 1}), rate_constant: (A: 4.2, beta: 2.1, Ea: 4870), model: Elementary),
-(equation: ({"H": 1, "C2H": 1}, {"C2H2": 1}), rate_constant: (A: 1e11, beta: -1, Ea: 0), model: 
-	 Falloff(k0: (A: 3.75e21, beta: -4.8, Ea: 1900), troe: (A: 0.6464, T3: 132, T1: 1315, T2: 5566), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C2H2": 1}, {"C2H3": 1}), rate_constant: (A: 5.6e12, beta: 0, Ea: 2400), model: 
-	 Falloff(k0: (A: 3.8e28, beta: -7.27, Ea: 7220), troe: (A: 0.7507, T3: 98.5, T1: 1302, T2: 4167), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C2H3": 1}, {"C2H4": 1}), rate_constant: (A: 6.08e6, beta: 0.27, Ea: 280), model: 
-	 Falloff(k0: (A: 1.4e18, beta: -3.86, Ea: 3320), troe: (A: 0.782, T3: 207.5, T1: 2663, T2: 6095), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C2H3": 1}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "C2H4": 1}, {"C2H5": 1}), rate_constant: (A: 5.4e5, beta: -7.62, Ea: 6970), model: 
-	 Falloff(k0: (A: 6e29, beta: -7.62, Ea: 6970), troe: (A: 0.9753, T3: 210, T1: 984, T2: 4374), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C2H4": 1}, {"H2": 1, "C2H3": 1}), rate_constant: (A: 1.325e6, beta: 2.53, Ea: 1.224e4), model: Elementary),
-(equation: ({"H": 1, "C2H5": 1}, {"C2H6": 1}), rate_constant: (A: 5.21e11, beta: -0.99, Ea: 1580), model: 
-	 Falloff(k0: (A: 1.99e29, beta: -7.08, Ea: 6685), troe: (A: 0.8422, T3: 125, T1: 2219, T2: 6882), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C2H5": 1}, {"H2": 1, "C2H4": 1}), rate_constant: (A: 2e6, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "C2H6": 1}, {"H2": 1, "C2H5": 1}), rate_constant: (A: 115, beta: 1.9, Ea: 7530), model: Elementary),
-(equation: ({"H": 1, "HCCO": 1}, {"CH2(S)": 1, "CO": 1}), rate_constant: (A: 1e8, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2CO": 1}, {"HCCO": 1, "H2": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 8000), model: Elementary),
-(equation: ({"H": 1, "CH2CO": 1}, {"CH3": 1, "CO": 1}), rate_constant: (A: 1.13e7, beta: 0, Ea: 3428), model: Elementary),
-(equation: ({"H": 1, "HCCOH": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H2": 1, "CO": 1}, {"CH2O": 1}), rate_constant: (A: 4.3e7, beta: 1.5, Ea: 7.96e4), model: 
-	 Falloff(k0: (A: 5.07e15, beta: -3.42, Ea: 8.435e4), troe: (A: 0.932, T3: 197, T1: 1540, T2: 1.03e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"OH": 1, "C": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH2": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 2e13, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH2": 1}, {"CH": 1, "H2O": 1}), rate_constant: (A: 1.13e7, beta: 2, Ea: 3000), model: Elementary),
-(equation: ({"OH": 1, "CH2(S)": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 3e13, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH3": 1}, {"CH3OH": 1}), rate_constant: (A: 2.79e12, beta: -1.43, Ea: 1330), model: 
-	 Falloff(k0: (A: 4e24, beta: -5.92, Ea: 3140), troe: (A: 0.412, T3: 195, T1: 5900, T2: 6394), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"OH": 1, "CH3": 1}, {"CH2": 1, "H2O": 1}), rate_constant: (A: 5.6e7, beta: 1.6, Ea: 5420), model: Elementary),
-(equation: ({"OH": 1, "CH3": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 6.44e11, beta: -1.34, Ea: 1417), model: Elementary),
-(equation: ({"OH": 1, "CH4": 1}, {"CH3": 1, "H2O": 1}), rate_constant: (A: 100, beta: 1.6, Ea: 3120), model: Elementary),
-(equation: ({"OH": 1, "CO": 1}, {"H": 1, "CO2": 1}), rate_constant: (A: 4.76e7, beta: 1.228, Ea: 70), model: Elementary),
-(equation: ({"OH": 1, "HCO": 1}, {"H2O": 1, "CO": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH2O": 1}, {"HCO": 1, "H2O": 1}), rate_constant: (A: 3430, beta: 1.18, Ea: -447), model: Elementary),
-(equation: ({"OH": 1, "CH2OH": 1}, {"H2O": 1, "CH2O": 1}), rate_constant: (A: 5e6, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH3O": 1}, {"H2O": 1, "CH2O": 1}), rate_constant: (A: 5e6, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH3OH": 1}, {"CH2OH": 1, "H2O": 1}), rate_constant: (A: 1.44, beta: 2, Ea: -840), model: Elementary),
-(equation: ({"OH": 1, "CH3OH": 1}, {"CH3O": 1, "H2O": 1}), rate_constant: (A: 6.3, beta: 2, Ea: 1500), model: Elementary),
-(equation: ({"OH": 1, "C2H": 1}, {"H": 1, "HCCO": 1}), rate_constant: (A: 2e13, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "C2H2": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 2.18e-10, beta: 4.5, Ea: -1000), model: Elementary),
-(equation: ({"OH": 1, "C2H2": 1}, {"H": 1, "HCCOH": 1}), rate_constant: (A: 0.504, beta: 2.3, Ea: 1.35e4), model: Elementary),
-(equation: ({"OH": 1, "C2H2": 1}, {"C2H": 1, "H2O": 1}), rate_constant: (A: 33.7, beta: 2, Ea: 1.4e4), model: Elementary),
-(equation: ({"OH": 1, "C2H2": 1}, {"CH3": 1, "CO": 1}), rate_constant: (A: 4.83e-4, beta: 4, Ea: -2000), model: Elementary),
-(equation: ({"OH": 1, "C2H3": 1}, {"H2O": 1, "C2H2": 1}), rate_constant: (A: 5e6, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "C2H4": 1}, {"C2H3": 1, "H2O": 1}), rate_constant: (A: 36, beta: 2, Ea: 2500), model: Elementary),
-(equation: ({"OH": 1, "C2H6": 1}, {"C2H5": 1, "H2O": 1}), rate_constant: (A: 3.54, beta: 2.12, Ea: 870), model: Elementary),
-(equation: ({"OH": 1, "CH2CO": 1}, {"HCCO": 1, "H2O": 1}), rate_constant: (A: 7.5e6, beta: 0, Ea: 2000), model: Elementary),
-(equation: ({"C": 1, "O2": 1}, {"O": 1, "CO": 1}), rate_constant: (A: 5.8e7, beta: 0, Ea: 576), model: Elementary),
-(equation: ({"C": 1, "CH2": 1}, {"H": 1, "C2H": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"C": 1, "CH3": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH": 1, "O2": 1}, {"O": 1, "HCO": 1}), rate_constant: (A: 6.71e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH": 1, "H2": 1}, {"H": 1, "CH2": 1}), rate_constant: (A: 1.08e8, beta: 0, Ea: 3110), model: Elementary),
-(equation: ({"CH": 1, "H2O": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 5.71e6, beta: 0, Ea: -755), model: Elementary),
-(equation: ({"CH": 1, "CH2": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 4e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH": 1, "CH3": 1}, {"H": 1, "C2H3": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH": 1, "CH4": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 6e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH": 1, "CO": 1}, {"HCCO": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: 
-	 Falloff(k0: (A: 2.69e16, beta: -3.74, Ea: 1936), troe: (A: 0.5757, T3: 237, T1: 1652, T2: 5069), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"CH": 1, "CO2": 1}, {"HCO": 1, "CO": 1}), rate_constant: (A: 1.9e8, beta: 0, Ea: 1.5792e4), model: Elementary),
-(equation: ({"CH": 1, "CH2O": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 9.46e7, beta: 0, Ea: -515), model: Elementary),
-(equation: ({"CH": 1, "HCCO": 1}, {"CO": 1, "C2H2": 1}), rate_constant: (A: 5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2": 1, "O2": 1}, {"OH": 1, "H": 1, "CO": 1}), rate_constant: (A: 5e6, beta: 0, Ea: 1500), model: Elementary),
-(equation: ({"CH2": 1, "H2": 1}, {"H": 1, "CH3": 1}), rate_constant: (A: 0.5, beta: 2, Ea: 7230), model: Elementary),
-(equation: ({"CH2": 2}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 1.6e15, beta: 0, Ea: 1.1944e4), model: Elementary),
-(equation: ({"CH2": 1, "CH3": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 4e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2": 1, "CH4": 1}, {"CH3": 2}), rate_constant: (A: 2.46e6, beta: 2, Ea: 8270), model: Elementary),
-(equation: ({"CH2": 1, "CO": 1}, {"CH2CO": 1}), rate_constant: (A: 8.1e5, beta: 0.5, Ea: 4510), model: 
-	 Falloff(k0: (A: 2.69e21, beta: -5.11, Ea: 7095), troe: (A: 0.5907, T3: 275, T1: 1226, T2: 5185), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"CH2": 1, "HCCO": 1}, {"C2H3": 1, "CO": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "Ar": 1}, {"CH2": 1, "Ar": 1}), rate_constant: (A: 1.5e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "O2": 1}, {"H": 1, "OH": 1, "CO": 1}), rate_constant: (A: 2.8e13, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "O2": 1}, {"CO": 1, "H2O": 1}), rate_constant: (A: 1.2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "H2": 1}, {"CH3": 1, "H": 1}), rate_constant: (A: 7e7, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 2}, {"O2": 1}), rate_constant: (A: 1.2e5, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 2.4, "H2O": 15.4, "CH4": 2, "CO": 1.75, "CO2": 3.6, "C2H6": 3, "AR": 0.83})),
+(equation: ({"O": 1, "H": 1}, {"OH": 1}), rate_constant: (A: 5e5, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"O": 1, "H2": 1}, {"H": 1, "OH": 1}), rate_constant: (A: 3.87e-8, beta: 2.7, Ea: 6260), model: Elementary),
+(equation: ({"O": 1, "HO2": 1}, {"OH": 1, "O2": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "H2O2": 1}, {"OH": 1, "HO2": 1}), rate_constant: (A: 9.63e-6, beta: 2, Ea: 4000), model: Elementary),
+(equation: ({"O": 1, "CH": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 57.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH2": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 80.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH2(S)": 1}, {"H2": 1, "CO": 1}), rate_constant: (A: 15.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH2(S)": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 15.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH3": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 50.6, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH4": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 0.00102, beta: 1.5, Ea: 8600), model: Elementary),
+(equation: ({"O": 1, "CO": 1}, {"CO2": 1}), rate_constant: (A: 0.018, beta: 0, Ea: 2385), model: PressureModification(k0: (A: 602.0, beta: 0, Ea: 3000), efficiencies: {"H2": 2, "O2": 6, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 3.5, "C2H6": 3, "AR": 0.5})),
+(equation: ({"O": 1, "HCO": 1}, {"OH": 1, "CO": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "HCO": 1}, {"H": 1, "CO2": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH2O": 1}, {"OH": 1, "HCO": 1}), rate_constant: (A: 39.0, beta: 0, Ea: 3540), model: Elementary),
+(equation: ({"O": 1, "CH2OH": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH3O": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH3OH": 1}, {"OH": 1, "CH2OH": 1}), rate_constant: (A: 3.88e-7, beta: 2.5, Ea: 3100), model: Elementary),
+(equation: ({"O": 1, "CH3OH": 1}, {"OH": 1, "CH3O": 1}), rate_constant: (A: 1.3e-7, beta: 2.5, Ea: 5000), model: Elementary),
+(equation: ({"O": 1, "C2H": 1}, {"CH": 1, "CO": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "C2H2": 1}, {"H": 1, "HCCO": 1}), rate_constant: (A: 1.35e-5, beta: 2, Ea: 1900), model: Elementary),
+(equation: ({"O": 1, "C2H2": 1}, {"OH": 1, "C2H": 1}), rate_constant: (A: 4.6e7, beta: -1.41, Ea: 2.895e4), model: Elementary),
+(equation: ({"O": 1, "C2H2": 1}, {"CO": 1, "CH2": 1}), rate_constant: (A: 6.94e-6, beta: 2, Ea: 1900), model: Elementary),
+(equation: ({"O": 1, "C2H3": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "C2H4": 1}, {"CH3": 1, "HCO": 1}), rate_constant: (A: 1.25e-5, beta: 1.83, Ea: 220), model: Elementary),
+(equation: ({"O": 1, "C2H5": 1}, {"CH3": 1, "CH2O": 1}), rate_constant: (A: 22.4, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "C2H6": 1}, {"OH": 1, "C2H5": 1}), rate_constant: (A: 8.98e-5, beta: 1.92, Ea: 5690), model: Elementary),
+(equation: ({"O": 1, "HCCO": 1}, {"H": 1, "CO": 2}), rate_constant: (A: 100.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "CH2CO": 1}, {"OH": 1, "HCCO": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 8000), model: Elementary),
+(equation: ({"O": 1, "CH2CO": 1}, {"CH2": 1, "CO2": 1}), rate_constant: (A: 1.75, beta: 0, Ea: 1350), model: Elementary),
+(equation: ({"O2": 1, "CO": 1}, {"O": 1, "CO2": 1}), rate_constant: (A: 2.5, beta: 0, Ea: 4.78e4), model: Elementary),
+(equation: ({"O2": 1, "CH2O": 1}, {"HO2": 1, "HCO": 1}), rate_constant: (A: 100.0, beta: 0, Ea: 4e4), model: Elementary),
+(equation: ({"H": 1, "O2": 1}, {"HO2": 1}), rate_constant: (A: 2.8e6, beta: -0.86, Ea: 0), model: ThreeBody(efficiencies: {"O2": 0, "H2O": 0, "CO": 0.75, "CO2": 1.5, "C2H6": 1.5, "N2": 0, "AR": 0})),
+(equation: ({"H": 1, "O2": 2}, {"HO2": 1, "O2": 1}), rate_constant: (A: 20.8, beta: -1.24, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "O2": 1, "H2O": 1}, {"HO2": 1, "H2O": 1}), rate_constant: (A: 11.26, beta: -0.76, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "O2": 1, "N2": 1}, {"HO2": 1, "N2": 1}), rate_constant: (A: 26.0, beta: -1.24, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "O2": 1, "AR": 1}, {"HO2": 1, "AR": 1}), rate_constant: (A: 0.7, beta: -0.8, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "O2": 1}, {"O": 1, "OH": 1}), rate_constant: (A: 26500.0, beta: -0.6707, Ea: 1.7041e4), model: Elementary),
+(equation: ({"H": 2}, {"H2": 1}), rate_constant: (A: 1e6, beta: -1, Ea: 0), model: ThreeBody(efficiencies: {"H2": 0, "H2O": 0, "CH4": 2, "CO2": 0, "C2H6": 3, "AR": 0.63})),
+(equation: ({"H": 2, "H2": 1}, {"H2": 2}), rate_constant: (A: 0.09, beta: -0.6, Ea: 0), model: Elementary),
+(equation: ({"H": 2, "H2O": 1}, {"H2": 1, "H2O": 1}), rate_constant: (A: 60.0, beta: -1.25, Ea: 0), model: Elementary),
+(equation: ({"H": 2, "CO2": 1}, {"H2": 1, "CO2": 1}), rate_constant: (A: 550.0, beta: -2, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "OH": 1}, {"H2O": 1}), rate_constant: (A: 2.2e10, beta: -2, Ea: 0), model: ThreeBody(efficiencies: {"H2": 0.73, "H2O": 3.65, "CH4": 2, "C2H6": 3, "AR": 0.38})),
+(equation: ({"H": 1, "HO2": 1}, {"O": 1, "H2O": 1}), rate_constant: (A: 3.97, beta: 0, Ea: 671), model: Elementary),
+(equation: ({"H": 1, "HO2": 1}, {"O2": 1, "H2": 1}), rate_constant: (A: 44.8, beta: 0, Ea: 1068), model: Elementary),
+(equation: ({"H": 1, "HO2": 1}, {"OH": 2}), rate_constant: (A: 84.0, beta: 0, Ea: 635), model: Elementary),
+(equation: ({"H": 1, "H2O2": 1}, {"HO2": 1, "H2": 1}), rate_constant: (A: 1.21e-5, beta: 2, Ea: 5200), model: Elementary),
+(equation: ({"H": 1, "H2O2": 1}, {"OH": 1, "H2O": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 3600), model: Elementary),
+(equation: ({"H": 1, "CH": 1}, {"C": 1, "H2": 1}), rate_constant: (A: 165.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2": 1}, {"CH3": 1}), rate_constant: (A: 600.0, beta: 0, Ea: 0), model: 
+	 Falloff(k0: (A: 1.04e14, beta: -2.76, Ea: 1600), troe: (A: 5.62e-13, T3: 91, T1: 5836, T2: 8552), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "CH2(S)": 1}, {"CH": 1, "H2": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH3": 1}, {"CH4": 1}), rate_constant: (A: 13900.0, beta: -0.534, Ea: 536), model: 
+	 Falloff(k0: (A: 2.6200000000000005e21, beta: -4.76, Ea: 2440), troe: (A: 7.83e-13, T3: 74, T1: 2941, T2: 6964), efficiencies: {"H2": 2, "H2O": 6, "CH4": 3, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "CH4": 1}, {"CH3": 1, "H2": 1}), rate_constant: (A: 6.6e-4, beta: 1.62, Ea: 1.084e4), model: Elementary),
+(equation: ({"H": 1, "HCO": 1}, {"CH2O": 1}), rate_constant: (A: 1.09, beta: 0.48, Ea: -260), model: 
+	 Falloff(k0: (A: 2.47e12, beta: -2.57, Ea: 425), troe: (A: 7.824e-13, T3: 271, T1: 2755, T2: 6570), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "HCO": 1}, {"H2": 1, "CO": 1}), rate_constant: (A: 73.4, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2O": 1}, {"CH2OH": 1}), rate_constant: (A: 0.54, beta: 0.454, Ea: 3600), model: 
+	 Falloff(k0: (A: 1.2700000000000002e20, beta: -4.82, Ea: 6530), troe: (A: 7.187e-13, T3: 103, T1: 1291, T2: 4160), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"H": 1, "CH2O": 1}, {"CH3O": 1}), rate_constant: (A: 0.54, beta: 0.454, Ea: 2600), model: 
+	 Falloff(k0: (A: 2.2000000000000005e18, beta: -4.8, Ea: 5560), troe: (A: 7.58e-13, T3: 94, T1: 1555, T2: 4200), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"H": 1, "CH2O": 1}, {"HCO": 1, "H2": 1}), rate_constant: (A: 5.74e-5, beta: 1.9, Ea: 2742), model: Elementary),
+(equation: ({"H": 1, "CH2OH": 1}, {"CH3OH": 1}), rate_constant: (A: 1.055, beta: 0.5, Ea: 86), model: 
+	 Falloff(k0: (A: 4.360000000000001e19, beta: -4.65, Ea: 5080), troe: (A: 6e-13, T3: 100, T1: 9e4, T2: 1e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"H": 1, "CH2OH": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2OH": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 0.165, beta: 0.65, Ea: -284), model: Elementary),
+(equation: ({"H": 1, "CH2OH": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 32.8, beta: -0.09, Ea: 610), model: Elementary),
+(equation: ({"H": 1, "CH3O": 1}, {"CH3OH": 1}), rate_constant: (A: 2.43, beta: 0.515, Ea: 50), model: 
+	 Falloff(k0: (A: 4.660000000000001e29, beta: -7.44, Ea: 1.408e4), troe: (A: 7e-13, T3: 100, T1: 9e4, T2: 1e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"H": 1, "CH3O": 1}, {"H": 1, "CH2OH": 1}), rate_constant: (A: 4.15e-5, beta: 1.63, Ea: 1924), model: Elementary),
+(equation: ({"H": 1, "CH3O": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH3O": 1}, {"OH": 1, "CH3": 1}), rate_constant: (A: 1.5, beta: 0.5, Ea: -110), model: Elementary),
+(equation: ({"H": 1, "CH3O": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 262.0, beta: -0.23, Ea: 1070), model: Elementary),
+(equation: ({"H": 1, "CH3OH": 1}, {"CH2OH": 1, "H2": 1}), rate_constant: (A: 1.7e-5, beta: 2.1, Ea: 4870), model: Elementary),
+(equation: ({"H": 1, "CH3OH": 1}, {"CH3O": 1, "H2": 1}), rate_constant: (A: 4.2e-6, beta: 2.1, Ea: 4870), model: Elementary),
+(equation: ({"H": 1, "C2H": 1}, {"C2H2": 1}), rate_constant: (A: 1e5, beta: -1, Ea: 0), model: 
+	 Falloff(k0: (A: 3.750000000000001e21, beta: -4.8, Ea: 1900), troe: (A: 6.464e-13, T3: 132, T1: 1315, T2: 5566), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C2H2": 1}, {"C2H3": 1}), rate_constant: (A: 5.6, beta: 0, Ea: 2400), model: 
+	 Falloff(k0: (A: 3.8000000000000008e28, beta: -7.27, Ea: 7220), troe: (A: 7.507e-13, T3: 98.5, T1: 1302, T2: 4167), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C2H3": 1}, {"C2H4": 1}), rate_constant: (A: 6.08, beta: 0.27, Ea: 280), model: 
+	 Falloff(k0: (A: 1.4000000000000003e18, beta: -3.86, Ea: 3320), troe: (A: 7.82e-13, T3: 207.5, T1: 2663, T2: 6095), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C2H3": 1}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "C2H4": 1}, {"C2H5": 1}), rate_constant: (A: 0.54, beta: 0.454, Ea: 1820), model: 
+	 Falloff(k0: (A: 6.0000000000000005e29, beta: -7.62, Ea: 6970), troe: (A: 9.753e-13, T3: 210, T1: 984, T2: 4374), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C2H4": 1}, {"C2H3": 1, "H2": 1}), rate_constant: (A: 1.325e-6, beta: 2.53, Ea: 1.224e4), model: Elementary),
+(equation: ({"H": 1, "C2H5": 1}, {"C2H6": 1}), rate_constant: (A: 5.21e5, beta: -0.99, Ea: 1580), model: 
+	 Falloff(k0: (A: 1.9900000000000005e29, beta: -7.08, Ea: 6685), troe: (A: 8.422e-13, T3: 125, T1: 2219, T2: 6882), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C2H5": 1}, {"H2": 1, "C2H4": 1}), rate_constant: (A: 2.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "C2H6": 1}, {"C2H5": 1, "H2": 1}), rate_constant: (A: 1.15e-4, beta: 1.9, Ea: 7530), model: Elementary),
+(equation: ({"H": 1, "HCCO": 1}, {"CH2(S)": 1, "CO": 1}), rate_constant: (A: 100.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2CO": 1}, {"HCCO": 1, "H2": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 8000), model: Elementary),
+(equation: ({"H": 1, "CH2CO": 1}, {"CH3": 1, "CO": 1}), rate_constant: (A: 11.3, beta: 0, Ea: 3428), model: Elementary),
+(equation: ({"H": 1, "HCCOH": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H2": 1, "CO": 1}, {"CH2O": 1}), rate_constant: (A: 4.3e-5, beta: 1.5, Ea: 7.96e4), model: 
+	 Falloff(k0: (A: 5.070000000000001e15, beta: -3.42, Ea: 8.435e4), troe: (A: 9.32e-13, T3: 197, T1: 1540, T2: 1.03e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"OH": 1, "H2": 1}, {"H": 1, "H2O": 1}), rate_constant: (A: 2.16e-4, beta: 1.51, Ea: 3430), model: Elementary),
+(equation: ({"OH": 2}, {"H2O2": 1}), rate_constant: (A: 74.0, beta: -0.37, Ea: 0), model: 
+	 Falloff(k0: (A: 2.3e6, beta: -0.9, Ea: -1700), troe: (A: 7.346e-13, T3: 94, T1: 1756, T2: 5182), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"OH": 2}, {"O": 1, "H2O": 1}), rate_constant: (A: 3.57e-8, beta: 2.4, Ea: -2110), model: Elementary),
+(equation: ({"OH": 1, "HO2": 1}, {"O2": 1, "H2O": 1}), rate_constant: (A: 14.5, beta: 0, Ea: -500), model: Elementary),
+(equation: ({"OH": 1, "H2O2": 1}, {"HO2": 1, "H2O": 1}), rate_constant: (A: 2.0, beta: 0, Ea: 427), model: Elementary),
+(equation: ({"OH": 1, "H2O2": 1}, {"HO2": 1, "H2O": 1}), rate_constant: (A: 1.7e6, beta: 0, Ea: 2.941e4), model: Elementary),
+(equation: ({"OH": 1, "C": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH": 1}, {"H": 1, "HCO": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH2": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH2": 1}, {"CH": 1, "H2O": 1}), rate_constant: (A: 1.13e-5, beta: 2, Ea: 3000), model: Elementary),
+(equation: ({"OH": 1, "CH2(S)": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH3": 1}, {"CH3OH": 1}), rate_constant: (A: 2.79e6, beta: -1.43, Ea: 1330), model: 
+	 Falloff(k0: (A: 4.000000000000001e24, beta: -5.92, Ea: 3140), troe: (A: 4.12e-13, T3: 195, T1: 5900, T2: 6394), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"OH": 1, "CH3": 1}, {"CH2": 1, "H2O": 1}), rate_constant: (A: 5.6e-5, beta: 1.6, Ea: 5420), model: Elementary),
+(equation: ({"OH": 1, "CH3": 1}, {"CH2(S)": 1, "H2O": 1}), rate_constant: (A: 6.44e5, beta: -1.34, Ea: 1417), model: Elementary),
+(equation: ({"OH": 1, "CH4": 1}, {"CH3": 1, "H2O": 1}), rate_constant: (A: 1e-4, beta: 1.6, Ea: 3120), model: Elementary),
+(equation: ({"OH": 1, "CO": 1}, {"H": 1, "CO2": 1}), rate_constant: (A: 4.76e-5, beta: 1.228, Ea: 70), model: Elementary),
+(equation: ({"OH": 1, "HCO": 1}, {"H2O": 1, "CO": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH2O": 1}, {"HCO": 1, "H2O": 1}), rate_constant: (A: 0.00343, beta: 1.18, Ea: -447), model: Elementary),
+(equation: ({"OH": 1, "CH2OH": 1}, {"H2O": 1, "CH2O": 1}), rate_constant: (A: 5.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH3O": 1}, {"H2O": 1, "CH2O": 1}), rate_constant: (A: 5.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH3OH": 1}, {"CH2OH": 1, "H2O": 1}), rate_constant: (A: 1.44e-6, beta: 2, Ea: -840), model: Elementary),
+(equation: ({"OH": 1, "CH3OH": 1}, {"CH3O": 1, "H2O": 1}), rate_constant: (A: 6.3e-6, beta: 2, Ea: 1500), model: Elementary),
+(equation: ({"OH": 1, "C2H": 1}, {"H": 1, "HCCO": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "C2H2": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 2.18e-16, beta: 4.5, Ea: -1000), model: Elementary),
+(equation: ({"OH": 1, "C2H2": 1}, {"H": 1, "HCCOH": 1}), rate_constant: (A: 5.04e-7, beta: 2.3, Ea: 1.35e4), model: Elementary),
+(equation: ({"OH": 1, "C2H2": 1}, {"C2H": 1, "H2O": 1}), rate_constant: (A: 3.37e-5, beta: 2, Ea: 1.4e4), model: Elementary),
+(equation: ({"OH": 1, "C2H2": 1}, {"CH3": 1, "CO": 1}), rate_constant: (A: 4.83e-16, beta: 4, Ea: -2000), model: Elementary),
+(equation: ({"OH": 1, "C2H3": 1}, {"H2O": 1, "C2H2": 1}), rate_constant: (A: 5.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "C2H4": 1}, {"C2H3": 1, "H2O": 1}), rate_constant: (A: 3.6e-6, beta: 2, Ea: 2500), model: Elementary),
+(equation: ({"OH": 1, "C2H6": 1}, {"C2H5": 1, "H2O": 1}), rate_constant: (A: 3.54e-6, beta: 2.12, Ea: 870), model: Elementary),
+(equation: ({"OH": 1, "CH2CO": 1}, {"HCCO": 1, "H2O": 1}), rate_constant: (A: 7.5, beta: 0, Ea: 2000), model: Elementary),
+(equation: ({"HO2": 2}, {"O2": 1, "H2O2": 1}), rate_constant: (A: 0.13, beta: 0, Ea: -1630), model: Elementary),
+(equation: ({"HO2": 2}, {"O2": 1, "H2O2": 1}), rate_constant: (A: 420.0, beta: 0, Ea: 1.2e4), model: Elementary),
+(equation: ({"HO2": 1, "CH2": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HO2": 1, "CH3": 1}, {"O2": 1, "CH4": 1}), rate_constant: (A: 1.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HO2": 1, "CH3": 1}, {"OH": 1, "CH3O": 1}), rate_constant: (A: 37.8, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HO2": 1, "CO": 1}, {"OH": 1, "CO2": 1}), rate_constant: (A: 150.0, beta: 0, Ea: 2.36e4), model: Elementary),
+(equation: ({"HO2": 1, "CH2O": 1}, {"HCO": 1, "H2O2": 1}), rate_constant: (A: 5.6e-6, beta: 2, Ea: 1.2e4), model: Elementary),
+(equation: ({"C": 1, "O2": 1}, {"O": 1, "CO": 1}), rate_constant: (A: 58.0, beta: 0, Ea: 576), model: Elementary),
+(equation: ({"C": 1, "CH2": 1}, {"H": 1, "C2H": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"C": 1, "CH3": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "O2": 1}, {"O": 1, "HCO": 1}), rate_constant: (A: 67.1, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "H2": 1}, {"H": 1, "CH2": 1}), rate_constant: (A: 108.0, beta: 0, Ea: 3110), model: Elementary),
+(equation: ({"CH": 1, "H2O": 1}, {"H": 1, "CH2O": 1}), rate_constant: (A: 5.71, beta: 0, Ea: -755), model: Elementary),
+(equation: ({"CH": 1, "CH2": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 40.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "CH3": 1}, {"H": 1, "C2H3": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "CH4": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 60.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "CO": 1}, {"HCCO": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: 
+	 Falloff(k0: (A: 2.6900000000000004e16, beta: -3.74, Ea: 1936), troe: (A: 5.757e-13, T3: 237, T1: 1652, T2: 5069), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"CH": 1, "CO2": 1}, {"HCO": 1, "CO": 1}), rate_constant: (A: 190.0, beta: 0, Ea: 1.5792e4), model: Elementary),
+(equation: ({"CH": 1, "CH2O": 1}, {"H": 1, "CH2CO": 1}), rate_constant: (A: 94.6, beta: 0, Ea: -515), model: Elementary),
+(equation: ({"CH": 1, "HCCO": 1}, {"CO": 1, "C2H2": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2": 1, "O2": 1}, {"OH": 1, "H": 1, "CO": 1}), rate_constant: (A: 5.0, beta: 0, Ea: 1500), model: Elementary),
+(equation: ({"CH2": 1, "H2": 1}, {"H": 1, "CH3": 1}), rate_constant: (A: 5e-7, beta: 2, Ea: 7230), model: Elementary),
+(equation: ({"CH2": 2}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 1600.0, beta: 0, Ea: 1.1944e4), model: Elementary),
+(equation: ({"CH2": 1, "CH3": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 40.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2": 1, "CH4": 1}, {"CH3": 2}), rate_constant: (A: 2.46e-6, beta: 2, Ea: 8270), model: Elementary),
+(equation: ({"CH2": 1, "CO": 1}, {"CH2CO": 1}), rate_constant: (A: 0.81, beta: 0.5, Ea: 4510), model: 
+	 Falloff(k0: (A: 2.6900000000000005e21, beta: -5.11, Ea: 7095), troe: (A: 5.907e-13, T3: 275, T1: 1226, T2: 5185), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"CH2": 1, "HCCO": 1}, {"C2H3": 1, "CO": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "N2": 1}, {"CH2": 1, "N2": 1}), rate_constant: (A: 15.0, beta: 0, Ea: 600), model: Elementary),
+(equation: ({"CH2(S)": 1, "AR": 1}, {"CH2": 1, "AR": 1}), rate_constant: (A: 9.0, beta: 0, Ea: 600), model: Elementary),
+(equation: ({"CH2(S)": 1, "O2": 1}, {"H": 1, "OH": 1, "CO": 1}), rate_constant: (A: 28.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "O2": 1}, {"CO": 1, "H2O": 1}), rate_constant: (A: 12.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "H2": 1}, {"CH3": 1, "H": 1}), rate_constant: (A: 70.0, beta: 0, Ea: 0), model: Elementary),
 (equation: ({"CH2(S)": 1, "H2O": 1}, {"CH3OH": 1}), rate_constant: (A: 4.82e5, beta: -1.16, Ea: 1145), model: 
-	 Falloff(k0: (A: 1.88e26, beta: -6.36, Ea: 5040), troe: (A: 0.6027, T3: 208, T1: 3922, T2: 1.018e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"CH2(S)": 1, "H2O": 1}, {"CH2": 1, "H2O": 1}), rate_constant: (A: 3e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "CH3": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 1.2e7, beta: 0, Ea: -570), model: Elementary),
-(equation: ({"CH2(S)": 1, "CH4": 1}, {"CH3": 2}), rate_constant: (A: 1.6e7, beta: 0, Ea: -570), model: Elementary),
-(equation: ({"CH2(S)": 1, "CO": 1}, {"CH2": 1, "CO": 1}), rate_constant: (A: 9e6, beta: 0, Ea: -570), model: Elementary),
-(equation: ({"CH2(S)": 1, "CO2": 1}, {"CH2": 1, "CO2": 1}), rate_constant: (A: 7e6, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "CO2": 1}, {"CO": 1, "CH2O": 1}), rate_constant: (A: 1.4e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH2(S)": 1, "C2H6": 1}, {"CH3": 1, "C2H5": 1}), rate_constant: (A: 3e7, beta: 0, Ea: -550), model: Elementary),
-(equation: ({"CH3": 1, "O2": 1}, {"O": 1, "CH3O": 1}), rate_constant: (A: 3.56e7, beta: 0, Ea: 3.048e4), model: Elementary),
-(equation: ({"CH3": 1, "O2": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 2.31e6, beta: 0, Ea: 2.0315e4), model: Elementary),
-(equation: ({"CH3": 1, "H2O2": 1}, {"HO2": 1, "CH4": 1}), rate_constant: (A: 0.0245, beta: 2.47, Ea: 5180), model: Elementary),
-(equation: ({"CH3": 2}, {"C2H6": 1}), rate_constant: (A: 6.77e10, beta: -1.18, Ea: 654), model: 
-	 Falloff(k0: (A: 3.4e29, beta: -7.03, Ea: 2762), troe: (A: 0.619, T3: 73.2, T1: 1180, T2: 9999), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"CH3": 2}, {"H": 1, "C2H5": 1}), rate_constant: (A: 6.84e6, beta: 0.1, Ea: 1.06e4), model: Elementary),
-(equation: ({"CH3": 1, "HCO": 1}, {"CH4": 1, "CO": 1}), rate_constant: (A: 2.648e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH3": 1, "CH2O": 1}, {"CH4": 1, "HCO": 1}), rate_constant: (A: 0.00332, beta: 2.81, Ea: 5860), model: Elementary),
-(equation: ({"CH3": 1, "CH3OH": 1}, {"CH2OH": 1, "CH4": 1}), rate_constant: (A: 30, beta: 1.5, Ea: 9940), model: Elementary),
-(equation: ({"CH3": 1, "CH3OH": 1}, {"CH3O": 1, "CH4": 1}), rate_constant: (A: 10, beta: 1.5, Ea: 9940), model: Elementary),
-(equation: ({"CH3": 1, "C2H4": 1}, {"C2H3": 1, "CH4": 1}), rate_constant: (A: 0.227, beta: 2, Ea: 9200), model: Elementary),
-(equation: ({"CH3": 1, "C2H6": 1}, {"C2H5": 1, "CH4": 1}), rate_constant: (A: 6.14e6, beta: 1.74, Ea: 1.045e4), model: Elementary),
-(equation: ({"HCO": 1, "H2O": 1}, {"H": 1, "CO": 1, "H2O": 1}), rate_constant: (A: 1.5e12, beta: -1, Ea: 1.7e4), model: Elementary),
-(equation: ({"HCO": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 1.87e11, beta: -1, Ea: 1.7e4), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
-(equation: ({"HCO": 1, "O2": 1}, {"HO2": 1, "CO": 1}), rate_constant: (A: 1.345e7, beta: 0, Ea: 400), model: Elementary),
-(equation: ({"CH2OH": 1, "O2": 1}, {"HO2": 1, "CH2O": 1}), rate_constant: (A: 1.8e7, beta: 0, Ea: 900), model: Elementary),
-(equation: ({"CH3O": 1, "O2": 1}, {"HO2": 1, "CH2O": 1}), rate_constant: (A: 4.28e-19, beta: 7.6, Ea: -3530), model: Elementary),
-(equation: ({"C2H": 1, "O2": 1}, {"HCO": 1, "CO": 1}), rate_constant: (A: 1e7, beta: 0, Ea: -755), model: Elementary),
-(equation: ({"C2H": 1, "H2": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 5.68e4, beta: 0.9, Ea: 1993), model: Elementary),
-(equation: ({"C2H3": 1, "O2": 1}, {"HCO": 1, "CH2O": 1}), rate_constant: (A: 4.58e10, beta: -1.39, Ea: 1015), model: Elementary),
-(equation: ({"C2H4": 1, "O2": 1}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 8e6, beta: 0.44, Ea: 8.677e4), model: 
-	 Falloff(k0: (A: 1.58e39, beta: -9.3, Ea: 9.78e4), troe: (A: 0.7345, T3: 180, T1: 1035, T2: 5417), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"C2H5": 1, "O2": 1}, {"HO2": 1, "C2H4": 1}), rate_constant: (A: 8.4e5, beta: 0, Ea: 3875), model: Elementary),
-(equation: ({"HCCO": 1, "O2": 1}, {"OH": 1, "CO": 2}), rate_constant: (A: 3e6, beta: 0, Ea: 854), model: Elementary),
-(equation: ({"HCCO": 2}, {"CO": 2, "C2H2": 1}), rate_constant: (A: 1e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "CH3": 1}, {"H": 1, "H2": 1, "CO": 1}), rate_constant: (A: 3.37e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O": 1, "C2H4": 1}, {"H": 1, "CH2CHO": 1}), rate_constant: (A: 6.7, beta: 1.83, Ea: 220), model: Elementary),
-(equation: ({"O": 1, "C2H5": 1}, {"H": 1, "CH3CHO": 1}), rate_constant: (A: 1.096e8, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH3": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 8000, beta: 0.5, Ea: -1755), model: Elementary),
-(equation: ({"CH": 1, "H2": 1}, {"CH3": 1}), rate_constant: (A: 1.97e6, beta: 0.43, Ea: -370), model: 
-	 Falloff(k0: (A: 4.82e13, beta: -2.8, Ea: 590), troe: (A: 0.578, T3: 122, T1: 2535, T2: 9365), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"CH2": 1, "O2": 1}, {"H": 2, "CO2": 1}), rate_constant: (A: 5.8e6, beta: 0, Ea: 1500), model: Elementary),
-(equation: ({"CH2": 1, "O2": 1}, {"O": 1, "CH2O": 1}), rate_constant: (A: 2.4e6, beta: 0, Ea: 1500), model: Elementary),
-(equation: ({"CH2": 2}, {"H": 2, "C2H2": 1}), rate_constant: (A: 2e8, beta: 0, Ea: 1.0989e4), model: Elementary),
-(equation: ({"CH2(S)": 1, "H2O": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 6.82e4, beta: 0.25, Ea: -935), model: Elementary),
-(equation: ({"C2H3": 1, "O2": 1}, {"O": 1, "CH2CHO": 1}), rate_constant: (A: 3.03e5, beta: 0.29, Ea: 11), model: Elementary),
-(equation: ({"C2H3": 1, "O2": 1}, {"HO2": 2, "C2H2": 1}), rate_constant: (A: 1.337, beta: 1.61, Ea: -384), model: Elementary),
-(equation: ({"O": 1, "CH3CHO": 1}, {"OH": 1, "CH2CHO": 1}), rate_constant: (A: 2.92e6, beta: 0, Ea: 1808), model: Elementary),
-(equation: ({"O": 1, "CH3CHO": 1}, {"OH": 1, "CH3": 1, "CO": 1}), rate_constant: (A: 2.92e6, beta: 0, Ea: 1808), model: Elementary),
-(equation: ({"O2": 1, "CH3CHO": 1}, {"HO2": 1, "CH3": 1, "CO": 1}), rate_constant: (A: 3.01e7, beta: 0, Ea: 3.915e4), model: Elementary),
-(equation: ({"H": 1, "CH3CHO": 1}, {"CH2CHO": 1, "H2": 1}), rate_constant: (A: 2050, beta: 1.16, Ea: 2405), model: Elementary),
-(equation: ({"H": 1, "CH3CHO": 1}, {"CH3": 1, "H2": 1, "CO": 1}), rate_constant: (A: 2050, beta: 1.16, Ea: 2405), model: Elementary),
-(equation: ({"OH": 1, "CH3CHO": 1}, {"CH3": 1, "H2O": 1, "CO": 1}), rate_constant: (A: 2.343e4, beta: 0.73, Ea: -1113), model: Elementary),
-(equation: ({"HO2": 1, "CH3CHO": 1}, {"CH3": 1, "H2O2": 1, "CO": 1}), rate_constant: (A: 3.01e6, beta: 0, Ea: 1.1923e4), model: Elementary),
-(equation: ({"CH3": 1, "CH3CHO": 1}, {"CH3": 1, "CH4": 1, "CO": 1}), rate_constant: (A: 2.72, beta: 1.77, Ea: 5920), model: Elementary),
-(equation: ({"H": 1, "CH2CO": 1}, {"CH2CHO": 1}), rate_constant: (A: 4.865e5, beta: 0.422, Ea: -1755), model: 
-	 Falloff(k0: (A: 1.012e30, beta: -7.63, Ea: 3854), troe: (A: 0.465, T3: 201, T1: 1773, T2: 5333), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"O": 1, "CH2CO": 1}, {"H": 1, "CH2": 1, "CO2": 1}), rate_constant: (A: 1.5e8, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O2": 1, "CH2CO": 1}, {"OH": 1, "CO": 1, "CH2O": 1}), rate_constant: (A: 1.81e4, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"O2": 1, "CH2CO": 1}, {"OH": 1, "HCO": 2}), rate_constant: (A: 2.35e4, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2CHO": 1}, {"CH3": 1, "HCO": 1}), rate_constant: (A: 2.2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "CH2CHO": 1}, {"CH2CO": 1, "H2": 1}), rate_constant: (A: 1.1e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH2CHO": 1}, {"H2O": 1, "CH2CO": 1}), rate_constant: (A: 1.2e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"OH": 1, "CH2CHO": 1}, {"HCO": 1, "CH2OH": 1}), rate_constant: (A: 3.01e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH3": 1, "C2H5": 1}, {"C3H8": 1}), rate_constant: (A: 9.43e6, beta: 0, Ea: 0), model: 
-	 Falloff(k0: (A: 2.71e62, beta: -16.82, Ea: 1.3065e4), troe: (A: 0.1527, T3: 291, T1: 2742, T2: 7748), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"O": 1, "C3H8": 1}, {"OH": 1, "C3H7": 1}), rate_constant: (A: 0.193, beta: 2.68, Ea: 3716), model: Elementary),
-(equation: ({"H": 1, "C3H8": 1}, {"H2": 1, "C3H7": 1}), rate_constant: (A: 1.32, beta: 2.54, Ea: 6756), model: Elementary),
-(equation: ({"OH": 1, "C3H8": 1}, {"H2O": 1, "C3H7": 1}), rate_constant: (A: 31.6, beta: 1.8, Ea: 934), model: Elementary),
-(equation: ({"H2O2": 1, "C3H7": 1}, {"HO2": 1, "C3H8": 1}), rate_constant: (A: 3.78e-4, beta: 2.72, Ea: 1500), model: Elementary),
-(equation: ({"CH3": 1, "C3H8": 1}, {"CH4": 1, "C3H7": 1}), rate_constant: (A: 9.04e-7, beta: 3.65, Ea: 7154), model: Elementary),
-(equation: ({"CH3": 1, "C2H4": 1}, {"C3H7": 1}), rate_constant: (A: 2.55, beta: 1.6, Ea: 5700), model: 
-	 Falloff(k0: (A: 3e41, beta: -14.6, Ea: 1.817e4), troe: (A: 0.1894, T3: 277, T1: 8748, T2: 7891), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"O": 1, "C3H7": 1}, {"CH2O": 1, "C2H5": 1}), rate_constant: (A: 9.64e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"H": 1, "C3H7": 1}, {"C3H8": 1}), rate_constant: (A: 3.613e7, beta: 0, Ea: 0), model: 
-	 Falloff(k0: (A: 4.42e49, beta: -13.545, Ea: 1.1357e4), troe: (A: 0.315, T3: 369, T1: 3285, T2: 6667), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "Ar": 0.7})),
-(equation: ({"H": 1, "C3H7": 1}, {"CH3": 1, "C2H5": 1}), rate_constant: (A: 4.06, beta: 2.19, Ea: 890), model: Elementary),
-(equation: ({"HO2": 1, "C3H7": 1}, {"O2": 1, "C3H8": 1}), rate_constant: (A: 2.55e4, beta: 0.255, Ea: -943), model: Elementary),
-(equation: ({"OH": 1, "C3H7": 1}, {"CH2OH": 1, "C2H5": 1}), rate_constant: (A: 2.41e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"HO2": 1, "C3H7": 1}, {"OH": 1, "C2H5": 1, "CH2O": 1}), rate_constant: (A: 2.41e7, beta: 0, Ea: 0), model: Elementary),
-(equation: ({"CH3": 1, "C3H7": 1}, {"C2H5": 2}), rate_constant: (A: 1.927e7, beta: -0.32, Ea: 0), model: Elementary),
+	 Falloff(k0: (A: 1.8800000000000002e26, beta: -6.36, Ea: 5040), troe: (A: 6.027e-13, T3: 208, T1: 3922, T2: 1.018e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"CH2(S)": 1, "H2O": 1}, {"CH2": 1, "H2O": 1}), rate_constant: (A: 30.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "CH3": 1}, {"H": 1, "C2H4": 1}), rate_constant: (A: 12.0, beta: 0, Ea: -570), model: Elementary),
+(equation: ({"CH2(S)": 1, "CH4": 1}, {"CH3": 2}), rate_constant: (A: 16.0, beta: 0, Ea: -570), model: Elementary),
+(equation: ({"CH2(S)": 1, "CO": 1}, {"CH2": 1, "CO": 1}), rate_constant: (A: 9.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "CO2": 1}, {"CH2": 1, "CO2": 1}), rate_constant: (A: 7.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "CO2": 1}, {"CO": 1, "CH2O": 1}), rate_constant: (A: 14.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2(S)": 1, "C2H6": 1}, {"CH3": 1, "C2H5": 1}), rate_constant: (A: 40.0, beta: 0, Ea: -550), model: Elementary),
+(equation: ({"CH3": 1, "O2": 1}, {"O": 1, "CH3O": 1}), rate_constant: (A: 35.6, beta: 0, Ea: 3.048e4), model: Elementary),
+(equation: ({"CH3": 1, "O2": 1}, {"OH": 1, "CH2O": 1}), rate_constant: (A: 2.31, beta: 0, Ea: 2.0315e4), model: Elementary),
+(equation: ({"CH3": 1, "H2O2": 1}, {"HO2": 1, "CH4": 1}), rate_constant: (A: 2.45e-8, beta: 2.47, Ea: 5180), model: Elementary),
+(equation: ({"CH3": 2}, {"C2H6": 1}), rate_constant: (A: 67700.0, beta: -1.18, Ea: 654), model: 
+	 Falloff(k0: (A: 3.4000000000000005e29, beta: -7.03, Ea: 2762), troe: (A: 6.19e-13, T3: 73.2, T1: 1180, T2: 9999), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"CH3": 2}, {"H": 1, "C2H5": 1}), rate_constant: (A: 6.84, beta: 0.1, Ea: 1.06e4), model: Elementary),
+(equation: ({"CH3": 1, "HCO": 1}, {"CH4": 1, "CO": 1}), rate_constant: (A: 26.48, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH3": 1, "CH2O": 1}, {"HCO": 1, "CH4": 1}), rate_constant: (A: 3.32e-9, beta: 2.81, Ea: 5860), model: Elementary),
+(equation: ({"CH3": 1, "CH3OH": 1}, {"CH2OH": 1, "CH4": 1}), rate_constant: (A: 3e-5, beta: 1.5, Ea: 9940), model: Elementary),
+(equation: ({"CH3": 1, "CH3OH": 1}, {"CH3O": 1, "CH4": 1}), rate_constant: (A: 1e-5, beta: 1.5, Ea: 9940), model: Elementary),
+(equation: ({"CH3": 1, "C2H4": 1}, {"C2H3": 1, "CH4": 1}), rate_constant: (A: 2.27e-7, beta: 2, Ea: 9200), model: Elementary),
+(equation: ({"CH3": 1, "C2H6": 1}, {"C2H5": 1, "CH4": 1}), rate_constant: (A: 6.14e-6, beta: 1.74, Ea: 1.045e4), model: Elementary),
+(equation: ({"HCO": 1, "H2O": 1}, {"H": 1, "CO": 1, "H2O": 1}), rate_constant: (A: 1.5e6, beta: -1, Ea: 1.7e4), model: Elementary),
+(equation: ({"HCO": 1}, {"H": 1, "CO": 1}), rate_constant: (A: 1.87e11, beta: -1, Ea: 1.7e4), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 0, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3})),
+(equation: ({"HCO": 1, "O2": 1}, {"HO2": 1, "CO": 1}), rate_constant: (A: 13.45, beta: 0, Ea: 400), model: Elementary),
+(equation: ({"CH2OH": 1, "O2": 1}, {"HO2": 1, "CH2O": 1}), rate_constant: (A: 18.0, beta: 0, Ea: 900), model: Elementary),
+(equation: ({"CH3O": 1, "O2": 1}, {"HO2": 1, "CH2O": 1}), rate_constant: (A: 4.28e-25, beta: 7.6, Ea: -3530), model: Elementary),
+(equation: ({"C2H": 1, "O2": 1}, {"HCO": 1, "CO": 1}), rate_constant: (A: 10.0, beta: 0, Ea: -755), model: Elementary),
+(equation: ({"C2H": 1, "H2": 1}, {"H": 1, "C2H2": 1}), rate_constant: (A: 0.0568, beta: 0.9, Ea: 1993), model: Elementary),
+(equation: ({"C2H3": 1, "O2": 1}, {"HCO": 1, "CH2O": 1}), rate_constant: (A: 45800.0, beta: -1.39, Ea: 1015), model: Elementary),
+(equation: ({"C2H4": 1}, {"H2": 1, "C2H2": 1}), rate_constant: (A: 8e6, beta: 0.44, Ea: 8.677e4), model: 
+	 Falloff(k0: (A: 1.5800000000000004e45, beta: -9.3, Ea: 9.78e4), troe: (A: 7.345e-7, T3: 180, T1: 1035, T2: 5417), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"C2H5": 1, "O2": 1}, {"HO2": 1, "C2H4": 1}), rate_constant: (A: 0.84, beta: 0, Ea: 3875), model: Elementary),
+(equation: ({"HCCO": 1, "O2": 1}, {"OH": 1, "CO": 2}), rate_constant: (A: 3.2, beta: 0, Ea: 854), model: Elementary),
+(equation: ({"HCCO": 2}, {"CO": 2, "C2H2": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"N": 1, "NO": 1}, {"N2": 1, "O": 1}), rate_constant: (A: 27.0, beta: 0, Ea: 355), model: Elementary),
+(equation: ({"N": 1, "O2": 1}, {"NO": 1, "O": 1}), rate_constant: (A: 0.009, beta: 1, Ea: 6500), model: Elementary),
+(equation: ({"N": 1, "OH": 1}, {"NO": 1, "H": 1}), rate_constant: (A: 33.6, beta: 0, Ea: 385), model: Elementary),
+(equation: ({"N2O": 1, "O": 1}, {"N2": 1, "O2": 1}), rate_constant: (A: 1.4, beta: 0, Ea: 1.081e4), model: Elementary),
+(equation: ({"N2O": 1, "O": 1}, {"NO": 2}), rate_constant: (A: 29.0, beta: 0, Ea: 2.315e4), model: Elementary),
+(equation: ({"N2O": 1, "H": 1}, {"N2": 1, "OH": 1}), rate_constant: (A: 387.0, beta: 0, Ea: 1.888e4), model: Elementary),
+(equation: ({"N2O": 1, "OH": 1}, {"N2": 1, "HO2": 1}), rate_constant: (A: 2.0, beta: 0, Ea: 2.106e4), model: Elementary),
+(equation: ({"N2O": 1}, {"N2": 1, "O": 1}), rate_constant: (A: 79100.0, beta: 0, Ea: 5.602e4), model: PressureModification(k0: (A: 6.37e8, beta: 0, Ea: 5.664e4), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.625})),
+(equation: ({"HO2": 1, "NO": 1}, {"NO2": 1, "OH": 1}), rate_constant: (A: 2.11, beta: 0, Ea: -480), model: Elementary),
+(equation: ({"NO": 1, "O": 1}, {"NO2": 1}), rate_constant: (A: 1.06e8, beta: -1.41, Ea: 0), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"NO2": 1, "O": 1}, {"NO": 1, "O2": 1}), rate_constant: (A: 3.9, beta: 0, Ea: -240), model: Elementary),
+(equation: ({"NO2": 1, "H": 1}, {"NO": 1, "OH": 1}), rate_constant: (A: 132.0, beta: 0, Ea: 360), model: Elementary),
+(equation: ({"NH": 1, "O": 1}, {"NO": 1, "H": 1}), rate_constant: (A: 40.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NH": 1, "H": 1}, {"N": 1, "H2": 1}), rate_constant: (A: 32.0, beta: 0, Ea: 330), model: Elementary),
+(equation: ({"NH": 1, "OH": 1}, {"HNO": 1, "H": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NH": 1, "OH": 1}, {"N": 1, "H2O": 1}), rate_constant: (A: 0.002, beta: 1.2, Ea: 0), model: Elementary),
+(equation: ({"NH": 1, "O2": 1}, {"HNO": 1, "O": 1}), rate_constant: (A: 4.61e-7, beta: 2, Ea: 6500), model: Elementary),
+(equation: ({"NH": 1, "O2": 1}, {"NO": 1, "OH": 1}), rate_constant: (A: 1.28e-6, beta: 1.5, Ea: 100), model: Elementary),
+(equation: ({"NH": 1, "N": 1}, {"N2": 1, "H": 1}), rate_constant: (A: 15.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NH": 1, "H2O": 1}, {"HNO": 1, "H2": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 1.385e4), model: Elementary),
+(equation: ({"NH": 1, "NO": 1}, {"N2": 1, "OH": 1}), rate_constant: (A: 21.6, beta: -0.23, Ea: 0), model: Elementary),
+(equation: ({"NH": 1, "NO": 1}, {"N2O": 1, "H": 1}), rate_constant: (A: 365.0, beta: -0.45, Ea: 0), model: Elementary),
+(equation: ({"NH2": 1, "O": 1}, {"OH": 1, "NH": 1}), rate_constant: (A: 3.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NH2": 1, "O": 1}, {"H": 1, "HNO": 1}), rate_constant: (A: 39.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NH2": 1, "H": 1}, {"NH": 1, "H2": 1}), rate_constant: (A: 40.0, beta: 0, Ea: 3650), model: Elementary),
+(equation: ({"NH2": 1, "OH": 1}, {"NH": 1, "H2O": 1}), rate_constant: (A: 9e-5, beta: 1.5, Ea: -460), model: Elementary),
+(equation: ({"NNH": 1}, {"N2": 1, "H": 1}), rate_constant: (A: 330.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1}, {"N2": 1, "H": 1}), rate_constant: (A: 1.3e8, beta: -0.11, Ea: 4980), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"NNH": 1, "O2": 1}, {"HO2": 1, "N2": 1}), rate_constant: (A: 5.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1, "O": 1}, {"OH": 1, "N2": 1}), rate_constant: (A: 25.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1, "O": 1}, {"NH": 1, "NO": 1}), rate_constant: (A: 70.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1, "H": 1}, {"H2": 1, "N2": 1}), rate_constant: (A: 50.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1, "OH": 1}, {"H2O": 1, "N2": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NNH": 1, "CH3": 1}, {"CH4": 1, "N2": 1}), rate_constant: (A: 25.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "NO": 1}, {"HNO": 1}), rate_constant: (A: 4.48e7, beta: -1.32, Ea: 740), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"HNO": 1, "O": 1}, {"NO": 1, "OH": 1}), rate_constant: (A: 25.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HNO": 1, "H": 1}, {"H2": 1, "NO": 1}), rate_constant: (A: 0.9, beta: 0.72, Ea: 660), model: Elementary),
+(equation: ({"HNO": 1, "OH": 1}, {"NO": 1, "H2O": 1}), rate_constant: (A: 1.3e-5, beta: 1.9, Ea: -950), model: Elementary),
+(equation: ({"HNO": 1, "O2": 1}, {"HO2": 1, "NO": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 1.3e4), model: Elementary),
+(equation: ({"CN": 1, "O": 1}, {"CO": 1, "N": 1}), rate_constant: (A: 77.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CN": 1, "OH": 1}, {"NCO": 1, "H": 1}), rate_constant: (A: 40.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CN": 1, "H2O": 1}, {"HCN": 1, "OH": 1}), rate_constant: (A: 8.0, beta: 0, Ea: 7460), model: Elementary),
+(equation: ({"CN": 1, "O2": 1}, {"NCO": 1, "O": 1}), rate_constant: (A: 6.14, beta: 0, Ea: -440), model: Elementary),
+(equation: ({"CN": 1, "H2": 1}, {"HCN": 1, "H": 1}), rate_constant: (A: 2.95e-7, beta: 2.45, Ea: 2240), model: Elementary),
+(equation: ({"NCO": 1, "O": 1}, {"NO": 1, "CO": 1}), rate_constant: (A: 23.5, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NCO": 1, "H": 1}, {"NH": 1, "CO": 1}), rate_constant: (A: 54.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NCO": 1, "OH": 1}, {"NO": 1, "H": 1, "CO": 1}), rate_constant: (A: 2.5, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NCO": 1, "N": 1}, {"N2": 1, "CO": 1}), rate_constant: (A: 20.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"NCO": 1, "O2": 1}, {"NO": 1, "CO2": 1}), rate_constant: (A: 2.0, beta: 0, Ea: 2e4), model: Elementary),
+(equation: ({"NCO": 1}, {"N": 1, "CO": 1}), rate_constant: (A: 3.1e8, beta: 0, Ea: 5.405e4), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"NCO": 1, "NO": 1}, {"N2O": 1, "CO": 1}), rate_constant: (A: 1.9e5, beta: -1.52, Ea: 740), model: Elementary),
+(equation: ({"NCO": 1, "NO": 1}, {"N2": 1, "CO2": 1}), rate_constant: (A: 3.8e6, beta: -2, Ea: 800), model: Elementary),
+(equation: ({"HCN": 1}, {"H": 1, "CN": 1}), rate_constant: (A: 1.0400000000000003e23, beta: -3.3, Ea: 1.266e5), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"HCN": 1, "O": 1}, {"NCO": 1, "H": 1}), rate_constant: (A: 2.03e-8, beta: 2.64, Ea: 4980), model: Elementary),
+(equation: ({"HCN": 1, "O": 1}, {"NH": 1, "CO": 1}), rate_constant: (A: 5.07e-9, beta: 2.64, Ea: 4980), model: Elementary),
+(equation: ({"HCN": 1, "O": 1}, {"CN": 1, "OH": 1}), rate_constant: (A: 0.00391, beta: 1.58, Ea: 2.66e4), model: Elementary),
+(equation: ({"HCN": 1, "OH": 1}, {"HOCN": 1, "H": 1}), rate_constant: (A: 1.1e-6, beta: 2.03, Ea: 1.337e4), model: Elementary),
+(equation: ({"HCN": 1, "OH": 1}, {"HNCO": 1, "H": 1}), rate_constant: (A: 4.4e-9, beta: 2.26, Ea: 6400), model: Elementary),
+(equation: ({"HCN": 1, "OH": 1}, {"NH2": 1, "CO": 1}), rate_constant: (A: 1.6e-10, beta: 2.56, Ea: 9000), model: Elementary),
+(equation: ({"H": 1, "HCN": 1}, {"H2CN": 1}), rate_constant: (A: 33.0, beta: 0, Ea: 0), model: PressureModification(k0: (A: 1.4e14, beta: -3.4, Ea: 1900), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H2CN": 1, "N": 1}, {"N2": 1, "CH2": 1}), rate_constant: (A: 60.0, beta: 0, Ea: 400), model: Elementary),
+(equation: ({"C": 1, "N2": 1}, {"CN": 1, "N": 1}), rate_constant: (A: 63.0, beta: 0, Ea: 4.602e4), model: Elementary),
+(equation: ({"CH": 1, "N2": 1}, {"HCN": 1, "N": 1}), rate_constant: (A: 0.00312, beta: 0.88, Ea: 2.013e4), model: Elementary),
+(equation: ({"CH": 1, "N2": 1}, {"HCNN": 1}), rate_constant: (A: 3.1, beta: 0.15, Ea: 0), model: 
+	 Falloff(k0: (A: 1.3e13, beta: -3.16, Ea: 740), troe: (A: 6.67e-13, T3: 235, T1: 2117, T2: 4536), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 1})),
+(equation: ({"CH2": 1, "N2": 1}, {"HCN": 1, "NH": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 7.4e4), model: Elementary),
+(equation: ({"CH2(S)": 1, "N2": 1}, {"NH": 1, "HCN": 1}), rate_constant: (A: 0.1, beta: 0, Ea: 6.5e4), model: Elementary),
+(equation: ({"C": 1, "NO": 1}, {"CN": 1, "O": 1}), rate_constant: (A: 19.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"C": 1, "NO": 1}, {"CO": 1, "N": 1}), rate_constant: (A: 29.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "NO": 1}, {"HCN": 1, "O": 1}), rate_constant: (A: 41.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "NO": 1}, {"H": 1, "NCO": 1}), rate_constant: (A: 16.2, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH": 1, "NO": 1}, {"N": 1, "HCO": 1}), rate_constant: (A: 24.6, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH2": 1, "NO": 1}, {"H": 1, "HNCO": 1}), rate_constant: (A: 3.1e5, beta: -1.38, Ea: 1270), model: Elementary),
+(equation: ({"CH2": 1, "NO": 1}, {"OH": 1, "HCN": 1}), rate_constant: (A: 290.0, beta: -0.69, Ea: 760), model: Elementary),
+(equation: ({"CH2": 1, "NO": 1}, {"H": 1, "HCNO": 1}), rate_constant: (A: 38.0, beta: -0.36, Ea: 580), model: Elementary),
+(equation: ({"CH2(S)": 1, "NO": 1}, {"H": 1, "HNCO": 1}), rate_constant: (A: 3.1e5, beta: -1.38, Ea: 1270), model: Elementary),
+(equation: ({"CH2(S)": 1, "NO": 1}, {"OH": 1, "HCN": 1}), rate_constant: (A: 290.0, beta: -0.69, Ea: 760), model: Elementary),
+(equation: ({"CH2(S)": 1, "NO": 1}, {"H": 1, "HCNO": 1}), rate_constant: (A: 38.0, beta: -0.36, Ea: 580), model: Elementary),
+(equation: ({"CH3": 1, "NO": 1}, {"HCN": 1, "H2O": 1}), rate_constant: (A: 96.0, beta: 0, Ea: 2.88e4), model: Elementary),
+(equation: ({"CH3": 1, "NO": 1}, {"H2CN": 1, "OH": 1}), rate_constant: (A: 1.0, beta: 0, Ea: 2.175e4), model: Elementary),
+(equation: ({"HCNN": 1, "O": 1}, {"CO": 1, "H": 1, "N2": 1}), rate_constant: (A: 22.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HCNN": 1, "O": 1}, {"HCN": 1, "NO": 1}), rate_constant: (A: 2.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HCNN": 1, "O2": 1}, {"O": 1, "HCO": 1, "N2": 1}), rate_constant: (A: 12.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HCNN": 1, "OH": 1}, {"H": 1, "HCO": 1, "N2": 1}), rate_constant: (A: 12.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HCNN": 1, "H": 1}, {"CH2": 1, "N2": 1}), rate_constant: (A: 100.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HNCO": 1, "O": 1}, {"NH": 1, "CO2": 1}), rate_constant: (A: 9.8e-5, beta: 1.41, Ea: 8500), model: Elementary),
+(equation: ({"HNCO": 1, "O": 1}, {"HNO": 1, "CO": 1}), rate_constant: (A: 1.5e-4, beta: 1.57, Ea: 4.4e4), model: Elementary),
+(equation: ({"HNCO": 1, "O": 1}, {"NCO": 1, "OH": 1}), rate_constant: (A: 2.2e-6, beta: 2.11, Ea: 1.14e4), model: Elementary),
+(equation: ({"HNCO": 1, "H": 1}, {"NH2": 1, "CO": 1}), rate_constant: (A: 2.25e-5, beta: 1.7, Ea: 3800), model: Elementary),
+(equation: ({"HNCO": 1, "H": 1}, {"H2": 1, "NCO": 1}), rate_constant: (A: 1.05e-7, beta: 2.5, Ea: 1.33e4), model: Elementary),
+(equation: ({"HNCO": 1, "OH": 1}, {"NCO": 1, "H2O": 1}), rate_constant: (A: 3.3e-5, beta: 1.5, Ea: 3600), model: Elementary),
+(equation: ({"HNCO": 1, "OH": 1}, {"NH2": 1, "CO2": 1}), rate_constant: (A: 3.3e-6, beta: 1.5, Ea: 3600), model: Elementary),
+(equation: ({"HNCO": 1}, {"NH": 1, "CO": 1}), rate_constant: (A: 1.18e10, beta: 0, Ea: 8.472e4), model: ThreeBody(efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"HCNO": 1, "H": 1}, {"H": 1, "HNCO": 1}), rate_constant: (A: 2100.0, beta: -0.69, Ea: 2850), model: Elementary),
+(equation: ({"HCNO": 1, "H": 1}, {"OH": 1, "HCN": 1}), rate_constant: (A: 0.27, beta: 0.18, Ea: 2120), model: Elementary),
+(equation: ({"HCNO": 1, "H": 1}, {"NH2": 1, "CO": 1}), rate_constant: (A: 170.0, beta: -0.75, Ea: 2890), model: Elementary),
+(equation: ({"HOCN": 1, "H": 1}, {"H": 1, "HNCO": 1}), rate_constant: (A: 2e-5, beta: 2, Ea: 2000), model: Elementary),
+(equation: ({"HCCO": 1, "NO": 1}, {"HCNO": 1, "CO": 1}), rate_constant: (A: 9.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH3": 1, "N": 1}, {"H2CN": 1, "H": 1}), rate_constant: (A: 610.0, beta: -0.31, Ea: 290), model: Elementary),
+(equation: ({"CH3": 1, "N": 1}, {"HCN": 1, "H2": 1}), rate_constant: (A: 3.7, beta: 0.15, Ea: -90), model: Elementary),
+(equation: ({"NH3": 1, "H": 1}, {"NH2": 1, "H2": 1}), rate_constant: (A: 5.4e-7, beta: 2.4, Ea: 9915), model: Elementary),
+(equation: ({"NH3": 1, "OH": 1}, {"NH2": 1, "H2O": 1}), rate_constant: (A: 5e-5, beta: 1.6, Ea: 955), model: Elementary),
+(equation: ({"NH3": 1, "O": 1}, {"NH2": 1, "OH": 1}), rate_constant: (A: 9.4e-6, beta: 1.94, Ea: 6460), model: Elementary),
+(equation: ({"NH": 1, "CO2": 1}, {"HNO": 1, "CO": 1}), rate_constant: (A: 10.0, beta: 0, Ea: 1.435e4), model: Elementary),
+(equation: ({"CN": 1, "NO2": 1}, {"NCO": 1, "NO": 1}), rate_constant: (A: 6160.0, beta: -0.752, Ea: 345), model: Elementary),
+(equation: ({"NCO": 1, "NO2": 1}, {"N2O": 1, "CO2": 1}), rate_constant: (A: 3.25, beta: 0, Ea: -705), model: Elementary),
+(equation: ({"N": 1, "CO2": 1}, {"NO": 1, "CO": 1}), rate_constant: (A: 3.0, beta: 0, Ea: 1.13e4), model: Elementary),
+(equation: ({"O": 1, "CH3": 1}, {"H": 1, "H2": 1, "CO": 1}), rate_constant: (A: 33.7, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O": 1, "C2H4": 1}, {"H": 1, "CH2CHO": 1}), rate_constant: (A: 6.7e-6, beta: 1.83, Ea: 220), model: Elementary),
+(equation: ({"O": 1, "C2H5": 1}, {"H": 1, "CH3CHO": 1}), rate_constant: (A: 109.6, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "HO2": 1}, {"O2": 1, "H2O": 1}), rate_constant: (A: 5000.0, beta: 0, Ea: 1.733e4), model: Elementary),
+(equation: ({"OH": 1, "CH3": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 0.008, beta: 0.5, Ea: -1755), model: Elementary),
+(equation: ({"CH": 1, "H2": 1}, {"CH3": 1}), rate_constant: (A: 1.97, beta: 0.43, Ea: -370), model: 
+	 Falloff(k0: (A: 4.82e13, beta: -2.8, Ea: 590), troe: (A: 5.78e-13, T3: 122, T1: 2535, T2: 9365), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"CH2": 1, "O2": 1}, {"H": 2, "CO2": 1}), rate_constant: (A: 5.8, beta: 0, Ea: 1500), model: Elementary),
+(equation: ({"CH2": 1, "O2": 1}, {"O": 1, "CH2O": 1}), rate_constant: (A: 2.4, beta: 0, Ea: 1500), model: Elementary),
+(equation: ({"CH2": 1}, {"H": 2, "C2H2": 1}), rate_constant: (A: 2e8, beta: 0, Ea: 1.0989e4), model: Elementary),
+(equation: ({"CH2(S)": 1, "H2O": 1}, {"H2": 1, "CH2O": 1}), rate_constant: (A: 0.0682, beta: 0.25, Ea: -935), model: Elementary),
+(equation: ({"C2H3": 1, "O2": 1}, {"O": 1, "CH2CHO": 1}), rate_constant: (A: 0.303, beta: 0.29, Ea: 11), model: Elementary),
+(equation: ({"C2H3": 1, "O2": 1}, {"HO2": 1, "C2H2": 1}), rate_constant: (A: 1.337e-6, beta: 1.61, Ea: -384), model: Elementary),
+(equation: ({"O": 1, "CH3CHO": 1}, {"OH": 1, "CH2CHO": 1}), rate_constant: (A: 2.92, beta: 0, Ea: 1808), model: Elementary),
+(equation: ({"O": 1, "CH3CHO": 1}, {"OH": 1, "CH3": 1, "CO": 1}), rate_constant: (A: 2.92, beta: 0, Ea: 1808), model: Elementary),
+(equation: ({"O2": 1, "CH3CHO": 1}, {"HO2": 1, "CH3": 1, "CO": 1}), rate_constant: (A: 30.1, beta: 0, Ea: 3.915e4), model: Elementary),
+(equation: ({"H": 1, "CH3CHO": 1}, {"CH2CHO": 1, "H2": 1}), rate_constant: (A: 0.00205, beta: 1.16, Ea: 2405), model: Elementary),
+(equation: ({"H": 1, "CH3CHO": 1}, {"CH3": 1, "H2": 1, "CO": 1}), rate_constant: (A: 0.00205, beta: 1.16, Ea: 2405), model: Elementary),
+(equation: ({"OH": 1, "CH3CHO": 1}, {"CH3": 1, "H2O": 1, "CO": 1}), rate_constant: (A: 0.02343, beta: 0.73, Ea: -1113), model: Elementary),
+(equation: ({"HO2": 1, "CH3CHO": 1}, {"CH3": 1, "H2O2": 1, "CO": 1}), rate_constant: (A: 3.01, beta: 0, Ea: 1.1923e4), model: Elementary),
+(equation: ({"CH3": 1, "CH3CHO": 1}, {"CH3": 1, "CH4": 1, "CO": 1}), rate_constant: (A: 2.72e-6, beta: 1.77, Ea: 5920), model: Elementary),
+(equation: ({"H": 1, "CH2CO": 1}, {"CH2CHO": 1}), rate_constant: (A: 0.4865, beta: 0.422, Ea: -1755), model: 
+	 Falloff(k0: (A: 1.0120000000000002e30, beta: -7.63, Ea: 3854), troe: (A: 4.65e-13, T3: 201, T1: 1773, T2: 5333), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"O": 1, "CH2CHO": 1}, {"H": 1, "CH2": 1, "CO2": 1}), rate_constant: (A: 150.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O2": 1, "CH2CHO": 1}, {"OH": 1, "CO": 1, "CH2O": 1}), rate_constant: (A: 0.0181, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"O2": 1, "CH2CHO": 1}, {"OH": 1, "HCO": 2}), rate_constant: (A: 0.0235, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2CHO": 1}, {"CH3": 1, "HCO": 1}), rate_constant: (A: 22.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "CH2CHO": 1}, {"CH2CO": 1, "H2": 1}), rate_constant: (A: 11.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH2CHO": 1}, {"H2O": 1, "CH2CO": 1}), rate_constant: (A: 12.0, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"OH": 1, "CH2CHO": 1}, {"HCO": 1, "CH2OH": 1}), rate_constant: (A: 30.1, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH3": 1, "C2H5": 1}, {"C3H8": 1}), rate_constant: (A: 9.43, beta: 0, Ea: 0), model: 
+	 Falloff(k0: (A: 2.7100000000000003e62, beta: -16.82, Ea: 1.3065e4), troe: (A: 1.527e-13, T3: 291, T1: 2742, T2: 7748), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"O": 1, "C3H8": 1}, {"OH": 1, "C3H7": 1}), rate_constant: (A: 1.93e-7, beta: 2.68, Ea: 3716), model: Elementary),
+(equation: ({"H": 1, "C3H8": 1}, {"C3H7": 1, "H2": 1}), rate_constant: (A: 1.32e-6, beta: 2.54, Ea: 6756), model: Elementary),
+(equation: ({"OH": 1, "C3H8": 1}, {"C3H7": 1, "H2O": 1}), rate_constant: (A: 3.16e-5, beta: 1.8, Ea: 934), model: Elementary),
+(equation: ({"C3H7": 1, "H2O2": 1}, {"HO2": 1, "C3H8": 1}), rate_constant: (A: 3.78e-10, beta: 2.72, Ea: 1500), model: Elementary),
+(equation: ({"CH3": 1, "C3H8": 1}, {"C3H7": 1, "CH4": 1}), rate_constant: (A: 9.03e-13, beta: 3.65, Ea: 7154), model: Elementary),
+(equation: ({"CH3": 1, "C2H4": 1}, {"C3H7": 1}), rate_constant: (A: 2.55e-6, beta: 1.6, Ea: 5700), model: 
+	 Falloff(k0: (A: 3.0000000000000006e51, beta: -14.6, Ea: 1.817e4), troe: (A: 1.894e-13, T3: 277, T1: 8748, T2: 7891), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"O": 1, "C3H7": 1}, {"C2H5": 1, "CH2O": 1}), rate_constant: (A: 96.4, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"H": 1, "C3H7": 1}, {"C3H8": 1}), rate_constant: (A: 36.13, beta: 0, Ea: 0), model: 
+	 Falloff(k0: (A: 4.420000000000001e49, beta: -13.545, Ea: 1.1357e4), troe: (A: 3.15e-13, T3: 369, T1: 3285, T2: 6667), efficiencies: {"H2": 2, "H2O": 6, "CH4": 2, "CO": 1.5, "CO2": 2, "C2H6": 3, "AR": 0.7})),
+(equation: ({"H": 1, "C3H7": 1}, {"CH3": 1, "C2H5": 1}), rate_constant: (A: 4.06e-6, beta: 2.19, Ea: 890), model: Elementary),
+(equation: ({"OH": 1, "C3H7": 1}, {"C2H5": 1, "CH2OH": 1}), rate_constant: (A: 24.1, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"HO2": 1, "C3H7": 1}, {"O2": 1, "C3H8": 1}), rate_constant: (A: 0.0255, beta: 0.255, Ea: -943), model: Elementary),
+(equation: ({"HO2": 1, "C3H7": 1}, {"OH": 1, "C2H5": 1, "CH2O": 1}), rate_constant: (A: 24.1, beta: 0, Ea: 0), model: Elementary),
+(equation: ({"CH3": 1, "C3H7": 1}, {"C2H5": 2}), rate_constant: (A: 19.27, beta: -0.32, Ea: 0), model: Elementary),
 ]
 )

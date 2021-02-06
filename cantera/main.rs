@@ -4,8 +4,9 @@ use combustion::*;
 
 #[throws] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
-	test_reaction_cantera(&Simulation::<35>::new(&system)?)?;
-	//test_transport_cantera(&Simulation::<35>::new(&system)?)?;
+	const S: usize  = 53;
+	test_reaction_cantera(&Simulation::<S>::new(&system)?)?;
+	//test_transport_cantera(&Simulation::<S>::new(&system)?)?;
 }
 
 mod cantera {

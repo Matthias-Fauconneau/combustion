@@ -59,7 +59,7 @@ pub struct Simulation<'t, const S: usize> where [(); S-1]: {
 
 use std::{convert::TryInto, lazy::SyncLazy};
 pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
-	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
+	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, N: 14.0067, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
 impl From<ron::RateConstant> for reaction::RateConstant { fn from(ron::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: ron::RateConstant) -> Self {
@@ -112,6 +112,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		let ron::State{temperature, pressure, mole_proportions} = state;
 		let pressure_R = pressure / (kB*NA);
 		let amount = pressure_R / temperature * System::<S>::volume;
+		for (specie,_) in &mole_proportions { assert!(species_names.contains(specie)); }
 		let mole_proportions = eval(species_names, |specie| *mole_proportions.get(specie).unwrap_or(&0.));
 		let amounts = eval(mole_proportions/*.prefix()*/, |mole_proportion| amount/mole_proportions.iter().sum::<f64>() * mole_proportion);
 

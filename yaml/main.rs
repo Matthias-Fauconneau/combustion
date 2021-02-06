@@ -94,8 +94,8 @@ use pest::Parser;
 #[derive(Parser)]#[grammar_inline = r#"
 	WHITESPACE = _{ " " }
 	atom = { "H" | "O" | "C" | "AR" | "N" }
-	count = { '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
-	specie = { (atom ~ count?)+ ~ "(S)"? }
+	count = @{ '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
+	specie = @{ (atom ~ count?)+ ~ "(S)"? }
 	term = { count? ~ specie }
 	side = { term ~ ("+" ~ term)* }
 	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
@@ -135,19 +135,21 @@ use pest::Parser;
 			})(&specie["transport"])
 		})).collect(),
 		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
+			let equation: [Map<&str, u8>; 2] = (|equation| EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side| side.into_inner().map(|term|
+				match term.into_inner().collect::<Box<_>>().as_ref() {
+					[specie] => (specie.as_str(), 1),
+					[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
+					_ => unreachable!(),
+				}
+			).collect()).collect::<Vec<_>>().try_into().unwrap())(reaction["equation"].as_str().unwrap());
+			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 			let rate_constant = |rate_constant:&Yaml| RateConstant{
-				preexponential_factor: rate_constant["A"].as_f64().unwrap(),
+				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * reactants as f64),
 				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
 				activation_energy: rate_constant["Ea"].as_f64().unwrap(),
 			};
 			Reaction{
-				equation: (|equation| EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side| side.into_inner().map(|term|
-					match term.into_inner().collect::<Box<_>>().as_ref() {
-						[specie] => (specie.as_str(), 1),
-						[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
-						_ => unreachable!(),
-					}
-				).collect()).collect::<Vec<_>>().try_into().unwrap())(reaction["equation"].as_str().unwrap()),
+				equation,
 				rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"])),
 				model: {
 					let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
@@ -158,7 +160,7 @@ use pest::Parser;
 						Some("falloff") => if reaction["Troe"].is_badvalue() { PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"])} }
 						else {
 							Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"]), troe: Troe{
-								A: reaction["Troe"]["A"].as_f64().unwrap(),
+								A: reaction["Troe"]["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * reactants as f64),
 								T1: reaction["Troe"]["T1"].as_f64().unwrap(),
 								T3: reaction["Troe"]["T3"].as_f64().unwrap(),
 								T2: reaction["Troe"]["T2"].as_f64().unwrap()
@@ -169,6 +171,15 @@ use pest::Parser;
 				}
 			}
 		}).collect()
+	};
+	let system = {
+		let mut system = system;
+		for (_, specie) in system.species.iter_mut() {
+			let mid = &mut specie.thermodynamic.temperature_ranges[1];
+			assert!(*mid >= 1000. && *mid <= 1478., "{}", *mid);
+			*mid = 1000.
+		}
+		system
 	};
 	println!("{}", to_string(&system)?);
 }
