@@ -144,7 +144,7 @@ use pest::Parser;
 			).collect()).collect::<Vec<_>>().try_into().unwrap())(reaction["equation"].as_str().unwrap());
 			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 			let rate_constant = |rate_constant:&Yaml| RateConstant{
-				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * reactants as f64),
+				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * (reactants-1) as f64),
 				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
 				activation_energy: rate_constant["Ea"].as_f64().unwrap(),
 			};
