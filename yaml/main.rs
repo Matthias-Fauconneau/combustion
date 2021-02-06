@@ -1,4 +1,4 @@
-#![feature(array_methods, non_ascii_idents)]#![allow(non_snake_case)]//#![recursion_limit="8"]
+#![feature(array_methods, non_ascii_idents)]#![allow(non_snake_case)]
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -24,11 +24,6 @@ use combustion::ron::*;
 	writeln!(o, "#![enable(unwrap_newtypes)]")?;
 	writeln!(o, "(")?;
 	writeln!(o, "time_step: {},", Pretty(&system.time_step))?;
-	//let inline = || ::ron::ser::PrettyConfig::new().with_new_line(" ".to_owned()).with_indentor("".to_owned());
-	//writeln!(o, "state: {}", to_string_pretty(&system.state, inline())?);
-	/*impl<V> std::fmt::Display for Pretty<&Map<&str, V>> where Pretty<&V>: std::fmt::Display {
-		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
-	}*/
 	use itertools::Itertools;
 	impl std::fmt::Display for Pretty<&Map<&str, f64>> {
 		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
@@ -42,30 +37,21 @@ use combustion::ron::*;
 		writeln!(o, "\"{}\": (", name)?;
 		writeln!(o, "\tcomposition: {:?},", composition)?;
 		writeln!(o, "\tthermodynamic: (")?;
-		/*impl<'t, T: 't> std::fmt::Display for Pretty<&[T]> where Pretty<&'t T>: std::fmt::Display {
-			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "[{}]", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
-		}*/
 		impl std::fmt::Display for Pretty<&[f64]> {
 			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "[{}]", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
 		}
 		impl<T, const N: usize> std::fmt::Display for Pretty<&[T; N]> where for<'t> Pretty<&'t T>: std::fmt::Display {
 			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "({})", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
 		}
-		/*impl<'t, T: 't, const N: usize> std::fmt::Display for Pretty<&[T; N]> where Pretty<&'t T>: std::fmt::Display {
-			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "({})", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
-		}*/
 		writeln!(o, "\t\ttemperature_ranges: {},", Pretty(temperature_ranges.as_ref()))?;
 		writeln!(o, "\t\t\tpieces: [")?;
 		for piece in pieces.iter() { writeln!(o, "\t\t\t{},", Pretty(piece))?; }
 		writeln!(o, "\t\t],")?;
 		writeln!(o, "\t),")?;
-		//writeln!(o, "\ttransport: {}", to_string_pretty(&transport, inline())?);
-		//impl<'t, T: IntoIterator<Item=(&'t str, f64)>> std::fmt::Display for Pretty<T> {
 		struct Fields<'t, const N: usize>(&'t [(&'t str, f64); N]);
 		impl<const N: usize> std::fmt::Display for Fields<'_, N> {
 			#[throws(std::fmt::Error)] fn fmt(&self, fmt: &mut std::fmt::Formatter) {
 				let nonzero = self.0.into_iter().filter(|(_,v)| *v != 0.).collect::<Box<_>>();
-				//if nonzero.len() == 0 { return; }
 				write!(fmt, "({})", nonzero.iter().format_with(", ", |(k,v), f| f(&format_args!("{}: {}", k, Pretty(v)))))?
 			}
 		}
@@ -101,17 +87,88 @@ use combustion::ron::*;
 	o
 }
 
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;
+use pest::Parser;
+#[derive(Parser)]#[grammar_inline = r#"
+	WHITESPACE = _{ " " }
+	atom = { "H" | "O" | "C" | "AR" | "N" }
+	count = { '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
+	specie = { (atom ~ count?)+ ~ "(S)"? }
+	term = { count? ~ specie }
+	side = { term ~ ("+" ~ term)* }
+	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
+"#] struct EquationParser;
+
 #[throws(Error)] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
-	let mut system: System  = ::ron::de::from_bytes(&system)?;
+	let System{time_step, state, ..}  = ::ron::de::from_bytes(&system)?;
+	use {std::convert::TryInto, std::str::FromStr, yaml_rust::Yaml};
 	let yaml = yaml_rust::YamlLoader::load_from_str(std::str::from_utf8(&std::fs::read("/usr/share/cantera/data/gri30.yaml")?)?).unwrap();
-	for yaml in yaml[0]["species"].as_vec().unwrap() {
-		if let Some(specie) = system.species.get_mut(yaml["name"].as_str().unwrap()) {
-			use std::convert::TryInto;
-			specie.thermodynamic.pieces = yaml["thermo"]["data"].as_vec().unwrap().iter().map(|piece| piece.as_vec().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Box<_>>().as_ref().try_into().unwrap()).collect();
-		}
-	}
-	//writeln!(o, "{}", ::ron::ser::to_string_pretty(system, ::ron::ser::PrettyConfig{scientific_notation: true, ..default()})?)
-	//pretty_assertions::assert_eq!(::ron::de::from_str::<System>(&to_string(&system)?)?, system);
+	let data = &yaml[0];
+	let system = System{
+		time_step,
+		state,
+		species: data["species"].as_vec().unwrap().iter().map(|specie| (specie["name"].as_str().unwrap(), Specie{
+			composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
+			thermodynamic: (|thermo:&Yaml| NASA7{
+				temperature_ranges: thermo["temperature-ranges"].as_vec().unwrap().iter().map(|limit| limit.as_f64().unwrap()).collect(),
+				pieces: thermo["data"].as_vec().unwrap().iter().map(|piece| piece.as_vec().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Box<_>>().as_ref().try_into().unwrap()).collect()
+			})(&specie["thermo"]),
+			transport: (|transport:&Yaml| Transport{
+				well_depth_K: transport["well-depth"].as_f64().unwrap(),
+				diameter_Å: transport["diameter"].as_f64().unwrap(),
+				geometry: {use Geometry::*; match transport["geometry"].as_str().unwrap() {
+					"atom" => Atom,
+					"linear" => Linear{
+						polarizability_Å3: transport["polarizability"].as_f64().unwrap_or(0.),
+						rotational_relaxation: transport["rotational-relaxation"].as_f64().unwrap_or(0.),
+					},
+					"nonlinear" => Nonlinear{
+						polarizability_Å3: transport["polarizability"].as_f64().unwrap_or(0.),
+						rotational_relaxation: transport["rotational-relaxation"].as_f64().unwrap_or(0.),
+						permanent_dipole_moment_Debye: transport["dipole"].as_f64().unwrap_or(0.),
+					},
+					_ => unimplemented!()
+			}}
+			})(&specie["transport"])
+		})).collect(),
+		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
+			let rate_constant = |rate_constant:&Yaml| RateConstant{
+				preexponential_factor: rate_constant["A"].as_f64().unwrap(),
+				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
+				activation_energy: rate_constant["Ea"].as_f64().unwrap(),
+			};
+			Reaction{
+				equation: (|equation| EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side| side.into_inner().map(|term|
+					match term.into_inner().collect::<Box<_>>().as_ref() {
+						[specie] => (specie.as_str(), 1),
+						[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
+						_ => unreachable!(),
+					}
+				).collect()).collect::<Vec<_>>().try_into().unwrap())(reaction["equation"].as_str().unwrap()),
+				rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"])),
+				model: {
+					let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
+					use Model::*;
+					match reaction["type"].as_str() {
+						None|Some("elementary") => 	Elementary,
+						Some("three-body") => ThreeBody{efficiencies},
+						Some("falloff") => if reaction["Troe"].is_badvalue() { PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"])} }
+						else {
+							Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"]), troe: Troe{
+								A: reaction["Troe"]["A"].as_f64().unwrap(),
+								T1: reaction["Troe"]["T1"].as_f64().unwrap(),
+								T3: reaction["Troe"]["T3"].as_f64().unwrap(),
+								T2: reaction["Troe"]["T2"].as_f64().unwrap()
+							}}
+						},
+						_ => unimplemented!()
+					}
+				}
+			}
+		}).collect()
+	};
 	println!("{}", to_string(&system)?);
 }

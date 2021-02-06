@@ -10,6 +10,8 @@ anyhow = ''
 combustion = {path=".."}
 ron = ''
 yaml-rust = ''
+pest_derive= ''
+pest= ''
 itertools = ''
 float-pretty-print = ''
 pretty_assertions= ''

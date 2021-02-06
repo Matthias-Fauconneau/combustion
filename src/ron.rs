@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
-pub use {std::boxed::Box, linear_map::LinearMap as Map};
+pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)] pub enum Element { H, O, C, Ar }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString)] pub enum Element { H, O, C, Ar, N }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct State<'t> {
 	pub temperature: f64,
