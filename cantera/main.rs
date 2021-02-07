@@ -115,7 +115,7 @@ pub fn transport(pressure: f64, temperature: f64, mole_proportions: *const std::
 	}).collect::<Box<_>>();
 	fn print<const R: usize>(table: &[([String; R], usize)]) { for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); } }
 	print(&table);
-	assert!(rate == cantera_rate);
+	{let e = rate.iter().zip(cantera_rate).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap(); assert!(e < 0., "{}", e);}
 
 	/*let ref u: [f64; 1+S-1] = (*state).into();
 	let mut cvode = cvode::CVODE::new(move |u| system.rate/*and_jacobian*/(*pressure_R, u).map(|(rate, /*jacobian*/)| rate), u);

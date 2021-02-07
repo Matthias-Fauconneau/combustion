@@ -155,7 +155,13 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
 			let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
-			let reactants = reactants + match reaction["type"].as_str() { None|Some("elementary") => 0, _ => 1 };
+			let reactants = reactants + match reaction["type"].as_str() {
+				None|Some("elementary") => 0,
+				Some("falloff")  if reaction["Troe"].is_badvalue()  => 0,
+				Some("three-body")  => 1,
+				Some("falloff")  => 1,
+				_ => unimplemented!()
+			};
 			let rate_constant = |rate_constant:&Yaml| RateConstant{
 				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * (reactants-1) as f64),
 				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
@@ -170,15 +176,13 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 					match reaction["type"].as_str() {
 						None|Some("elementary") => 	Elementary,
 						Some("three-body") => ThreeBody{efficiencies},
-						Some("falloff") => if reaction["Troe"].is_badvalue() { PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"])} }
-						else {
-							Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"]), troe: Troe{
-								A: reaction["Troe"]["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * reactants as f64),
-								T1: reaction["Troe"]["T1"].as_f64().unwrap(),
-								T3: reaction["Troe"]["T3"].as_f64().unwrap(),
-								T2: reaction["Troe"]["T2"].as_f64().unwrap()
-							}}
-						},
+						Some("falloff") if reaction["Troe"].is_badvalue() => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"])},
+						Some("falloff") => Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"]), troe: Troe{
+							A: reaction["Troe"]["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * (reactants-1) as f64),
+							T1: reaction["Troe"]["T1"].as_f64().unwrap(),
+							T3: reaction["Troe"]["T3"].as_f64().unwrap(),
+							T2: reaction["Troe"]["T2"].as_f64().unwrap()
+						}},
 						_ => unimplemented!()
 					}
 				}

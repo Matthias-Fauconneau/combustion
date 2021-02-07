@@ -19,5 +19,5 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 name= 'cantera'
 path= 'main.rs'
 
-[patch.'https://github.com/Matthias-Fauconneau/vector']
-vector= {path='../../vector', version=''}
+[patch.'https://github.com/Matthias-Fauconneau/num']
+num= {path='../../num', version=''}
