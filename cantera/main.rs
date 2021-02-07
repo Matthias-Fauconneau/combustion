@@ -86,21 +86,23 @@ pub fn transport(pressure: f64, temperature: f64, mole_proportions: *const std::
 							Ok(())
             }));
             let log_kf = combustion::reaction::log_arrhenius(rate_constant, T);
-            use iter::vec::Dot;
-            let Rf = f64::exp(reactants.dot(log_concentrations) + log_kf);
-            let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
-            let Rr = f64::exp(products.dot(log_concentrations) + log_kf - log_equilibrium_constant);
-            let [Rf,Rr] = [Rf,Rr].map(|R| model.efficiency(T, &concentrations, log_kf) * R);
-            (equation, f64::exp(log_equilibrium_constant), Rf, Rr)
+						let c = model.efficiency(T, concentrations, log_kf);
+            let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
+						use iter::{into::IntoMap, vec::Dot};
+						let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
+						let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
+						let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
+						(equation, f64::exp(log_equilibrium_constant), c*Rf, c*Rr)
         }))
     };
     for (a, b) in reactions.iter().zip(other_reactions.iter()) {
         let ref e = a.0;
         //let b = other_reactions.into_iter().find(|(k,_,_,_)| k==&e).expect(&format!("{} {}", &e, other_reactions.iter().map(|b| b.0).format(" ")));
         assert_eq!(e, &b.0.replace(" =>"," <=>"));
+        assert!(num::relative_error(a.1, b.1) < 0.002, "{}", num::relative_error(a.1, b.1));
 				let a = a.2-a.3;
         let b = b.2-b.3;
-        println!("{:30} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" "));
+        if num::relative_error(a,b) != 0. { println!("{:30} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
     }
 	}
 	let (rate, /*jacobian*/) = system.rate/*and_jacobian*/(*pressure_R, &(*state).into()).unwrap();

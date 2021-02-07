@@ -100,7 +100,6 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 						if !net_composition.contains_key(&element) { net_composition.insert(element, 0); }
 						*net_composition.get_mut(&element).unwrap() += ν as i8 * count as i8;
 					}
-					if ν != 0. {dbg!(&net_composition);}
 				}
 				for (_, &ν) in &net_composition { assert!(ν == 0, "{:?} {:?}", net_composition, equation); }}
 			let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];

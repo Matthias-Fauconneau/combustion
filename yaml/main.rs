@@ -155,6 +155,7 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
 			let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
+			let reactants = reactants + match reaction["type"].as_str() { None|Some("elementary") => 0, _ => 1 };
 			let rate_constant = |rate_constant:&Yaml| RateConstant{
 				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * (reactants-1) as f64),
 				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
