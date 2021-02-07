@@ -100,8 +100,26 @@ use pest::Parser;
 	side = { term ~ ("+" ~ term)* }
 	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
 "#] struct EquationParser;
+fn equation(equation: &str) -> [Map<&str, u8>; 2] {
+	use {std::convert::TryInto, std::str::FromStr};
+	EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side|
+		side.into_inner().map(|term|
+			match term.into_inner().collect::<Box<_>>().as_ref() {
+				[specie] => (specie.as_str(), 1),
+				[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
+				_ => unreachable!(),
+			}
+		)
+		.fold(Map::new(), |mut map, (k, v)| { *map.entry(k).or_insert(0) += v; map })
+	).collect::<Vec<_>>().try_into().unwrap()
+}
 
-#[throws(Error)] fn main() {
+#[test] fn test() {
+	use std::iter::FromIterator;
+	assert_eq!(equation("CH2 + CH2 <=> H2 + C2H2"), [Map::from_iter([("CH2",2)].iter().copied()), Map::from_iter([("H2",1),("C2H2",1)].iter().copied())]);
+}
+
+#[throws] fn main() {
 	let system = std::fs::read("CH4+O2.ron")?;
 	let System{time_step, state, ..}  = ::ron::de::from_bytes(&system)?;
 	use {std::convert::TryInto, std::str::FromStr, yaml_rust::Yaml};
@@ -135,13 +153,7 @@ use pest::Parser;
 			})(&specie["transport"])
 		})).collect(),
 		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
-			let equation: [Map<&str, u8>; 2] = (|equation| EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side| side.into_inner().map(|term|
-				match term.into_inner().collect::<Box<_>>().as_ref() {
-					[specie] => (specie.as_str(), 1),
-					[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
-					_ => unreachable!(),
-				}
-			).collect()).collect::<Vec<_>>().try_into().unwrap())(reaction["equation"].as_str().unwrap());
+			let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 			let rate_constant = |rate_constant:&Yaml| RateConstant{
 				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-2, 3. * (reactants-1) as f64),
@@ -171,6 +183,12 @@ use pest::Parser;
 				}
 			}
 		}).collect()
+	};
+	let system = {
+		let mut system = system;
+		let inert = system.species.remove("AR").unwrap();
+		system.species.insert("AR", inert);
+		system
 	};
 	let system = {
 		let mut system = system;

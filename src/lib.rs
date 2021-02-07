@@ -4,7 +4,7 @@
 #![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports,uncommon_codepoints)]
 pub mod ron;
 mod transport; pub use transport::{TransportPolynomials, Transport};
-mod reaction; pub use reaction::{Reaction, Model, RateConstant};
+pub mod reaction; pub use reaction::{Reaction, Model, RateConstant};
 use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
 use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
 
@@ -87,12 +87,22 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		let rotational_relaxation = eval(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
 		let internal_degrees_of_freedom = eval(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
 		let species_names = eval(species, |(name,_)| *name);
+		let species_composition = eval(species, |(_,s)| &s.composition);
 		let species = Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom};
 		let transport_polynomials = species.transport_polynomials();
 		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
 			for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
 			let [reactants, products] = eval(equation, |e| eval(species_names, |s| *e.get(s).unwrap_or(&0) as f64));
 			let net = iter::vec::Sub::sub(products.prefix(), reactants.prefix());
+			{let mut net_composition = Map::new();
+				for (s, ν) in net.enumerate() {
+					for (element, &count) in species_composition[s] {
+						if !net_composition.contains_key(&element) { net_composition.insert(element, 0); }
+						*net_composition.get_mut(&element).unwrap() += ν as i8 * count as i8;
+					}
+					if ν != 0. {dbg!(&net_composition);}
+				}
+				for (_, &ν) in &net_composition { assert!(ν == 0, "{:?} {:?}", net_composition, equation); }}
 			let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
 			let Σnet = Σproducts-Σreactants;
 			let from = |efficiencies:Map<_,_>| eval(species_names, |specie| *efficiencies.get(specie).unwrap_or(&1.));

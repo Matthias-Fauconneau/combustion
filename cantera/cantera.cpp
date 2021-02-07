@@ -8,7 +8,10 @@ using namespace std;
 
 extern "C"
 void reaction(double& pressure, double& temperature, const char* mole_proportions, double time_step, size_t& species_len, const char**& species_data,
-											double*& net_production_rates_data, double*& concentrations_data) try {
+											double*& net_production_rates_data,
+											size_t& reactions_len, const char**& reactions_data,
+											double*& equilibrium_constants_data, double*& forward_rates_of_progress_data, double*& reverse_rates_of_progress_data,
+											double*& concentrations_data) try {
 	using namespace Cantera;
 	auto mechanism = newSolution("gri30.yaml", "gri30", "mixture-averaged"/*Multi*/);
 	auto kinetics = mechanism->kinetics();
@@ -30,9 +33,9 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	kinetics->getNetProductionRates(net_production_rates->data());
 	net_production_rates_data = net_production_rates->data();
 
-	/*reactions_len = kinetics->nReactions();
+	reactions_len = kinetics->nReactions();
 	auto reactions = new std::vector<const char*>();
-	for(auto k: Range_new(kinetics->nReactions())) { reactions->push_back((new std::string(kinetics->reaction(k)->equation()))->data()); }
+	for(auto k=0; k<kinetics->nReactions(); k++) { reactions->push_back((new std::string(kinetics->reaction(k)->equation()))->data()); }
 	reactions_data = reactions->data();
 	auto equilibrium_constants = new std::vector<double>();
 	equilibrium_constants->resize(kinetics->nReactions());
@@ -45,7 +48,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	auto reverse_rates_of_progress = new std::vector<double>();
 	reverse_rates_of_progress->resize(kinetics->nReactions());
 	kinetics->getRevRatesOfProgress(reverse_rates_of_progress->data());
-	reverse_rates_of_progress_data  = reverse_rates_of_progress->data();*/
+	reverse_rates_of_progress_data  = reverse_rates_of_progress->data();
 
 	system.advance(time_step);
 
