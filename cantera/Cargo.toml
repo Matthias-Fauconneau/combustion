@@ -18,6 +18,3 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 [[bin]]
 name= 'cantera'
 path= 'main.rs'
-
-[patch.'https://github.com/Matthias-Fauconneau/num']
-num= {path='../../num', version=''}

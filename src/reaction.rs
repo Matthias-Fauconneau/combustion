@@ -25,11 +25,11 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 		Self::Elementary => 1.,
 		Self::ThreeBody{efficiencies} => efficiencies.dot(concentrations),
 		Self::PressureModification{efficiencies, k0} => {
-			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
 			Pr / (1.+Pr)
 		}
 		Self::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
-			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [C] (m3/mol)
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
 			let log10Fcent = f64::log10(Fcent);
 			let C = -0.4-0.67*log10Fcent;
@@ -128,7 +128,7 @@ impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
 		let Cp = eval(thermodynamics, |s:&NASA7| s.specific_heat_capacity(T));
 		let rcp_ΣCCp = 1./concentrations.dot(Cp); // All?
 		let dtT_T = - rcp_ΣCCp * dtω.dot(H_T); // R/RT
-		let dtn = dtω;
+		let dtn = dtω; //*V
 
 		/*let mut J = [[f64::NAN; 1+S-1]; 1+S-1];
 		let dtT = - rcp_ΣCCp * H.prefix().dot(dtω);
