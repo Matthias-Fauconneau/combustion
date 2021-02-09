@@ -7,10 +7,16 @@
 using namespace std;
 
 extern "C"
-void reaction(double& pressure, double& temperature, const char* mole_proportions, double time_step, size_t& species_len, const char**& species_data,
-											double*& net_production_rates_data,
-											size_t& reactions_len, const char**& reactions_data,
-											double*& equilibrium_constants_data, double*& forward_rates_of_progress_data, double*& reverse_rates_of_progress_data,
+void reaction(double& pressure, double& temperature, const char* mole_proportions,
+											size_t& species_len, const char**& species_data,
+											double rate_time,
+												double*& net_production_rates_data,
+												size_t& reactions_len,
+													const char**& equations_data,
+													double*& equilibrium_constants_data,
+													double*& forward_rates_of_progress_data,
+													double*& reverse_rates_of_progress_data,
+											double state_time,
 											double*& concentrations_data) try {
 	using namespace Cantera;
 	auto mechanism = newSolution("gri30.yaml", "gri30", "mixture-averaged"/*Multi*/);
@@ -27,6 +33,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	//system.setTolerances(relative_tolerance, absolute_tolerance);
 	system.setTolerances(/*relative_tolerance:*/ 1e-8, /*absolute_tolerance:*/ 1e-14);
 	system.addReactor(reactor);
+	system.advance(rate_time);
 
 	auto net_production_rates = new std::vector<double>();
 	net_production_rates->resize(kinetics->nTotalSpecies());
@@ -36,7 +43,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	reactions_len = kinetics->nReactions();
 	auto reactions = new std::vector<const char*>();
 	for(auto k=0; k<kinetics->nReactions(); k++) { reactions->push_back((new std::string(kinetics->reaction(k)->equation()))->data()); }
-	reactions_data = reactions->data();
+	equations_data = reactions->data();
 	auto equilibrium_constants = new std::vector<double>();
 	equilibrium_constants->resize(kinetics->nReactions());
 	kinetics->getEquilibriumConstants(equilibrium_constants->data());
@@ -50,7 +57,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	kinetics->getRevRatesOfProgress(reverse_rates_of_progress->data());
 	reverse_rates_of_progress_data  = reverse_rates_of_progress->data();
 
-	system.advance(time_step);
+	system.advance(state_time);
 
 	temperature = phase->temperature();
 	pressure = phase->pressure();

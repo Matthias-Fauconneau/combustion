@@ -150,13 +150,64 @@ impl<const S: usize> State<S> {
 	}
 }
 
-pub trait Error { fn error(&self, o: &Self) -> f64; }
-impl Error for f64 { fn error(&self, o: &Self) -> f64 { f64::abs(self-o) } }
-impl<const N: usize> Error for [f64; N] { fn error(&self, o: &Self) -> f64 { self.iter().zip(o).map(|(s,o)| s.error(o)).max_by(|s,o| s.partial_cmp(o).unwrap_or_else(||panic!("{} {}", s, o))).unwrap() } }
-impl<const S: usize> Error for Transport<S> {
-		fn error(&self, o: &Self) -> f64 {
-		self.viscosity.error(&o.viscosity).max(
-		self.thermal_conductivity.error(&o.thermal_conductivity).max(
-		self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients) ))
+/*// Maximum absolute difference
+pub trait AbsError {
+	fn error(&self, o: &Self) -> f64;
+}
+
+impl AbsError for f64 {
+	fn error(&self, o: &Self) -> f64 {
+		f64::abs(self-o)
 	}
 }
+
+impl<const N: usize> AbsError for [f64; N] {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+impl<const S: usize> AbsError for State<S> {
+	fn error(&self, o: &Self) -> f64 {
+		[self.temperature.error(&o.temperature), self.amounts.error(&o.amounts)].iter().copied().reduce(f64::max).unwrap()
+	}
+}
+impl<const S: usize> AbsError for Transport<S> {
+	fn error(&self, o: &Self) -> f64 {
+		[
+			self.viscosity.error(&o.viscosity),
+			self.thermal_conductivity.error(&o.thermal_conductivity),
+			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
+		].iter().copied().reduce(f64::max).unwrap()
+	}
+}*/
+
+/*// Maximum relative difference
+pub trait RelError {
+	fn error(&self, o: &Self) -> f64;
+}
+
+impl RelError for f64 {
+	fn error(&self, o: &Self) -> f64 {
+		num::relative_error(*self, *o)
+	}
+}
+
+impl<const N: usize> RelError for [f64; N] {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+impl<const S: usize> RelError for State<S> {
+	fn error(&self, o: &Self) -> f64 {
+		[self.temperature.error(&o.temperature), self.amounts.error(&o.amounts)].iter().copied().reduce(f64::max).unwrap()
+	}
+}
+impl<const S: usize> RelError for Transport<S> {
+	fn error(&self, o: &Self) -> f64 {
+		[
+			self.viscosity.error(&o.viscosity),
+			self.thermal_conductivity.error(&o.thermal_conductivity),
+			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
+		].iter().copied().reduce(f64::max).unwrap()
+	}
+}*/

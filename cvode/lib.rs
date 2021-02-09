@@ -3,8 +3,12 @@ use {sundials_sys::*, std::ffi::c_void as void};
 
 use std::convert::TryInto;
 fn n_vector<const N: usize>(v: &[f64; N]) -> N_Vector { unsafe{N_VMake_Serial(v.len() as i64, v.as_ptr() as *mut _)} }
-fn r#ref<'t, const N: usize>(v: N_Vector) -> &'t [f64; N] { unsafe{std::slice::from_raw_parts(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()	}
-fn r#mut<'t, const N: usize>(v: N_Vector) -> &'t mut [f64; N] { unsafe{std::slice::from_raw_parts_mut(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()	}
+fn r#ref<'t, const N: usize>(v: N_Vector) -> &'t [f64; N] {
+	unsafe{std::slice::from_raw_parts(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()
+}
+fn r#mut<'t, const N: usize>(v: N_Vector) -> &'t mut [f64; N] {
+	unsafe{std::slice::from_raw_parts_mut(N_VGetArrayPointer_Serial(v), N_VGetLength_Serial(v) as usize)}.try_into().unwrap()
+}
 
 pub struct CVODE<F: Fn(&[f64; N])->Option<[f64; N]>, const N: usize> {
 	cvode: *mut void,
@@ -36,6 +40,7 @@ impl<F: Fn(&[f64; N])->Option<[f64; N]>, const N: usize> CVODE<F, N> {
 		CVODE{cvode, f}
 	}
 	pub fn step(&mut self, target_t: f64, u: &[f64; N]) -> (f64, [f64; N]) {
+		unsafe{CVodeSetStopTime(self.cvode, target_t)};
 		let /*mut*/ u = n_vector(u);
 		let mut reached_t = f64::NAN; unsafe{CVode(self.cvode, target_t, u, &mut reached_t, CV_ONE_STEP)};
 		(reached_t, *r#ref(u))
