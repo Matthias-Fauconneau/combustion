@@ -74,7 +74,7 @@ impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
 		//let ref dT_G = eval!(thermodynamics.prefix(); |s| s.dT_Gibbs_free_energy(T));
 		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / Self::volume); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - Sum::<f64>::sum(concentrations);
-		if Ca < 0. { fehler::throw!(); }
+		if Ca < 0. { dbg!(T, C, concentrations, Ca); fehler::throw!(); }
 		assert!(Ca>0.,"{:?}", (C, Sum::<f64>::sum(concentrations), concentrations));
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| if x==0. { -f64::INFINITY } else { assert!(x>0.); log(x) }); // Explicit to avoid signal

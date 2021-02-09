@@ -1,6 +1,6 @@
 #![enable(unwrap_newtypes)]
 (
-time_step: 1e-4,
+time_step: 1e-5,
 state: (temperature: 1000, pressure: 101325, mole_proportions: {"CH4": 1, "O2": 2, "AR": 2}),
 species: {
 "H2": (

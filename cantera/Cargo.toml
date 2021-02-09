@@ -7,7 +7,7 @@ edition= '2018'
 
 [dependencies]
 fehler= ''
-anyhow= ''
+error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 combustion= {path='..'}
 cvode= {path='../cvode'}
