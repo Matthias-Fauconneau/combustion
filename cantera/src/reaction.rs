@@ -1,46 +1,15 @@
-#![allow(mixed_script_confusables, non_snake_case, incomplete_features, confusable_idents)]
-#![feature(type_ascription, array_map, non_ascii_idents, const_generics, const_evaluatable_checked, destructuring_assignment)]
-use {fehler::throws, anyhow::Error};
-use combustion::*;
-
-#[throws] fn main() {
-	let system = std::fs::read("CH4+O2.ron")?;
-	const S: usize  = 53;
-	test_reaction_cantera(&Simulation::<S>::new(&system)?)?;
-	//test_transport_cantera(&Simulation::<S>::new(&system)?)?;
-}
-
-mod cantera {
-extern "C" {
-pub fn reaction(pressure: &mut f64, temperature: &mut f64, mole_proportions: *const std::os::raw::c_char,
-													species_len: &mut usize, species: &mut *const *const std::os::raw::c_char,
-													rate_time: f64,
-														net_productions_rates: &mut *const f64,
-														reactions_len: &mut usize,
-															equations: &mut *const *const std::os::raw::c_char,
-															equilibrium_constants: &mut *const f64,
-															forward: &mut *const f64,
-															reverse: &mut *const f64,
-													state_time: f64,
-													concentrations: &mut *const f64);
-}
-extern "C" {
-pub fn transport(pressure: f64, temperature: f64, mole_proportions: *const std::os::raw::c_char,
-														viscosity: &mut f64, thermal_conductivity: &mut f64,
-														species_len: &mut usize, species: &mut *const *const std::os::raw::c_char, mixture_averaged_thermal_diffusion_coefficients: &mut *const f64);
-}
-}
-
-#[allow(unreachable_code)]
-#[throws] fn test_reaction_cantera<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state: initial_state, ..}: &Simulation<S>)
+use super::*;
+//#[throws]
+pub fn check<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state: initial_state, ..}: &Simulation<S>) -> Result<!>
 where [(); S-1]:, [(); 1+S-1]: {
 	use {iter::{Prefix, Suffix}, std::convert::TryInto, itertools::Itertools};
+
 	assert!(System::<S>::volume == 1.);
 	// Bulk amount is reconstructed by holding total amount constant (i.e errors transmutes bulk amount instead of violating matter conservation)
 	let total_amount = initial_state.amounts.iter().sum();
 	let mut time = 0.;
 	let mut state: [f64; 1+S-1] = (*initial_state).into();
-	let mut cvode = cvode::CVODE::new(move |u| system.rate/*and_jacobian*/(*pressure_R, u).map(|(rate, /*jacobian*/)| rate), &state);
+	let mut cvode = cvode::CVODE::new(&state);
 	loop {
 		let next_time = time + *time_step;
 		let (equations, equilibrium_constants, [forward, reverse], ref cantera_rate, ref cantera_state/*, _cantera_concentrations*/) = {
@@ -49,7 +18,7 @@ where [(); S-1]:, [(); 1+S-1]: {
 			let mole_proportions = format!("{}", species_names.iter().zip(&initial_state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
 			let mole_proportions = std::ffi::CString::new(mole_proportions)?;
 			use std::ptr::null;
-			let mut pressure = pressure_R * (combustion::kB*combustion::NA);
+			let mut pressure = pressure_R * (kB*NA);
 			let mut temperature = initial_state.temperature;
 			//let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations) = (0, null(), null(), null());
 			let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations, mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse])
@@ -82,7 +51,7 @@ where [(); S-1]:, [(); 1+S-1]: {
 					let T = *temperature;
 					use num::log;
 					let logP0_RT = log(NASA7::reference_pressure_R) - log(T);
-					use iter::{Prefix, vec::eval, eval};
+					use iter::{vec::eval, eval};
 					let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));
 					let ref H_T = eval(H.prefix(), |H| H/T);
 					let ref G = eval!(thermodynamics.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
@@ -148,7 +117,7 @@ where [(); S-1]:, [(); 1+S-1]: {
 		}
 
 		while time < next_time {
-			(time, state) = cvode.step(next_time, &state); //dbg!(time);
+			(time, state) = cvode.step(move |u| system.rate/*and_jacobian*/(*pressure_R, u).map(|(rate, /*jacobian*/)| rate), next_time, &state); //dbg!(time);
 		}
 		//let next_time = time;
 		assert_eq!(time, next_time);
@@ -168,28 +137,4 @@ where [(); S-1]:, [(); 1+S-1]: {
 
 		state = (*cantera_state).into(); // Check rates along cantera trajectory
 	}
-}
-
-#[allow(dead_code)] #[throws] fn test_transport_cantera<const S: usize>(Simulation{system, state, pressure_R, species_names, ..}: &Simulation<S>) where [(); S-1]: {
-	let transport = system.transport(*pressure_R, &state);
-	let cantera = {
-		use itertools::Itertools;
-		let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
-		let mole_proportions = std::ffi::CString::new(mole_proportions)?;
-		use std::ptr::null;
-		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut mixture_averaged_thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());
-		unsafe {
-			let pressure = pressure_R * (combustion::kB*combustion::NA);
-			cantera::transport(pressure, state.temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names,
-																		&mut mixture_averaged_thermal_diffusion_coefficients);
-			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
-			let order = |o:&[_]| iter::vec::eval(species_names, |s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}", s, species_names))]);
-			let mixture_averaged_thermal_diffusion_coefficients = order(std::slice::from_raw_parts(mixture_averaged_thermal_diffusion_coefficients, species_len));
-			Transport{viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients}
-		}
-	};
-	dbg!(&transport, &cantera);
-	dbg!((transport.viscosity-cantera.viscosity)/cantera.viscosity, (transport.thermal_conductivity-cantera.thermal_conductivity)/cantera.thermal_conductivity);
-	assert!(f64::abs(transport.viscosity-cantera.viscosity)/cantera.viscosity < 0.03, "{}", transport.viscosity/cantera.viscosity);
-	assert!(f64::abs(transport.thermal_conductivity-cantera.thermal_conductivity)/cantera.thermal_conductivity < 0.05, "{:?}", (transport.thermal_conductivity, cantera.thermal_conductivity));
 }

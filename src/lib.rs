@@ -1,12 +1,11 @@
-#![allow(incomplete_features)]
-#![feature(const_generics, const_evaluatable_checked, type_ascription, array_methods, non_ascii_idents,in_band_lifetimes,once_cell,array_map,map_into_keys_values,bindings_after_at,destructuring_assignment)]
-#![feature(trait_alias)]
-#![allow(non_snake_case,confusable_idents,mixed_script_confusables,non_upper_case_globals,unused_imports,uncommon_codepoints)]
-pub mod ron;
+#![feature(const_generics, const_generics_defaults, const_evaluatable_checked, type_ascription, array_methods, in_band_lifetimes, once_cell, array_map, map_into_keys_values, bindings_after_at, destructuring_assignment, trait_alias, non_ascii_idents)]
+#![allow(incomplete_features, non_snake_case,confusable_idents, mixed_script_confusables, non_upper_case_globals, unused_imports, uncommon_codepoints)]
+pub use system::default;
 mod transport; pub use transport::{TransportPolynomials, Transport};
 pub mod reaction; pub use reaction::{Reaction, Model, RateConstant};
 use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
-use {iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}}, self::ron::{Map, Element, Troe}};
+use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}};
+use system::{Map, Element, Troe};
 
 pub const kB : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
@@ -59,29 +58,35 @@ pub struct Simulation<'t, const S: usize> where [(); S-1]: {
 
 use std::{convert::TryInto, lazy::SyncLazy};
 pub static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
-	::ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, N: 14.0067, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
+	ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, N: 14.0067, O: 15.999, Ar: 39.95}").unwrap().into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
-impl From<ron::RateConstant> for reaction::RateConstant { fn from(ron::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: ron::RateConstant) -> Self {
-	const J_per_cal: f64 = 4.184;
-	Self{log_preexponential_factor: log(preexponential_factor), temperature_exponent, activation_temperature: activation_energy*J_per_cal/(kB*NA)}
-}}
+impl From<system::RateConstant> for reaction::RateConstant {
+	fn from(system::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: system::RateConstant) -> Self {
+		const J_per_cal: f64 = 4.184;
+		Self{log_preexponential_factor: log(preexponential_factor), temperature_exponent, activation_temperature: activation_energy*J_per_cal/(kB*NA)}
+	}
+}
 
-impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
-	pub fn new(system: &'b [u8]) -> ::ron::Result<Self> where 'b: 't, [(); S]: {
-		let ron::System{species, reactions, time_step, state} = ::ron::de::from_bytes(&system)?;
+mod parse; use parse::*;
+// Compile-time selected system
+const SPECIES_LEN: usize = parse(env!("SPECIES_LEN"));
+
+impl<const S: usize /*= SPECIES_LEN*/> Simulation<'t, S> where [(); S-1]: {
+	pub fn new(system: &'t [u8]) -> ron::Result<Self> where /*'b: 't,*/ [(); S]: {
+		let system::System{species, reactions, time_step, state} = ::ron::de::from_bytes(&system)?;
 		let species: Vec<_> = species.into();
 		use {std::convert::TryInto, iter::into::IntoMap};
 		let ref species : [_; S] = {let len = species.len(); unwrap::unwrap!(species.try_into(), "Compiled for {} species, got {}", S, len)};
 		let molar_mass = eval(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
-		let thermodynamics = eval(species, |(_,ron::Specie{thermodynamic: ron::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
+		let thermodynamics = eval(species, |(_, system::Specie{thermodynamic: system::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
 			ref ranges => panic!("{:?}", ranges),
 		});
 		let diameter = eval(species, |(_,s)| s.transport.diameter_Å*1e-10);
 		let well_depth_J = eval(species, |(_,s)| s.transport.well_depth_K * kB);
-		use self::ron::Geometry::*;
+		use system::Geometry::*;
 		let polarizability = eval(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
 		let permanent_dipole_moment = eval(species, |(_,s)| if let Nonlinear{permanent_dipole_moment_Debye,..} = s.transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
 		let rotational_relaxation = eval(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
@@ -90,7 +95,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		let species_composition = eval(species, |(_,s)| &s.composition);
 		let species = Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom};
 		let transport_polynomials = species.transport_polynomials();
-		let reactions = iter::into::Collect::collect(reactions.map(|self::ron::Reaction{ref equation, rate_constant, model}| {
+		let reactions = iter::into::Collect::collect(reactions.map(|system::Reaction{ref equation, rate_constant, model}| {
 			for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
 			let [reactants, products] = eval(equation, |e| eval(species_names, |s| *e.get(s).unwrap_or(&0) as f64));
 			let net = iter::vec::Sub::sub(products.prefix(), reactants.prefix());
@@ -108,7 +113,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 			Reaction{
 				reactants, products, net, Σreactants, Σproducts, Σnet,
 				rate_constant: rate_constant.into(),
-				model: {use self::{ron::Model::*, reaction::Model}; match model {
+				model: {use {system::Model::*, reaction::Model}; match model {
 					Elementary => Model::Elementary,
 					ThreeBody{efficiencies} => Model::ThreeBody{efficiencies: from(efficiencies)},
 					PressureModification{efficiencies, k0} => Model::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
@@ -118,7 +123,7 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		}));
 		let system = System{species, transport_polynomials, reactions};
 
-		let ron::State{temperature, pressure, mole_proportions} = state;
+		let system::State{temperature, pressure, mole_proportions} = state;
 		let pressure_R = pressure / (kB*NA);
 		let amount = pressure_R / temperature * System::<S>::volume;
 		for (specie,_) in &mole_proportions { assert!(species_names.contains(specie)); }
@@ -133,6 +138,8 @@ impl<const S: usize> Simulation<'t, S> where [(); S-1]: {
 		})
 	}
 }
+
+pub fn new(system: &[u8]) -> ron::Result<Simulation<SPECIES_LEN>> { Simulation::new(&system) }
 
 #[cfg(test)] mod test;
 

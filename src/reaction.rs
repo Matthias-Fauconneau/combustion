@@ -1,4 +1,4 @@
-use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
+use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}, fehler::{throws, throw}};
 use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}};
 use super::{NASA7, Troe};
 
@@ -55,7 +55,7 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
-	#[fehler::throws(as Option)] pub fn rate/*_and_jacobian*/(&self, pressure_R: f64, u: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
+	#[throws(as Option)] pub fn rate/*_and_jacobian*/(&self, pressure_R: f64, u: &[f64; 1+S-1]) -> ([f64; 1+S-1], /*[[f64; 1+S-1]; 1+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
 		//let a = S-1;
 		let Self{species: super::Species{thermodynamics, ..}, reactions/*, molar_masses: W*/, ..} = self;
@@ -74,7 +74,7 @@ impl<const S: usize> super::System<S> where [(); S-1]:, [(); 1+S-1]: {
 		//let ref dT_G = eval!(thermodynamics.prefix(); |s| s.dT_Gibbs_free_energy(T));
 		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / Self::volume); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - Sum::<f64>::sum(concentrations);
-		if Ca < 0. { dbg!(T, C, concentrations, Ca); fehler::throw!(); }
+		if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
 		assert!(Ca>0.,"{:?}", (C, Sum::<f64>::sum(concentrations), concentrations));
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
 		let ref log_concentrations = eval(concentrations, |&x| if x==0. { -f64::INFINITY } else { assert!(x>0.); log(x) }); // Explicit to avoid signal

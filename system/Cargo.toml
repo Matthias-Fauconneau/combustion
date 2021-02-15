@@ -1,25 +1,16 @@
 [package]
-name= 'combustion'
+name= 'system'
 description= 'Chemical reaction kinetics (adiabatic constant-pressure ideal gas batch reactor)'
 version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
-[build-dependencies]
-fehler= ''
-error={package= 'anyhow', version= ''}
-ron= ''
-system={path='system'}
-
 [dependencies]
-fehler= ''
 ron= ''
-system={path='system'}
-iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
-unwrap= ''
-nalgebra= ''
 strum= ''
 strum_macros= ''
+
+[lib]
+path= 'lib.rs'
