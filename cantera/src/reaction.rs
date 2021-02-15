@@ -1,6 +1,5 @@
 use super::*;
-//#[throws]
-pub fn check<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state: initial_state, ..}: &Simulation<S>) -> Result<!>
+#[throws] pub fn check<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state: initial_state, ..}: &Simulation<S>)
 where [(); S-1]:, [(); 1+S-1]: {
 	use {iter::{Prefix, Suffix}, std::convert::TryInto, itertools::Itertools};
 
@@ -89,7 +88,7 @@ where [(); S-1]:, [(); 1+S-1]: {
 					let b = b.2-b.3;
 					if num::relative_error(a,b) != 0. { println!("{:32} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
-					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 1.));
+					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 			}
 		}
 
@@ -106,14 +105,15 @@ where [(); S-1]:, [(); 1+S-1]: {
 		}
 
 		let rate: &[_; S-1] = rate.suffix();
-		let _ = &table(species_names.prefix(), rate, cantera_rate.prefix());
-		//print(&table(species_names.prefix(), rate, cantera_rate.prefix()));
+		//let _ = &table(species_names.prefix(), rate, cantera_rate.prefix());
+		_print(&table(species_names.prefix(), rate, cantera_rate.prefix()));
 		fn absolute_error<const N: usize>(a: &[f64; N], b: &[f64; N]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }
 		fn relative_error<const N: usize>(a: &[f64; N], b: &[f64; N]) -> f64 { a.iter().zip(b).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
 		{
 			let abs = absolute_error(rate, cantera_rate);
 			let rel = relative_error(rate, cantera_rate);
-			assert!(abs < 1e-5 /*&& rel < 0.0000002*/, "rate {:e} {:e}", abs, rel);
+			println!("rate {:e} {:e}", abs, rel);
+			assert!(abs < 1e-8 && rel < 0.0000002, "rate {:e} {:e}", abs, rel);
 		}
 
 		while time < next_time {
@@ -130,11 +130,12 @@ where [(); S-1]:, [(); 1+S-1]: {
 			{
 				let abs = absolute_error(&state.amounts, &cantera_state.amounts);
 				let rel = relative_error(&state.amounts, &cantera_state.amounts);
-				//println!("state {:e} {:e}", abs, rel);
-				assert!(abs < 1e-1 || rel < 1., "state {:e} {:e}", abs, rel);
+				println!("state {:e} {:e}", abs, rel);
+				assert!(abs < 1e-8 || rel < 0., "state {:e} {:e}", abs, rel);
 			}
 		}
 
 		state = (*cantera_state).into(); // Check rates along cantera trajectory
+		break;
 	}
 }
