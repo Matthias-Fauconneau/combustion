@@ -3,7 +3,6 @@
 use {fehler::throws, ron::Error, combustion::{*, Property::*}};
 
 #[throws] fn main() {
-	use {model::Troe, system::{NASA7, RateConstant}, reaction::Model::*};
 	let system = convert::system!("CH4+O2.ron");
 	let state = Simulation::new(include_str!("../CH4+O2.ron"))?.state;
 	println!("{:?}", system.rate::<{Volume}>(&state));

@@ -12,7 +12,7 @@ use num::log;
 pub const K : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
 
-#[derive(Debug)] pub struct NASA7(pub [[f64; 7]; 2]);
+#[derive(PartialEq, Debug, /*Eq*/)] pub struct NASA7(pub [[f64; 7]; 2]);
 impl NASA7 {
 	pub const reference_pressure : f64 = 101325. / NA; // 1 atm
 	pub const T_split : f64 = 1000.*K;
@@ -25,7 +25,7 @@ impl NASA7 {
 	//fn dT_Gibbs_free_energy(&self, T: f64) -> f64 { let a = self.a(T); (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T) } // dT((H-TS)/RT)
 }
 
-#[derive(Debug, Clone, Copy)] pub struct RateConstant {
+#[derive(PartialEq, /*Eq,*/ Debug, Clone, Copy)] pub struct RateConstant {
 	pub log_preexponential_factor: f64,
 	pub temperature_exponent: f64,
 	pub activation_temperature: f64

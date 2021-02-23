@@ -17,7 +17,7 @@ pub mod reaction; pub use reaction::{Reaction, Property};
 //use system::{RateConstant, NASA7};
 use system::*;
 
-#[allow(dead_code)] pub struct Species<const S: usize> {
+#[derive(PartialEq/*, Eq*/)] #[allow(dead_code)] pub struct Species<const S: usize> {
 	pub molar_mass: [f64; S],
 	pub thermodynamics: [NASA7; S],
 	pub diameter: [f64; S],
@@ -29,7 +29,7 @@ use system::*;
 	pub heat_capacity_ratio: [f64; S],
 }
 
-pub struct System<const S: usize, const R: usize> where [(); S-1]: {
+#[derive(PartialEq/*, Eq*/)] pub struct System<const S: usize, const R: usize> where [(); S-1]: {
 	pub species: Species<S>,
 	pub reactions: [Reaction<S>; R],
 	//pub transport_polynomials: TransportPolynomials<S>,

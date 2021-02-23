@@ -10,7 +10,7 @@ pub fn log_arrhenius(&RateConstant{log_preexponential_factor, temperature_expone
 	log_preexponential_factor + temperature_exponent*log(T) - activation_temperature*(1./T)
 }
 
-#[derive(Debug, Clone, Copy)] pub enum Model<const S: usize> {
+#[derive(PartialEq, /*Eq,*/ Debug, Clone, Copy)] pub enum Model<const S: usize> {
 	Elementary,
 	ThreeBody { efficiencies: [f64; S] },
 	PressureModification { efficiencies: [f64; S], k0: RateConstant },
@@ -41,7 +41,7 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 }
 
-#[derive(Clone, Copy, Debug)] pub struct Reaction<const S: usize> where [(); S-1]: {
+#[derive(PartialEq, /*Eq,*/ Clone, Copy, Debug)] pub struct Reaction<const S: usize> where [(); S-1]: {
 	pub reactants: [f64; S],
 	pub products: [f64; S],
 	pub net: [f64; S-1],
@@ -67,12 +67,15 @@ impl<const CONSTANT: Property, const S: usize> From<&super::State<S>> for State<
 	}
 }
 
-impl<const S: usize, const REACTIONS_LEN: usize> super::System<S, REACTIONS_LEN> where [(); S-1]:, [(); 2+S-1]: {
+impl<const S: usize, const REACTIONS_LEN: usize> System<S, REACTIONS_LEN> where [(); S-1]:, [(); 2+S-1]: {
 #[throws(as Option)]
 pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_constant/*pressure|volume*/: f64, u: &State<CONSTANT, S>) -> (Derivative<CONSTANT, S>, /*[[f64; 2+S-1]; 2+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
+		const S: usize = 53;
+		const SELF: /*Self*/System<S,325> = convert::system!("CH4+O2.ron");
 		let a = S-1;
-		let System{species: super::Species{molar_mass: W, thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = self;
+		//assert_eq!(self, SELF);
+		let /*Self*/System{species: super::Species{molar_mass: W, ref thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = SELF;
 		//let rcpV = 1. / V;
 		let (T, thermodynamic_state_variable, amounts) = (u[0], u[1]/*volume|pressure*/, u.suffix());
 		//let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));

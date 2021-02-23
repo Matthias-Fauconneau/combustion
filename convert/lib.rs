@@ -113,6 +113,6 @@ pub fn system(model: proc_macro::TokenStream) -> proc_macro::TokenStream {
 			}},
 		}
 	});
-	let system = System{species, /*transport_polynomials,*/ reactions};
-	format!("{:?}", system).parse().unwrap()
+	let system: proc_macro2::TokenStream = format!("{:?}", System{species, /*transport_polynomials,*/ reactions}).parse().unwrap();
+	quote::quote!({use {model::Troe, system::{NASA7, RateConstant}, crate::{Species, reaction::Model::*}}; #system}).into()
 }

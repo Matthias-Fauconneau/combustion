@@ -10,7 +10,9 @@ path= 'lib.rs'
 proc-macro= true
 
 [dependencies]
+proc-macro2= ''
 syn= ''
+quote= ''
 fehler= ''
 ron= ''
 model={path='../model'}
