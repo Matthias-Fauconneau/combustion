@@ -1,12 +1,10 @@
-use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}, fehler::{throws, throw}};
-use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}};
-use super::{NASA7, Troe, Property};
-
-#[derive(Debug, Clone, Copy)] pub struct RateConstant {
-	pub log_preexponential_factor: f64,
-	pub temperature_exponent: f64,
-	pub activation_temperature: f64
-}
+use std::convert::TryInto;
+use fehler::{throws, throw};
+use num::log;
+use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{Enumerate, IntoChain, map}, eval, vec::{eval, Dot}};
+use model::Troe;
+use system::{NASA7, RateConstant};
+use super::System;
 
 pub fn log_arrhenius(&RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: f64) -> f64 {
 	log_preexponential_factor + temperature_exponent*log(T) - activation_temperature*(1./T)
@@ -54,6 +52,8 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 	pub model: Model<S>,
 }
 
+#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
+
 #[derive(Debug)] pub struct State<const CONSTANT: Property, const S: usize>(pub [f64; 2+S-1]) where [(); 2+S-1]:;
 pub type Derivative<const CONSTANT: Property, const S: usize> = State<CONSTANT, S>;
 
@@ -63,17 +63,16 @@ impl<const CONSTANT: Property, const S: usize> std::ops::Deref for State<CONSTAN
 
 impl<const CONSTANT: Property, const S: usize> From<&super::State<S>> for State<CONSTANT, S> where [(); S-1]:, [(); 2+S-1]: {
 	fn from(super::State{temperature, pressure, volume, amounts}: &super::State<S>) -> Self {
-		use {std::convert::TryInto, iter::{array_from_iter as from_iter, into	::IntoChain}};
 		Self(from_iter([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure}}].chain(amounts[..S-1].try_into().unwrap():[_;S-1])))
 	}
 }
 
-impl<const S: usize> super::System<S> where [(); S-1]:, [(); 2+S-1]: {
-	#[throws(as Option)]
-	pub fn rate_and_jacobian<const CONSTANT: Property>(&self, state_constant/*pressure|volume*/: f64, u: &State<CONSTANT, S>) -> (Derivative<CONSTANT, S>, /*[[f64; 2+S-1]; 2+S-1]*/) {
+impl<const S: usize, const REACTIONS_LEN: usize> super::System<S, REACTIONS_LEN> where [(); S-1]:, [(); 2+S-1]: {
+#[throws(as Option)]
+pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_constant/*pressure|volume*/: f64, u: &State<CONSTANT, S>) -> (Derivative<CONSTANT, S>, /*[[f64; 2+S-1]; 2+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
 		let a = S-1;
-		let Self{species: super::Species{molar_mass: W, thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = self;
+		let System{species: super::Species{molar_mass: W, thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = self;
 		//let rcpV = 1. / V;
 		let (T, thermodynamic_state_variable, amounts) = (u[0], u[1]/*volume|pressure*/, u.suffix());
 		//let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));

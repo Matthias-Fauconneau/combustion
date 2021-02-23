@@ -2,7 +2,7 @@
 use serde::{Serialize, Deserialize};
 pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString)] pub enum Element { H, C, N, O, Ar }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString, Clone, Copy)] pub enum Element { H, C, N, O, Ar }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct State<'t> {
 	pub temperature: f64,
@@ -11,22 +11,22 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 	#[serde(borrow)] pub amount_proportions: Map<&'t str, f64>
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct NASA7 {
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)] pub struct NASA7 {
 	pub temperature_ranges: Box<[f64]>,
 	pub pieces: Box<[[f64; 7]]>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub enum Geometry {
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)] pub enum Geometry {
 	Atom,
 	Linear {#[serde(default,rename="polarizability_A3")] polarizability_Å3: f64, #[serde(default)] rotational_relaxation: f64},
 	Nonlinear {#[serde(default,rename="polarizability_A3")] polarizability_Å3: f64, #[serde(default)] rotational_relaxation: f64, #[serde(default)] permanent_dipole_moment_Debye: f64},
 }
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct Transport {
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)] pub struct Transport {
 	pub well_depth_K: f64,
 	#[serde(rename="diameter_A")] pub diameter_Å: f64,
 	pub geometry: Geometry,
 }
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct Specie {
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)] pub struct Specie {
 	pub composition: Map<Element, u8>,
 	pub thermodynamic: NASA7,
 	pub transport: Transport
@@ -40,7 +40,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)] pub struct Troe { pub A: f64, pub T3: f64, pub T1: f64, pub T2: f64 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub enum Model<'t> {
+#[derive(Serialize, Deserialize, Debug, PartialEq)] pub enum ReactionModel<'t> {
 	Elementary,
 	ThreeBody { #[serde(borrow)] efficiencies: Map<&'t str, f64> },
 	PressureModification { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant },
@@ -50,21 +50,21 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct Reaction<'t> {
 	#[serde(borrow)] pub equation: [Map<&'t str, u8>; 2],
 	pub rate_constant: RateConstant,
-	pub model: Model<'t>,
+	pub model: ReactionModel<'t>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct System<'t> {
-	pub time_step: f64,
-	#[serde(borrow)] pub state: State<'t>,
+#[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct Model<'t> {
 	#[serde(borrow)] pub species: Map<&'t str, Specie>,
 	#[serde(borrow)] pub reactions: Box<[Reaction<'t>]>,
+	#[serde(borrow)] pub state: State<'t>,
+	pub time_step: f64,
 }
 
-impl System<'t> { pub fn new(system: &'t [u8]) -> ron::Result<Self> { ron::de::from_bytes::<Self>(&system) } }
+impl Model<'t> { pub fn new(source: &'t [u8]) -> ron::Result<Self> { ron::de::from_bytes::<Self>(&source) } }
 
 // Compile-time selected default system
 pub fn default() -> std::io::Result<Vec<u8>> {
-	let system = env!("SYSTEM",
-		"environment variable `SYSTEM` not defined, for example set SYSTEM=CH4+O2 to optimize build for CH4+O2.ron system (currently specializes for number of species)");
-	std::fs::read(format!("{}.ron", system))
+	let source = env!("MODEL",
+		"environment variable `MODEL` not defined, for example set MODEL=CH4+O2 to optimize build for CH4+O2.ron model");
+	std::fs::read(format!("{}.ron", source))
 }

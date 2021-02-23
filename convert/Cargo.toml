@@ -1,21 +1,24 @@
 [package]
-name= 'combustion'
-description= 'Chemical reaction kinetics'
+name= 'convert'
+description= 'Procedural macro to parse a model into a system'
 version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
+[lib]
+path= 'lib.rs'
+proc-macro= true
+
 [dependencies]
+syn= ''
 fehler= ''
 ron= ''
-model={path='model'}
-system={path='system'}
-convert={path='convert'}
+model={path='../model'}
+system={path='../system'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
 unwrap= ''
-nalgebra= ''
 strum= ''
 strum_macros= ''
