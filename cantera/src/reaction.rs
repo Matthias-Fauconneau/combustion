@@ -1,27 +1,21 @@
-use super::*;
-#[throws] pub fn check<const S: usize>(Simulation{species_names, system, pressure_R, time_step, state: initial_state, ..}: &Simulation<S>)
-where [(); S-1]:, [(); 1+S-1]: {
-	use {iter::{Prefix, Suffix}, std::convert::TryInto, itertools::Itertools};
+use {iter::{Prefix, Suffix}, std::convert::TryInto, itertools::Itertools, super::*, combustion::reaction};
 
-	assert!(System::<S>::volume == 1.);
-	// Bulk amount is reconstructed by holding total amount constant (i.e errors transmutes bulk amount instead of violating matter conservation)
-	let total_amount = initial_state.amounts.iter().sum();
+#[throws] pub fn check<const S: usize>(Simulation{species_names, system, time_step, mut state, ..}: &Simulation<S>) where [(); S-1]:, [(); 2+S-1]: {
 	let mut time = 0.;
-	let mut state: [f64; 1+S-1] = (*initial_state).into();
-	let mut cvode = cvode::CVODE::new(&state);
-	loop {
+	const CONSTANT : Property = {use Property::*; Volume}; //
+	let mut cvode = cvode::CVODE::new(&((&state).into():reaction::State<CONSTANT,S>));
+	while std::hint::black_box(true) {
 		let next_time = time + *time_step;
 		let (equations, equilibrium_constants, [forward, reverse], ref cantera_rate, ref cantera_state/*, _cantera_concentrations*/) = {
 			let initial_time = time;
-			let ref initial_state = State::<S>::new(total_amount, &state);
-			let mole_proportions = format!("{}", species_names.iter().zip(&initial_state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
+			let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
 			let mole_proportions = std::ffi::CString::new(mole_proportions)?;
 			use std::ptr::null;
-			let mut pressure = pressure_R * (kB*NA);
-			let mut temperature = initial_state.temperature;
-			//let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations) = (0, null(), null(), null());
-			let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations, mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse])
-				= (0, null(), null(), null(), 0, null(), null(), [null(); 2]);
+			let mut pressure = state.pressure / NA;
+			let volume = state.volume;
+			let mut temperature = state.temperature / K;
+			let (mut species_len, mut specie_names, mut net_productions_rates, mut concentrations,
+						mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse]) = (0, null(), null(), null(), 0, null(), null(), [null(); 2]);
 			unsafe {
 				cantera::reaction(&mut pressure, &mut temperature, mole_proportions.as_ptr(), &mut species_len, &mut specie_names,
 																		time-initial_time, &mut net_productions_rates, &mut reactions_len, &mut equations, &mut equilibrium_constants, &mut forward, &mut reverse,
@@ -34,27 +28,29 @@ where [(); S-1]:, [(); 1+S-1]: {
 					iter::box_collect(std::slice::from_raw_parts(equations, reactions_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())),
 					iter::box_collect(std::slice::from_raw_parts(equilibrium_constants, reactions_len).iter().zip(system.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet))),
 					[forward, reverse].map(|r| iter::box_collect(std::slice::from_raw_parts(r, reactions_len).iter().map(|c| c*1000.))),
-					iter::vec::eval(net_productions_rates, |dtC| dtC * System::<S>::volume)[0..S-1].try_into()?:[_;S-1],
-					State{temperature, amounts: iter::vec::eval(concentrations, |c| c * System::<S>::volume)}
-					//concentrations
+					(net_productions_rates /* *volume*/)[0..S-1].try_into()?:[_;S-1],
+					State{temperature, pressure, volume, amounts: concentrations}
 				)
 			}
 		};
-		let (rate, /*jacobian*/) = system.rate/*and_jacobian*/(*pressure_R, &state).unwrap();
+		let cantera_reactions = iter::box_collect(iter::zip!(equations, equilibrium_constants, forward, reverse).into_iter());
+		for (index, reaction) in cantera_reactions.iter().enumerate() {
+			let net = reaction.2-reaction.3;
+			if net != 0. { println!("{} {:.0e}", index, net); }
+		}
+		let rate = system.rate::<CONSTANT>(&state);
 		if false {
-			let other_reactions = iter::box_collect(iter::zip!(equations, equilibrium_constants, forward, reverse).into_iter());
 			let reactions = {
 					let System{species: Species{thermodynamics, ..}, reactions, ..} = &system;
-					let ref state = State::<S>::new(total_amount, &state);
-					let State{temperature, amounts} = state;
-					let T = *temperature;
+					let State{volume, temperature, amounts, ..} = state;
+					let T = temperature;
 					use num::log;
-					let logP0_RT = log(NASA7::reference_pressure_R) - log(T);
+					let logP0_RT = log(NASA7::reference_pressure) - log(T);
 					use iter::{vec::eval, eval};
 					let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));
 					let ref H_T = eval(H.prefix(), |H| H/T);
 					let ref G = eval!(thermodynamics.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
-					let ref concentrations = eval(amounts, |&n| n / System::<S>::volume);
+					let ref concentrations = eval(amounts, |n| n / volume);
 					let ref log_concentrations = eval(concentrations, |&c| f64::ln(c));
 					iter::box_collect(reactions.iter().map(move |Reaction{reactants, products, rate_constant, model, net, Σnet, ..}| {
 							let equation = format!("{}", [reactants, products].iter().format_with(" <=> ", |side, f| {
@@ -79,7 +75,7 @@ where [(); S-1]:, [(); 1+S-1]: {
 							(equation, f64::exp(log_equilibrium_constant), c*Rf, c*Rr)
 					}))
 			};
-			for (a, b) in reactions.iter().zip(other_reactions.iter()) {
+			for (a, b) in reactions.iter().zip(cantera_reactions.iter()) {
 					let ref e = a.0;
 					//let b = other_reactions.into_iter().find(|(k,_,_,_)| k==&e).expect(&format!("{} {}", &e, other_reactions.iter().map(|b| b.0).format(" ")));
 					assert_eq!(e, &b.0.replace(" =>"," <=>"));
@@ -100,33 +96,33 @@ where [(); S-1]:, [(); 1+S-1]: {
 				(column, width)
 			}).collect()
 		}
-		fn _print<const R: usize>(table: &[([String; R], usize)]) {
+		fn print<const R: usize>(table: &[([String; R], usize)]) {
 			for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); }
 		}
 
 		let rate: &[_; S-1] = rate.suffix();
 		//let _ = &table(species_names.prefix(), rate, cantera_rate.prefix());
-		_print(&table(species_names.prefix(), rate, cantera_rate.prefix()));
+		print(&table(species_names.prefix(), rate, cantera_rate.prefix()));
 		fn absolute_error<const N: usize>(a: &[f64; N], b: &[f64; N]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }
 		fn relative_error<const N: usize>(a: &[f64; N], b: &[f64; N]) -> f64 { a.iter().zip(b).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
 		{
 			let abs = absolute_error(rate, cantera_rate);
 			let rel = relative_error(rate, cantera_rate);
 			println!("rate {:e} {:e}", abs, rel);
-			assert!(abs < 1e-8 && rel < 0.0000002, "rate {:e} {:e}", abs, rel);
+			assert!(abs < 1e-8 && rel < 4e-4, "rate {:e} {:e}", abs, rel);
 		}
 
 		while time < next_time {
-			(time, state) = cvode.step(move |u| system.rate/*and_jacobian*/(*pressure_R, u).map(|(rate, /*jacobian*/)| rate), next_time, &state); //dbg!(time);
+			let (next_time, next_state) = cvode.step(move |u| system.rate_and_jacobian::<CONSTANT>(state.constant::<CONSTANT>(), &reaction::State(*u)).map(|(rate, /*jacobian*/)| rate.0), next_time, &((&state).into():reaction::State<CONSTANT,S>)); //dbg!(time);
+			(time, state) = (next_time, State::new(state.amounts.iter().sum(), state.constant::<CONSTANT>(), &reaction::State::<CONSTANT, S>(next_state)))
 		}
 		//let next_time = time;
 		assert_eq!(time, next_time);
 		println!("t {}", time);
 
 		{
-			let ref state = State::<S>::new(total_amount, &state);
-			//println!("T {} {} {:e}", state.temperature, cantera_state.temperature, num::relative_error(state.temperature, cantera_state.temperature));
-			//print(&table(species_names, &state.amounts, &cantera_state.amounts));
+			println!("T {} {} {:e}", state.temperature, cantera_state.temperature, num::relative_error(state.temperature, cantera_state.temperature));
+			print(&table(species_names, &state.amounts, &cantera_state.amounts));
 			{
 				let abs = absolute_error(&state.amounts, &cantera_state.amounts);
 				let rel = relative_error(&state.amounts, &cantera_state.amounts);
@@ -135,7 +131,6 @@ where [(); S-1]:, [(); 1+S-1]: {
 			}
 		}
 
-		state = (*cantera_state).into(); // Check rates along cantera trajectory
-		break;
+		state = *cantera_state; // Check rates along cantera trajectory
 	}
 }

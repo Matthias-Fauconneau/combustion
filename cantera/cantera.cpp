@@ -17,7 +17,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 													double*& forward_rates_of_progress_data,
 													double*& reverse_rates_of_progress_data,
 											double state_time,
-											double*& concentrations_data) try {
+											double*& concentrations_data) {//try {
 	using namespace Cantera;
 	auto mechanism = newSolution("gri30.yaml", "gri30", "mixture-averaged"/*Multi*/);
 	auto kinetics = mechanism->kinetics();
@@ -27,7 +27,8 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	species_data = species->data();
 	auto phase = mechanism->thermo();
 	phase->setState_TPX(temperature, pressure, mole_proportions);
-	IdealGasConstPressureReactor reactor;
+	IdealGasReactor reactor;
+	//IdealGasConstPressureReactor reactor;
 	reactor.insert(mechanism);
 	ReactorNet system;
 	//system.setTolerances(relative_tolerance, absolute_tolerance);
@@ -65,7 +66,7 @@ void reaction(double& pressure, double& temperature, const char* mole_proportion
 	concentrations->resize(kinetics->nTotalSpecies());
 	phase->getConcentrations(concentrations->data());
 	concentrations_data = concentrations->data();
-} catch (std::exception& err) { std::cerr << err.what() << std::endl; }
+} //catch (std::exception& err) { std::cerr << err.what() << std::endl; }
 
 extern "C"
 void transport(double pressure, double temperature, const char* mole_proportions, double& viscosity, double& thermal_conductivity, size_t& species_len, const char**& species_data, double*& mixture_averaged_thermal_diffusion_coefficients_data) try {

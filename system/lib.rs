@@ -7,7 +7,8 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct State<'t> {
 	pub temperature: f64,
 	pub pressure: f64,
-	#[serde(borrow)] pub mole_proportions: Map<&'t str, f64>
+	pub volume: f64,
+	#[serde(borrow)] pub amount_proportions: Map<&'t str, f64>
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct NASA7 {

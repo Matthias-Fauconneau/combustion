@@ -35,7 +35,7 @@ const D : usize = 4;
 }
 impl<const S: usize> Species<S> {
 	pub fn transport_polynomials(&self) -> TransportPolynomials<S> {
-		use super::{kB, NA};
+		use super::{K, NA};
 		/*const light_speed : f64 = 299_792_458.;
 		const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
 		const ε0 : f64 = 1./(light_speed*light_speed*μ0); // F/m (Farad=s⁴A²/(m²kg)*/
@@ -51,7 +51,7 @@ impl<const S: usize> Species<S> {
 			}
 		};
 		let interaction_well_depth = |a, b| sqrt(well_depth_J[a]*well_depth_J[b]) * sq(χ(a, b));
-		let T⃰ = |a, b, T| kB * T / interaction_well_depth(a, b);
+		let T⃰ = |a, b, T| T / interaction_well_depth(a, b);
 		//let reduced_dipole_moment = |a, b| permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.)); // ̃δ⃰
 		let reduced_diameter = |a,b| (diameter[a] + diameter[b])/2. * pow(χ(a, b), -1./6.);
 		let reduced_dipole_moment = |a, b| 1./4. * permanent_dipole_moment[a]*permanent_dipole_moment[b] / (interaction_well_depth(a,b) * cb(reduced_diameter(a,b))) * χ(a,b); // ̃δ⃰
@@ -74,31 +74,31 @@ impl<const S: usize> Species<S> {
 			image
 		};
 		let Ω⃰22 = |a, b, T| collision_integral(&Ω⃰22, a, b, T);
-		let viscosity = |a, T| 5./16. * sqrt(π * molar_mass[a]/NA * kB * T) / (Ω⃰22(a, a, T) * π * sq(diameter[a]));
+		let viscosity = |a, T| 5./16. * sqrt(π * molar_mass[a]/NA * T) / (Ω⃰22(a, a, T) * π * sq(diameter[a]));
 		//amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(viscosity(a,temperature)); } );
 		let reduced_mass = |a, b| molar_mass[a]/NA * molar_mass[b]/NA / (molar_mass[a]/NA + molar_mass[b]/NA); // reduced_mass (a,a) = W/2NA
 		let Ω⃰11 = |a, b, T| Ω⃰22(a, b, T)/collision_integral(&A⃰, a, b, T);
 		let thermal_conductivity = |a: usize, T| {
-			let self_diffusion_coefficient = 3./16. * sqrt(2.*π/reduced_mass(a,a)) * pow(kB*T, 3./2.) / (π * sq(diameter[a]) * Ω⃰11(a, a, T));
-			let f_internal = molar_mass[a]/NA/(kB*T) * self_diffusion_coefficient / viscosity(a, T);
+			let self_diffusion_coefficient = 3./16. * sqrt(2.*π/reduced_mass(a,a)) * pow(T, 3./2.) / (π * sq(diameter[a]) * Ω⃰11(a, a, T));
+			let f_internal = molar_mass[a]/NA/T * self_diffusion_coefficient / viscosity(a, T);
 			let T⃰ = T⃰ (a, a, T);
 			let fz_T⃰ = 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
 			// Scaling factor for temperature dependence of rotational relaxation: Kee, Coltrin [2003:12.112, 2017:11.115]
-			let fz_298 = (|T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰)(kB * 298. / well_depth_J[a]);
+			let fz_298 = (|T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰)(298.*K / well_depth_J[a]);
 			let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz_298 / fz_T⃰ + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
 			let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[a]/(3./2.));
 			let f_rotation = f_internal * (1. + c1);
 			let Cv_internal = thermodynamics[a].specific_heat_capacity(T) - 5./2. - internal_degrees_of_freedom[a];
-			(viscosity(a, T)/(molar_mass[a]/NA))*kB*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
+			(viscosity(a, T)/(molar_mass[a]/NA))*K*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 		};
 		//amounts.enumerate().filter(|(_, &n)| n > 0.).for_each(|(a, _)| { dbg!(thermal_conductivity(a,temperature)); } );
 		let binary_thermal_diffusion_coefficient = |a, b, T| {
-			3./16. * sqrt(2.*π/reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(reduced_diameter(a,b))*Ω⃰11(a, b, T))
+			3./16. * sqrt(2.*π/reduced_mass(a,b)) * pow(T, 3./2.) / (π*sq(reduced_diameter(a,b))*Ω⃰11(a, b, T))
 		};
 
 		// polynomial fit in the temperature range for every specie (pairs)
 		//for a in 0..S {use collision_integrals::*; dbg!(header_T⃰[header_T⃰.len()-2] *  well_depth_J[a] / kB); }
-		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., /*3000.*/1000.];
+		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300.*K, /*3000.*/1000.*K];
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
 		let sqrt_viscosity_T14: [[_; D]; S] = generate(|a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(viscosity(a,T))/sqrt(sqrt(T)))).collect();
@@ -116,7 +116,7 @@ impl<const S: usize> TransportPolynomials<S> {
 
 #[derive(Debug)] pub struct Transport<const S: usize> {pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: [f64; S] }
 impl<const S: usize> System<S> where [(); S-1]: {
-	pub fn transport(&self, pressure_R: f64, State{temperature, amounts}: &State<S>) -> Transport<S> {
+	pub fn transport(&self, State{temperature, pressure, volume, amounts}: &State<S>) -> Transport<S> {
 		let Self{species: Species{molar_mass, ..}, transport_polynomials, ..} = self;
 		let T = *temperature;
 		let viscosity = amounts.dot(generate(|k|
@@ -126,7 +126,7 @@ impl<const S: usize> System<S> where [(); S-1]: {
 				(sqrt(8.) * sqrt(1. + molar_mass[k]/molar_mass[j])))
 			))
 		);
-		let amount = pressure_R / T * System::<S>::volume;
+		let amount = pressure / T * volume;
 		{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{:e}", e);}
 		let thermal_conductivity = 1./2. * (amounts.dot(generate(|k| transport_polynomials.thermal_conductivity(k, T))) / amount + amount / amounts.dot(generate(|k| 1. / transport_polynomials.thermal_conductivity(k, T))));
 		let mixture_averaged_thermal_diffusion_coefficients = generate(|k| (1. - amounts[k]/amount) / amounts.dot(generate(|j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))).collect();

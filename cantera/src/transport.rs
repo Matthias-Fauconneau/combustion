@@ -1,6 +1,6 @@
 use super::*;
-#[allow(dead_code)] #[throws] pub fn check<const S: usize>(Simulation{system, state, pressure_R, species_names, ..}: &Simulation<S>) where [(); S-1]: {
-	let transport = system.transport(*pressure_R, &state);
+#[allow(dead_code)] #[throws] pub fn check<const S: usize>(Simulation{system, state, species_names, ..}: &Simulation<S>) where [(); S-1]: {
+	let transport = system.transport(state);
 	let cantera = {
 		use itertools::Itertools;
 		let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
@@ -8,7 +8,7 @@ use super::*;
 		use std::ptr::null;
 		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut mixture_averaged_thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());
 		unsafe {
-			let pressure = pressure_R * (kB*NA);
+			let pressure = state.pressure / NA;
 			cantera::transport(pressure, state.temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names,
 																		&mut mixture_averaged_thermal_diffusion_coefficients);
 			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
