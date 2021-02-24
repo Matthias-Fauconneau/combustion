@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 #[allow(unused_imports)] use fehler::{throws, throw};
 use num::log;
-use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{Enumerate, IntoChain, map}, eval, vec::{eval, Dot}};
+use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoChain, map}, eval, vec::{eval, Dot}};
 use model::Troe;
 use system::{NASA7, RateConstant};
 use super::System;
 
-pub fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f64) -> f64 {
+#[inline] pub fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f64) -> f64 {
 	log_preexponential_factor + temperature_exponent*log(T) - activation_temperature*(1./T)
 }
 
@@ -18,7 +18,7 @@ pub fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponen
 }
 
 impl<const S: usize> Model<S> {
-pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f64 {
+#[inline] pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f64 {
 	match self {
 		Self::Elementary => 1.,
 		Self::ThreeBody{efficiencies} => efficiencies.dot(concentrations),
@@ -42,14 +42,14 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 }
 
 #[derive(PartialEq, /*Eq,*/ Clone, Copy, Debug)] pub struct Reaction<const S: usize> where [(); S-1]: {
+	pub model: Model<S>,
+	pub rate_constant: RateConstant,
 	pub reactants: [f64; S],
 	pub products: [f64; S],
 	pub net: [f64; S-1],
 	pub Σreactants: f64,
 	pub Σproducts: f64,
 	pub Σnet: f64,
-	pub rate_constant: RateConstant,
-	pub model: Model<S>,
 }
 
 #[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
@@ -70,7 +70,7 @@ impl<const CONSTANT: Property, const S: usize> From<&super::State<S>> for State<
 impl<const S: usize, const REACTIONS_LEN: usize> System<S, REACTIONS_LEN> where [(); S-1]:, [(); 2+S-1]: {
 #[throws(as Option)]
 pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_constant/*pressure|volume*/: f64, u: &State<CONSTANT, S>) -> (Derivative<CONSTANT, S>, /*[[f64; 2+S-1]; 2+S-1]*/) {
-		use iter::into::{IntoMap, Sum};
+		use iter::into::Sum;
 		const S: usize = 53;
 		const REACTIONS_LEN: usize = 325;
 		const SELF: /*Self*/System<{S}, {REACTIONS_LEN}> = convert::system!("CH4+O2.ron");
@@ -118,14 +118,21 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 		use crunchy::unroll;
 		debug_assert_eq!(REACTIONS_LEN, 325); unroll! { for reaction_index in 0..325 {
 			const reaction: Reaction<{S}> = reactions[reaction_index];
-			let Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} = reaction;
+			//let Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} = reaction;
+			const model: Model<S> = reaction.model;
+			const rate_constant: RateConstant = reaction.rate_constant;
+			const reactants: [f64; S] = reaction.reactants;
+			const products: [f64; S] = reaction.products;
+			const net: [f64; S-1] = reaction.net;
+			const Σnet: f64 = reaction.Σnet;
 			let log_kf = log_arrhenius(/*const*/ rate_constant, T);
 			//assert!(log_kf.is_finite(), "{:?}", (rate_constant, T));
-			let c = model.efficiency(T, concentrations, log_kf);
-			let mask = |mask, v| iter::zip!(mask, v).map(|(mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
-			let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
+			let c = /*const*/ model.efficiency(T, concentrations, log_kf);
+			//fn dot<const N: usize, const a: [f64; N]>(b: [f64; N]) { let sum = 0.; unroll! { for index in 0..N { if a[index] != 0. { sum += a[index]*b[index] } } sum } }
+			macro_rules! dot { ($a:ident, $b:ident) => ({ let sum = 0.; debug_assert_eq!(S, 53); unroll! { for index in 0..53 { if $a[index] != 0. { sum += $a[index]*$b[index] } } } sum }) }
+			let Rf = f64::exp(dot!(reactants, log_concentrations) + log_kf);
 			let log_equilibrium_constant = -net.dot(G_RT) + Σnet*logP0_RT;
-			let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
+			let Rr = f64::exp(dot!(products, log_concentrations) + log_kf - log_equilibrium_constant);
 			//assert!(Rf.is_finite() && Rr.is_finite(), "{:?}", (Rf, Rr, reactants, products, log_concentrations));
 			let R = Rf - Rr;
 			let cR = c * R;
@@ -149,7 +156,7 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 			let dnR = map(νfRfνrRr.prefix(), |νfRfνrRrj| rcp_amount * (νfRfνrRrj - νfRfνrRr[a]));
 			let RdnccdnR : [_; S-1] = eval!(dnc, dnR; |dnc,dnR| R*dnc + c*dnR);*/
 
-			for (specie, ν) in net.enumerate() {
+			/*for (specie, ν) in net.enumerate() {
 				// dtω = Σ ν c R
 				dtω[specie] += ν * cR;
 				/*// dT(ω̇̇̇̇̇̇̇̇̇̇) = Σ ν.(R.dT(c)+c.dT(R))
@@ -158,7 +165,8 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 				dVω[specie] += ν * RdVccdVR;
 				// dn(ω) = Σ ν.(R.dn(c)+c.dn(R))
 				for (dnω, RdnccdnR) in zip!(&mut dnω[specie], RdnccdnR) { *dnω += ν * RdnccdnR; }*/
-			}
+			}*/
+			debug_assert_eq!(S-1, 52); unroll! { for specie in 0..52 { if net[specie] != 0. { dtω[specie] += net[specie] * cR; } } }
 		}}
 		let dtω = *dtω;
 
