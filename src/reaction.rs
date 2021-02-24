@@ -1,12 +1,12 @@
 use std::convert::TryInto;
-use fehler::{throws, throw};
+#[allow(unused_imports)] use fehler::{throws, throw};
 use num::log;
 use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{Enumerate, IntoChain, map}, eval, vec::{eval, Dot}};
 use model::Troe;
 use system::{NASA7, RateConstant};
 use super::System;
 
-pub fn log_arrhenius(&RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: f64) -> f64 {
+pub fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f64) -> f64 {
 	log_preexponential_factor + temperature_exponent*log(T) - activation_temperature*(1./T)
 }
 
@@ -23,11 +23,11 @@ pub fn efficiency(&self, T: f64, concentrations: &[f64; S], log_k_inf: f64) -> f
 		Self::Elementary => 1.,
 		Self::ThreeBody{efficiencies} => efficiencies.dot(concentrations),
 		Self::PressureModification{efficiencies, k0} => {
-			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(/*const*/ *k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
 			Pr / (1.+Pr)
 		}
 		Self::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
-			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
+			let Pr = efficiencies.dot(concentrations) * f64::exp(log_arrhenius(/*const*/ *k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
 			let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
 			let log10Fcent = f64::log10(Fcent);
 			let C = -0.4-0.67*log10Fcent;
@@ -72,10 +72,15 @@ impl<const S: usize, const REACTIONS_LEN: usize> System<S, REACTIONS_LEN> where 
 pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_constant/*pressure|volume*/: f64, u: &State<CONSTANT, S>) -> (Derivative<CONSTANT, S>, /*[[f64; 2+S-1]; 2+S-1]*/) {
 		use iter::into::{IntoMap, Sum};
 		const S: usize = 53;
-		const SELF: /*Self*/System<S,325> = convert::system!("CH4+O2.ron");
+		const REACTIONS_LEN: usize = 325;
+		const SELF: /*Self*/System<{S}, {REACTIONS_LEN}> = convert::system!("CH4+O2.ron");
 		let a = S-1;
 		//assert_eq!(self, SELF);
-		let /*Self*/System{species: super::Species{molar_mass: W, ref thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = SELF;
+		//const /*Self*/System{species: super::Species{molar_mass: W, ref thermodynamics, heat_capacity_ratio: γ,..}, reactions, ..} = SELF;
+		const W: [f64; S] = SELF.species.molar_mass;
+		const thermodynamics: &[NASA7; S] = &SELF.species.thermodynamics;
+		const heat_capacity_ratio: [f64; S] = SELF.species.heat_capacity_ratio;
+		const reactions: [Reaction<S>; REACTIONS_LEN] = SELF.reactions;
 		//let rcpV = 1. / V;
 		let (T, thermodynamic_state_variable, amounts) = (u[0], u[1]/*volume|pressure*/, u.suffix());
 		//let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));
@@ -85,10 +90,10 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 			let Cp = eval(thermodynamics, |s:&NASA7| s.specific_heat_capacity(T));
 			{use Property::*; match CONSTANT {
 				Pressure => (*H_T, Cp, state_constant, thermodynamic_state_variable),
-				Volume => (eval!(H_T, γ.prefix(); |h_T, γ| h_T / γ), eval!(Cp, γ; |cp, γ| cp / γ), thermodynamic_state_variable, state_constant),
+				Volume => (eval!(H_T, heat_capacity_ratio.prefix(); |h_T, γ| h_T / γ), eval!(Cp, heat_capacity_ratio; |cp, γ| cp / γ), thermodynamic_state_variable, state_constant),
 			}}
 		};
-		assert!(T>0.);
+		//assert!(T>0.);
 		let C = pressure / T; // n/V = P/kT
 		//let rcp_C = 1. / C;
 		//let rcp_amount = rcpV * rcp_C;
@@ -96,26 +101,32 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 		let ref G_RT = eval!(thermodynamics.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
 		//let ref dT_G = eval!(thermodynamics.prefix(); |s| s.dT_Gibbs_free_energy(T));
 		//let ref amounts = eval(amounts, |n| n.max(0.));
-		for &n in amounts { assert!(n>=0.); }
+		//for &n in amounts { assert!(n>=0.); }
 		let concentrations : [_; S-1] = eval(amounts, |&n| n/*.max(0.)*/ / volume); // Skips most abundant specie (last index) (will be deduced from conservation)
 		let Ca = C - Sum::<f64>::sum(concentrations);
-		if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
-		assert!(Ca>0.,"{:?}", (C, Sum::<f64>::sum(concentrations), concentrations));
+		//if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
+		//assert!(Ca>0.,"{:?}", (C, Sum::<f64>::sum(concentrations), concentrations));
 		let ref concentrations = from_iter(concentrations.chain([Ca]));
-		let ref log_concentrations = eval(concentrations, |&x| if x==0. { -f64::INFINITY } else { assert!(x>0.); log(x) }); // Explicit to avoid signal
+		let ref log_concentrations = eval(concentrations, |&x| log(x));
+		//let ref log_concentrations = eval(concentrations, |&x| if x==0. { -f64::INFINITY } else { /*assert!(x>0.);*/ log(x) }); // Explicit to avoid signal
 		let ref mut dtω = [0.; S-1];
 		/*let mut dTω = [0.; S-1];
 		let mut dVω = [0.; S-1];
 		let mut dnω = [[0.; S-1]; S-1];*/
-		for Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} in reactions.iter() {
-			let log_kf = log_arrhenius(rate_constant, T);
-			assert!(log_kf.is_finite(), "{:?}", (rate_constant, T));
+		//for Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} in reactions.iter() {
+		//for reaction_index in 0..REACTIONS_LEN {
+		use crunchy::unroll;
+		debug_assert_eq!(REACTIONS_LEN, 325); unroll! { for reaction_index in 0..325 {
+			const reaction: Reaction<{S}> = reactions[reaction_index];
+			let Reaction{reactants, products, net, /*Σreactants, Σproducts,*/ Σnet, rate_constant/*: rate_constant@RateConstant{temperature_exponent, activation_temperature, ..}*/, model, ..} = reaction;
+			let log_kf = log_arrhenius(/*const*/ rate_constant, T);
+			//assert!(log_kf.is_finite(), "{:?}", (rate_constant, T));
 			let c = model.efficiency(T, concentrations, log_kf);
-			let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
+			let mask = |mask, v| iter::zip!(mask, v).map(|(mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
 			let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
 			let log_equilibrium_constant = -net.dot(G_RT) + Σnet*logP0_RT;
 			let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
-			assert!(Rf.is_finite() && Rr.is_finite(), "{:?}", (Rf, Rr, reactants, products, log_concentrations));
+			//assert!(Rf.is_finite() && Rr.is_finite(), "{:?}", (Rf, Rr, reactants, products, log_concentrations));
 			let R = Rf - Rr;
 			let cR = c * R;
 
@@ -148,14 +159,14 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 				// dn(ω) = Σ ν.(R.dn(c)+c.dn(R))
 				for (dnω, RdnccdnR) in zip!(&mut dnω[specie], RdnccdnR) { *dnω += ν * RdnccdnR; }*/
 			}
-		}
+		}}
 		let dtω = *dtω;
 
 		let rcp_ΣCCc = 1./concentrations.dot(Cc);
 		let dtT_T = - rcp_ΣCCc * dtω.dot(E_T);
-		assert!(dtT_T.is_finite(), "{:?}", (dtT_T, dtω, E_T));
+		//assert!(dtT_T.is_finite(), "{:?}", (dtT_T, dtω, E_T));
 		let R_S_Tdtn = T / pressure * map(W.prefix(), |w| 1. - w/W[a]).dot(dtω); // R/A Tdtn (constant pressure: A=V, constant volume: A=P)
-		assert!(R_S_Tdtn.is_finite(), "{}", R_S_Tdtn);
+		//assert!(R_S_Tdtn.is_finite(), "{}", R_S_Tdtn);
 		let dtS_S = R_S_Tdtn + dtT_T;
 		let dtn = eval(dtω, |dtω| dtω * volume);
 
@@ -177,8 +188,8 @@ pub fn rate_and_jacobian<const CONSTANT: Property>(/*const*/ &self, state_consta
 		for (k, dTdtn) in dTdtn.enumerate() { J[2+k][0] = dTdtn; }
 		let dndtn = generate(|k| generate(|l| V*dnω[l][k])):[[_;S-1];S-1]; // Transpose [l][k] -> [k][l]
 		for l in 0..S-1 { for (k, dndtn) in dndtn[l].enumerate() { J[2+k][l] = dndtn; } } // Transpose back*/
-		assert!(dtS_S.is_finite(), "{:?}",(dtS_S, rcp_ΣCCc, dtω, E_T));
-		for dtn in &dtn { assert!(dtn.is_finite()); }
+		//assert!(dtS_S.is_finite(), "{:?}",(dtS_S, rcp_ΣCCc, dtω, E_T));
+		//for dtn in &dtn { assert!(dtn.is_finite()); }
 		(State/*Derivative*/(from_iter([dtT_T*T, dtS_S*thermodynamic_state_variable].chain(dtn))), /*J*/)
 	}
 }

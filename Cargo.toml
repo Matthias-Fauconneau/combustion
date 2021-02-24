@@ -16,6 +16,5 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
 unwrap= ''
-nalgebra= ''
-strum= ''
-strum_macros= ''
+nalgebra= {optional= true, version=''}
+crunchy= {features=['limit_512'], version=''}

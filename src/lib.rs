@@ -1,8 +1,8 @@
 //#![feature(const_generics, const_generics_defaults, const_evaluatable_checked, array_methods, in_band_lifetimes, once_cell, map_into_keys_values, bindings_after_at, destructuring_assignment, trait_alias)]
 //#![feature(non_ascii_idents, type_ascription, once_cell, array_map)]
 #![feature(const_generics, type_ascription, non_ascii_idents, in_band_lifetimes, const_evaluatable_checked)]
-//#![allow(incomplete_features, mixed_script_confusables, unused_imports, uncommon_codepoints)]non_upper_case_globals
-#![allow(incomplete_features, confusable_idents, non_snake_case)]
+//#![allow(incomplete_features, mixed_script_confusables, unused_imports, uncommon_codepoints)]
+#![allow(incomplete_features, confusable_idents, non_snake_case, non_upper_case_globals)]
 use std::{convert::TryInto, ops::Deref};
 //use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
 //use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}};

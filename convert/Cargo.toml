@@ -22,5 +22,3 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
 unwrap= ''
-strum= ''
-strum_macros= ''
