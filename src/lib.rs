@@ -3,6 +3,7 @@
 #![feature(const_generics, type_ascription, non_ascii_idents, in_band_lifetimes, const_evaluatable_checked)]
 //#![allow(incomplete_features, mixed_script_confusables, unused_imports, uncommon_codepoints)]
 #![allow(incomplete_features, confusable_idents, non_snake_case, non_upper_case_globals)]
+
 use std::{convert::TryInto, ops::Deref};
 //use {std::f64::consts::PI as π, num::{sq, cb, sqrt, log, pow, powi}};
 //use iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoCopied, Enumerate, IntoChain, map}, zip, map, eval, vec::{self, eval, Dot, generate, Scale, Sub}};
@@ -11,35 +12,30 @@ use iter::{array_from_iter as from_iter, vec::eval, Suffix, into::{IntoCopied, I
 use linear_map::LinearMap as Map;
 use system::K;
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
-use model::{/*Map,*/ Element, Troe};
+use model::{/*Map,*/ Element, Troe};*/
+use system::{NA, K, Property};
 //mod transport; pub use transport::{TransportPolynomials, Transport};*/
-pub mod reaction; pub use reaction::{Reaction, Property};
+//pub mod reaction; //pub use reaction::{/*Reaction,*/ Property};
 //use system::{RateConstant, NASA7};
-use system::*;
+//use system::*;
 
-#[derive(PartialEq/*, Eq*/)] #[allow(dead_code)] pub struct Species<const S: usize> {
-	pub molar_mass: [f64; S],
-	pub thermodynamics: [NASA7; S],
-	pub diameter: [f64; S],
-	pub well_depth_J: [f64; S],
-	pub polarizability: [f64; S],
-	pub permanent_dipole_moment: [f64; S],
-	pub rotational_relaxation: [f64; S],
-	pub internal_degrees_of_freedom: [f64; S],
-	pub heat_capacity_ratio: [f64; S],
-}
-
-#[derive(PartialEq/*, Eq*/)] pub struct System<const S: usize, const R: usize> where [(); S-1]: {
+/*#[derive(PartialEq/*, Eq*/)] pub struct System<const S: usize, const R: usize> where [(); S-1]: {
 	pub species: Species<S>,
 	pub reactions: [Reaction<S>; R],
 	//pub transport_polynomials: TransportPolynomials<S>,
-}
+}*/
 
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct State<const S: usize> {
 	pub temperature: f64,
 	pub pressure: f64,
 	pub volume: f64,
 	pub amounts: [f64; S]
+}
+
+impl<const CONSTANT: Property, const S: usize> From<&State<S>> for system::State<CONSTANT, S> where [(); S-1]:, [(); 2+S-1]: {
+	fn from(State{temperature, pressure, volume, amounts}: &State<S>) -> Self {
+		Self(from_iter([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure}}].chain(amounts[..S-1].try_into().unwrap():[_;S-1])))
+	}
 }
 
 pub struct Simulation<'t, const S: usize> where [(); S-1]: {
@@ -75,7 +71,7 @@ impl<const S: usize /*= SPECIES_LEN*/> Simulation<'t, S> where [(); S-1]: {
 #[cfg(test)] mod test;
 
 impl<const S: usize> State<S> where [(); S-1]:, [(); 2+S-1]: {
-	pub fn new<const CONSTANT: Property>(total_amount: f64, thermodynamic_state_constant: f64, u: &reaction::State<CONSTANT, S>) -> Self {
+	pub fn new<const CONSTANT: Property>(total_amount: f64, thermodynamic_state_constant: f64, u: &system::State<CONSTANT, S>) -> Self {
 		let u = u.0;
 		let amounts: &[_; S-1] = u.suffix();
 		let (pressure, volume) = {use Property::*; match CONSTANT {
@@ -86,15 +82,15 @@ impl<const S: usize> State<S> where [(); S-1]:, [(); 2+S-1]: {
 	}
 	//pub fn constant<const CONSTANT: Property>(&Self{pressure, volume, ..}: &Self) -> f64 { // arbitrary_self_types
 	pub fn constant<const CONSTANT: Property>(&self) -> f64 { let Self{pressure, volume, ..} = self;
-		*{use reaction::Property::*; match CONSTANT {Pressure => pressure, Volume => volume}}
+		*{use Property::*; match CONSTANT {Pressure => pressure, Volume => volume}}
 	}
 }
 
-impl<const S: usize, const R: usize> System<S, R> where [(); S-1]:, [(); 2+S-1]: {
-	pub fn rate<const CONSTANT: Property>(/*const*/ &self, state: &State<S>) -> reaction::Derivative<CONSTANT, S> {
+/*impl<const S: usize, const R: usize> System<S, R> where [(); S-1]:, [(); 2+S-1]: {
+	pub fn rate<const CONSTANT: Property>(/*const*/ &self, state: &State<S>) -> system::Derivative<CONSTANT, S> {
 		self.rate_and_jacobian::<CONSTANT>(state.constant::<CONSTANT>(), &state.into()).unwrap().0
 	}
-}
+}*/
 
 impl<const S: usize> std::fmt::Display for State<S> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {

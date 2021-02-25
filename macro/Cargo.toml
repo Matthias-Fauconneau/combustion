@@ -1,6 +1,6 @@
 [package]
-name= 'convert'
-description= 'Procedural macro to parse a model into a system'
+name= 'macro'
+description= 'Custom macro language interpreter (currently hardcoded to yield dtω implementation)'
 version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'

@@ -10,11 +10,13 @@ fehler= ''
 ron= ''
 model={path='model'}
 system={path='system'}
-convert={path='convert'}
+macro={path='macro'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
 unwrap= ''
 nalgebra= {optional= true, version=''}
-crunchy= {features=['limit_512'], version=''}
+
+[patch.'https://github.com/Matthias-Fauconneau/num']
+num= {path= '../num'}
