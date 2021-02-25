@@ -13,7 +13,7 @@ fn dot<T: num::IsZero + num::IsOne + num::IsMinusOne + std::fmt::Debug/*, const 
 		//use proc_macro::quote;
 		if coefficient.is_zero() { None }
     else if coefficient.is_one() { Some(quote!(+ vector[$index])) }
-    else if coefficient.is_minus_one() { Some(quote!(+ vector[$index])) }
+    else if coefficient.is_minus_one() { Some(quote!(- vector[$index])) }
     else { let coefficient = literal(coefficient); Some(quote!(+ ($coefficient as f64) * vector[$index])) }
 	}).collect(): TokenStream;
 	let literal_N = literal(/*N*/coefficients.len());
@@ -52,9 +52,6 @@ fn efficiency(model: &Model) -> Expr/*fn<const S: usize>(T: f64, concentrations:
 		}
 	}
 }
-
-//#[proc_macro_attribute]
-//pub fn r#macro(_attribute: TokenStream, item: /*ItemFn*/TokenStream) -> /*ItemFn*/TokenStream {
 #[proc_macro]
 pub fn r#macro(ident: /*Ident*/TokenStream) -> /*ItemFn*/TokenStream {
 	let model = std::fs::read([&std::env::var("MODEL").unwrap(),".ron"].concat()).unwrap();
@@ -83,28 +80,14 @@ pub fn r#macro(ident: /*Ident*/TokenStream) -> /*ItemFn*/TokenStream {
 			let Rf = f64::exp($dot_reactants(log_concentrations) + log_k_inf);
 			let log_equilibrium_constant = -$dot_net(G_RT) + ($Σnet as f64)*logP0_RT;
 			let Rr = f64::exp($dot_products(log_concentrations) + log_k_inf - log_equilibrium_constant);
+			assert!(Rr.is_finite(), "{} {} {}", $dot_products(log_concentrations), log_k_inf, log_equilibrium_constant);
 			let R = Rf - Rr;
+			//assert!(R.is_finite(), "{} {}", Rf, Rr);
 			let cR = c * R;
+			//assert!(cR.is_finite(), "{} {}", c, R);
 			$accumulate/*(&mut dtω, cR)*/
 		}
 	}).collect(): TokenStream;
-	//use ::quote::ToTokens;
-	/*let mut iter = ident.into_iter();
-	let ident_len = iter.next().unwrap();
-	let ident_dtω = iter.next().unwrap();
-	quote!{
-		pub const $ident_len: usize = $len;
-		pub fn $ident_dtω(T: f64, logP0_RT: f64, G_RT: &[f64; $len-1], concentrations: &[f64; $len], log_concentrations: &[f64; $len]) -> [f64; $len-1] {
-			use {model::Troe, system::RateConstant};
-			fn log_arrhenius(::system::RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: ::system::RateConstant, T: f64) -> f64 {
-				log_preexponential_factor + temperature_exponent*num::log(T) - activation_temperature*(1./T)
-			}
-			let mut dtω = [0.; $len-1];
-			$reactions
-			dtω
-		}
-	}
-	//syn::parse_macro_input!(q as syn::ItemFn).into_token_stream().into()*/
 quote!{
 use {num::log, iter::{Prefix, Suffix, array_from_iter as from_iter, into::{IntoChain, map, Sum}, vec::{eval, Dot}, eval}};
 use system::{NASA7, RateConstant, Property, State, Derivative};
