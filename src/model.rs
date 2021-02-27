@@ -60,11 +60,4 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 	pub time_step: f64,
 }
 
-impl Model<'t> { pub fn new(source: &'t [u8]) -> ron::Result<Self> { ron::de::from_bytes::<Self>(&source) } }
-
-// Compile-time selected default system
-pub fn default() -> std::io::Result<Vec<u8>> {
-	let source = env!("MODEL",
-		"environment variable `MODEL` not defined, for example set MODEL=CH4+O2 to optimize build for CH4+O2.ron model");
-	std::fs::read(format!("{}.ron", source))
-}
+impl<'t> Model<'t> { pub fn new(source: &'t [u8]) -> ron::Result<Self> { ron::de::from_bytes::<Self>(&source) } }
