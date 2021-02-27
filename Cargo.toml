@@ -6,6 +6,7 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [dependencies]
+derive-more= ''
 fehler= ''
 ron= ''
 model={path='model'}
@@ -18,5 +19,5 @@ linear-map= {version='', features = ['serde_impl']}
 unwrap= ''
 nalgebra= {optional= true, version=''}
 
-[patch.'https://github.com/Matthias-Fauconneau/num']
-num= {path= '../num'}
+#[patch.'https://github.com/Matthias-Fauconneau/num']
+#num= {path= '../num'}
