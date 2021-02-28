@@ -10,6 +10,7 @@ derive_more= ''
 strum= ''
 strum_macros= ''
 fehler= ''
+error= {package='anyhow', version=''}
 ron= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}

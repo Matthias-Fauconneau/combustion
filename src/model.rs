@@ -1,4 +1,4 @@
-#![feature(non_ascii_idents, in_band_lifetimes)]#![allow(non_snake_case)]
+#![allow(non_snake_case)]
 use serde::{Serialize, Deserialize};
 pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString};
 
