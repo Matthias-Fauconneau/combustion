@@ -23,5 +23,6 @@ cranelift-object= ''
 target-lexicon= ''
 nalgebra= {optional= true, version=''}
 itertools= ''
-#[patch.'https://github.com/Matthias-Fauconneau/num']
-#num= {path= '../num'}
+cranelift-reader= ''
+cranelift-interpreter= ''
+capstone= '' #|iced-x86? (pure Rust)

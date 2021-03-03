@@ -230,7 +230,7 @@ impl std::fmt::Display for State {
 }
 
 use cranelift::prelude::{*, types::{I32, F32}};
-use cranelift_module::{Linkage, Module};
+#[allow(unused_imports)] use cranelift_module::{Linkage, Module};
 
 macro_rules! f {
 	[$f:ident $function:ident($arg0:expr)] => {{
@@ -367,16 +367,10 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 }
 
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>) {
-	//let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
-	//let mut module = cranelift_jit::JITModule::new(builder);
-  let isa_builder = isa::lookup(target_lexicon::Triple::host()).unwrap();
-	let mut flag_builder = settings::builder();
-	flag_builder.enable("is_pic").unwrap();
-	let isa = isa_builder.finish(settings::Flags::new(flag_builder));
-	let builder = cranelift_object::ObjectBuilder::new(isa, "rate".to_owned(), cranelift_module::default_libcall_names()).unwrap();
-	let mut module = cranelift_object::ObjectModule::new(builder);
-	let mut context = module.make_context();
+pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)+'static {
+	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
+	#[allow(unused_mut)] let mut module = cranelift_jit::JITModule::new(builder);
+  let mut context = module.make_context();
 	let PTR = module.target_config().pointer_type();
   let params = [("constant", F32), ("state", PTR), ("rate", PTR)];
 	context.func.signature.params = params.iter().map(|(_,r#type)| AbiParam::new(*r#type)).collect();
@@ -401,7 +395,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 	let mT = f![f fneg(T)];
 	let mrcpT = f![f fneg(rcpT)];
 	let Self{species: Species{molar_mass: W, thermodynamics, heat_capacity_ratio, ..}, reactions} = self;
-	let len = 3;
+	let len = 3;//self.len();
 	let a = thermodynamics.iter().map(|s| s.0[1])/*DEBUG*/.take(len).collect(): Box<_>;
 	let G_RT =
 		a.iter().map(|a| dot(
@@ -425,7 +419,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 		let c = model.efficiency(f, C, logT, rcpT, mT, mrcpT, concentrations, log_k_inf); // todo: CSE
 		let Rf = exp2(dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), C, f);
 		let m_log_equilibrium_constant = dot(net.iter().chain(IntoIter::new([Σnet])).copied().zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
-		//let Rr = exp2(dot(products.iter().copied().zip(log_concentrations.iter().copied()), Some(f![f fadd(log_k_inf, m_log_equilibrium_constant)]), C, f).unwrap(), C, f);
+		let Rr = exp2(dot(products.iter().copied().zip(log_concentrations.iter().copied()), Some(f![f fadd(log_k_inf, m_log_equilibrium_constant)]), C, f).unwrap(), C, f);
 		/*let R = f![f fsub(Rf, Rr)];
 		let cR = f![f fmul(c, R)];
 		for (index, &ν) in net.iter().enumerate() {
@@ -457,14 +451,45 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, rate, dtn, ((2+i)*size_of::<f32>()) as i32)]; }*/
 	builder.ins().return_(&[]);
 	builder.finalize();
-	eprintln!("{}", builder.display(None));
-  let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
+	let clif = builder.display(None);
+	eprintln!("{}", clif);
+	/*{
+		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0)
+		let mut context = codegen::Context::new();
+    context.func = function;
+    let mut mem = vec![];
+    let isa_builder = isa::lookup(target_lexicon::Triple::host()).unwrap();
+		let mut flag_builder = settings::builder();
+		flag_builder.enable("is_pic").unwrap();
+		let isa = isa_builder.finish(settings::Flags::new(flag_builder));
+		let code_info = context.compile_and_emit(&*isa, &mut mem,
+																																					&mut codegen::binemit::NullRelocSink{}, &mut codegen::binemit::NullTrapSink{}, &mut codegen::binemit::NullStackMapSink{});
+		use capstone::arch::BuildsCapstone;
+		let capstone = capstone::Capstone::new().x86().mode(capstone::arch::x86::ArchMode::Mode64).build().unwrap();
+		let instructions = capstone.disasm_all(&mem, 0).unwrap();
+		for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
+	}*/
+  /*let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
 	module.define_function(id, &mut context, &mut codegen::binemit::NullTrapSink{}).unwrap();
-	//module.finalize_definitions();
-	let product = module.finish();
-	std::fs::write("/tmp/rate.o", product.emit().unwrap()).unwrap();
-	//let rate = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};
-	//move |constant, state, derivative| { eprintln!("<"); let r = rate(constant.0 as f32, state.0.as_ptr(), derivative.0.as_mut_ptr()); eprintln!(">"); r }
-	move |constant, state, derivative| unimplemented!()
+	module.finalize_definitions();
+	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};*/
+	let clif = clif.to_string();
+	move |constant, state, derivative| {
+		let function = cranelift_reader::parse_functions(&clif).unwrap().remove(0);
+		let constant = constant.0 as f32;
+		pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+		use cranelift_interpreter::{interpreter::*, environment::*};
+		let mut interpreter_state = InterpreterState::default().with_function_store((&function).into());
+		let heap = Vec::<u8>::new();
+		use iter::from_iter_ as from_iter;
+		let (heap, [state, derivative]) = (|fields:&[&[u8]]| (fields.concat(), from_iter::<usize, _, 2>(fields.iter().scan(0, |next, field| { let offset = *next; *next += field.len(); Some(offset) }))))
+																											(&[state, derivative].map(|field| as_bytes(field)));
+		interpreter_state.heap = heap;
+		eprintln!("<");
+		let _result = Interpreter::new(interpreter_state).call_by_index(FuncIndex::from_u32(0), &[(constant.into():Ieee32).into(), (state as u32).into(), (derivative as u32).into()]).unwrap().unwrap_return().remove(0);//.into();
+		//let result = function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
+		eprintln!(">");
+		//result
+	}
 }
 }
