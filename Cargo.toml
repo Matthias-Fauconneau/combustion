@@ -16,13 +16,22 @@ iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde= ''
 linear-map= {version='', features = ['serde_impl']}
+target-lexicon= ''
+nalgebra= {optional= true, version=''}
+itertools= ''
 cranelift= ''
 cranelift-jit= ''
 cranelift-module= ''
 cranelift-object= ''
-target-lexicon= ''
-nalgebra= {optional= true, version=''}
-itertools= ''
 cranelift-reader= ''
 cranelift-interpreter= ''
 capstone= '' #|iced-x86? (pure Rust)
+pretty_env_logger= ''
+
+[patch.crates-io]
+cranelift= {path= '../wasmtime/cranelift/umbrella'}
+cranelift-jit= {path= '../wasmtime/cranelift/jit'}
+cranelift-module= {path= '../wasmtime/cranelift/module'}
+cranelift-object= {path= '../wasmtime/cranelift/object'}
+cranelift-reader= {path= '../wasmtime/cranelift/reader'}
+cranelift-interpreter= {path= '../wasmtime/cranelift/interpreter'}

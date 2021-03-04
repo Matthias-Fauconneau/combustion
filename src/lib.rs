@@ -486,7 +486,9 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 																											(&[state, derivative].map(|field| as_bytes(field)));
 		interpreter_state.heap = heap;
 		eprintln!("<");
-		let _result = Interpreter::new(interpreter_state).call_by_index(FuncIndex::from_u32(0), &[(constant.into():Ieee32).into(), (state as u32).into(), (derivative as u32).into()]).unwrap().unwrap_return().remove(0);//.into();
+		let _result = Interpreter::new(interpreter_state).call_by_index(FuncIndex::from_u32(0),
+			&[(constant.into():Ieee32).into(), (state as i32).into(), (derivative as i32).into()] // /!\ Missing arguments type check
+		).unwrap().unwrap_return().remove(0);//.into();
 		//let result = function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 		eprintln!(">");
 		//result
