@@ -229,8 +229,7 @@ impl std::fmt::Display for State {
 	}
 }
 
-use cranelift::prelude::{*, types::{I32, F32}};
-use cranelift_module::{Linkage, Module};
+use {cranelift::prelude::{*, types::{I32, F32}, codegen::{ir, binemit}}, cranelift_module::{Linkage, Module}};
 
 macro_rules! f {
 	[$f:ident $function:ident($arg0:expr)] => {{
@@ -366,8 +365,15 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 }
 }
 
+use {binemit::CodeOffset, ir::SourceLoc};
+pub struct Trap {
+	pub code_offset: CodeOffset,
+	pub source_location: SourceLoc,
+	pub trap_code: TrapCode,
+}
+
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)+'static {
+pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, fn(f32, *const f32, *mut f32), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
@@ -463,22 +469,27 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 		flag_builder.enable("is_pic").unwrap();
 		let isa = isa_builder.finish(settings::Flags::new(flag_builder));
 		let code_info = context.compile_and_emit(&*isa, &mut mem,
-																																					&mut codegen::binemit::NullRelocSink{}, &mut codegen::binemit::NullTrapSink{}, &mut codegen::binemit::NullStackMapSink{});
+																																					&mut binemit::NullRelocSink{}, &mut binemit::NullTrapSink{}, &mut binemit::NullStackMapSink{});
 		use capstone::arch::BuildsCapstone;
 		let capstone = capstone::Capstone::new().x86().mode(capstone::arch::x86::ArchMode::Mode64).build().unwrap();
 		let instructions = capstone.disasm_all(&mem, 0).unwrap();
 		for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
 	}*/
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
-	module.define_function(id, &mut context, &mut codegen::binemit::NullTrapSink{}).unwrap();
+  struct Traps (Vec<Trap>);
+  impl Traps { fn new() -> Self { Self(Vec::new()) } }
+	impl binemit::TrapSink for Traps {
+    fn trap(&mut self, code_offset: CodeOffset, source_location: SourceLoc, trap_code: TrapCode) {
+			self.0.push(Trap{code_offset, source_location, trap_code});
+    }
+	}
+	let mut trap_sink = Traps::new();
+	module.define_function(id, &mut context, &mut trap_sink).unwrap();
 	module.finalize_definitions();
 	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};
-	move |constant, state, derivative| {
+	(trap_sink.0.into_boxed_slice(), function, move |constant, state, derivative| {
 		let constant = constant.0 as f32;
-		eprintln!("<");
-		let result = function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
-		eprintln!(">");
-		result
-	}
+		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr())
+	})
 }
 }

@@ -25,3 +25,5 @@ cranelift-module= ''
 cranelift-object= ''
 cranelift-reader= ''
 capstone= '' #|iced-x86? (pure Rust)
+signal-hook-registry= ''
+libc= ''
