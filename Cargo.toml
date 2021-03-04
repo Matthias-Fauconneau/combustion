@@ -28,6 +28,8 @@ capstone= '' #|iced-x86? (pure Rust)
 signal-hook-registry= ''
 libc= ''
 x86emu= {git='https://github.com/Matthias-Fauconneau/x86emu'}
+pretty_env_logger= ''
+
 [patch.crates-io]
 cranelift={path='../wasmtime/cranelift/umbrella'}
 cranelift-module={path='../wasmtime/cranelift/module'}

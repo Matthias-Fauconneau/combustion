@@ -17,7 +17,9 @@ use {fehler::throws, error::Error, combustion::{*, Property::*}};
 		let mut heap = Heap::new(&mut guest);
 		let state = heap.push_slice(&mut guest, &state.0);
 		let derivative = heap.push_slice(&mut guest, &derivative.0);
-		pass(&mut guest, &[state as i64, derivative as i64], &[constant]);
+		call(&mut guest, &[state as i64, derivative as i64], &[constant]);
+		pretty_env_logger::init();
+		guest.print_instructions = true;
 		guest.execute()
 	}
 }
