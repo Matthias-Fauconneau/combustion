@@ -186,7 +186,7 @@ impl Simulation<'t> {
 #[cfg(test)] mod test;
 
 #[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
-#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(f32);
+#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f32);
 #[derive(derive_more::Deref, Debug)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f32/*; T,P|V,[S-1]*/]>);
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
 
@@ -373,7 +373,7 @@ pub struct Trap {
 }
 
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, fn(f32, *const f32, *mut f32), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
+pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f32, *mut f32), usize), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
@@ -486,8 +486,9 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, fn(f32, *const f32
 	let mut trap_sink = Traps::new();
 	module.define_function(id, &mut context, &mut trap_sink).unwrap();
 	module.finalize_definitions();
-	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};
-	(trap_sink.0.into_boxed_slice(), function, move |constant, state, derivative| {
+	let (function, size) = module.get_finalized_function(id);
+	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(function)};
+	(trap_sink.0.into_boxed_slice(), (function, size), move |constant, state, derivative| {
 		let constant = constant.0 as f32;
 		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr())
 	})
