@@ -458,23 +458,6 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f3
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
-	//eprintln!("{}", clif);
-	/*{
-		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0)
-		let mut context = codegen::Context::new();
-    context.func = function;
-    let mut mem = vec![];
-    let isa_builder = isa::lookup(target_lexicon::Triple::host()).unwrap();
-		let mut flag_builder = settings::builder();
-		flag_builder.enable("is_pic").unwrap();
-		let isa = isa_builder.finish(settings::Flags::new(flag_builder));
-		let code_info = context.compile_and_emit(&*isa, &mut mem,
-																																					&mut binemit::NullRelocSink{}, &mut binemit::NullTrapSink{}, &mut binemit::NullStackMapSink{});
-		use capstone::arch::BuildsCapstone;
-		let capstone = capstone::Capstone::new().x86().mode(capstone::arch::x86::ArchMode::Mode64).build().unwrap();
-		let instructions = capstone.disasm_all(&mem, 0).unwrap();
-		for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
-	}*/
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
   struct Traps (Vec<Trap>);
   impl Traps { fn new() -> Self { Self(Vec::new()) } }
