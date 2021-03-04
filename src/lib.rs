@@ -230,7 +230,7 @@ impl std::fmt::Display for State {
 }
 
 use cranelift::prelude::{*, types::{I32, F32}};
-#[allow(unused_imports)] use cranelift_module::{Linkage, Module};
+use cranelift_module::{Linkage, Module};
 
 macro_rules! f {
 	[$f:ident $function:ident($arg0:expr)] => {{
@@ -369,7 +369,7 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 impl Model {
 pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)+'static {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
-	#[allow(unused_mut)] let mut module = cranelift_jit::JITModule::new(builder);
+	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
 	let PTR = module.target_config().pointer_type();
   let params = [("constant", F32), ("state", PTR), ("rate", PTR)];
@@ -452,7 +452,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
-	eprintln!("{}", clif);
+	//eprintln!("{}", clif);
 	/*{
 		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0)
 		let mut context = codegen::Context::new();
@@ -469,29 +469,16 @@ pub fn rate<const CONSTANT: Property>(&self) -> impl Fn(Constant<CONSTANT>, &Sta
 		let instructions = capstone.disasm_all(&mem, 0).unwrap();
 		for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
 	}*/
-  /*let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
+  let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
 	module.define_function(id, &mut context, &mut codegen::binemit::NullTrapSink{}).unwrap();
 	module.finalize_definitions();
-	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};*/
-	let clif = clif.to_string();
+	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(module.get_finalized_function(id))};
 	move |constant, state, derivative| {
-		let function = cranelift_reader::parse_functions(&clif).unwrap().remove(0);
 		let constant = constant.0 as f32;
-		pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-		use cranelift_interpreter::{interpreter::*, environment::*};
-		let mut interpreter_state = InterpreterState::default().with_function_store((&function).into());
-		let heap = Vec::<u8>::new();
-		use iter::from_iter_ as from_iter;
-		let (heap, [state, derivative]) = (|fields:&[&[u8]]| (fields.concat(), from_iter::<usize, _, 2>(fields.iter().scan(0, |next, field| { let offset = *next; *next += field.len(); Some(offset) }))))
-																											(&[state, derivative].map(|field| as_bytes(field)));
-		interpreter_state.heap = heap;
 		eprintln!("<");
-		let _result = Interpreter::new(interpreter_state).call_by_index(FuncIndex::from_u32(0),
-			&[(constant.into():Ieee32).into(), (state as i32).into(), (derivative as i32).into()] // /!\ Missing arguments type check
-		).unwrap().unwrap_return().remove(0);//.into();
-		//let result = function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
+		let result = function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 		eprintln!(">");
-		//result
+		result
 	}
 }
 }

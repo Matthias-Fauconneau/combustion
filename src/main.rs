@@ -3,7 +3,6 @@
 use {fehler::throws, error::Error, combustion::{*, Property::*}};
 
 #[throws] fn main() {
-	pretty_env_logger::init();
 	let model = Model::new(model::Model::new(&std::fs::read("CH4+O2.ron")?)?);
 	let rate = model.rate::<{Volume}>();
 	let ref state = Simulation::new(&std::fs::read("CH4+O2.ron")?)?.state;
