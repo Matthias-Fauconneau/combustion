@@ -169,7 +169,7 @@ impl Simulation<'t> {
 
 		let model::State{temperature, pressure, volume, amount_proportions} = state;
 		let pressure = pressure/NA;
-		let temperature = temperature*K; // K->J
+		let temperature = temperature;//*K; // K->J
 		let amount = pressure * volume / temperature;
 		for (specie,_) in &amount_proportions { assert!(species_names.contains(specie)); }
 		let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
@@ -373,7 +373,7 @@ pub struct Trap {
 }
 
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f32, *mut f32), usize), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
+pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *const f32, *mut f32), usize), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
@@ -458,7 +458,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f3
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
-	eprintln!("{}", clif);
+	//eprintln!("{}", clif);
 	{
 		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0);
 		let mut context = codegen::Context::new();
@@ -472,7 +472,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f3
 		use capstone::arch::BuildsCapstone;
 		let capstone = capstone::Capstone::new().x86().mode(capstone::arch::x86::ArchMode::Mode64).build().unwrap();
 		let instructions = capstone.disasm_all(&mem, 0).unwrap();
-		for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
+		//for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
 	}
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
   struct Traps (Vec<Trap>);
@@ -486,7 +486,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (fn(f32, *const f3
 	module.define_function(id, &mut context, &mut trap_sink).unwrap();
 	module.finalize_definitions();
 	let (function, size) = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,fn(f32, *const f32, *mut f32)>(function)};
+	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32)>(function)};
 	(trap_sink.0.into_boxed_slice(), (function, size), move |constant, state, derivative| {
 		let constant = constant.0 as f32;
 		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr())
