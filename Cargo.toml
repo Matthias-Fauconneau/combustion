@@ -22,19 +22,21 @@ itertools= ''
 cranelift= ''
 cranelift-jit= ''
 cranelift-module= ''
-cranelift-object= ''
-cranelift-reader= ''
-capstone= '' #|iced-x86? (pure Rust)
-signal-hook-registry= ''
-libc= ''
-x86emu= {git='https://github.com/Matthias-Fauconneau/x86emu'}
-pretty_env_logger= ''
+#cranelift-object= ''
+#cranelift-reader= ''
+#capstone= '' #|iced-x86? (pure Rust)
+#signal-hook-registry= ''
+#libc= ''
+#x86emu= {git='https://github.com/Matthias-Fauconneau/x86emu'}
+#pretty_env_logger= ''
 
-[patch.crates-io]
-cranelift={path='../wasmtime/cranelift/umbrella'}
-cranelift-module={path='../wasmtime/cranelift/module'}
-cranelift-object={path='../wasmtime/cranelift/object'}
-cranelift-reader={path='../wasmtime/cranelift/reader'}
-cranelift-jit={path='../wasmtime/cranelift/jit'}
-[patch.'https://github.com/Matthias-Fauconneau/x86emu']
-x86emu={path='../x86emu'}
+#[patch.crates-io]
+#cranelift={path='../wasmtime/cranelift/umbrella'}
+#cranelift-module={path='../wasmtime/cranelift/module'}
+#cranelift-object={path='../wasmtime/cranelift/object'}
+#cranelift-reader={path='../wasmtime/cranelift/reader'}
+#cranelift-jit={path='../wasmtime/cranelift/jit'}
+#[patch.'https://github.com/Matthias-Fauconneau/x86emu']
+#x86emu={path='../x86emu'}
+[profile.dev.package."*"]
+opt-level = 3
