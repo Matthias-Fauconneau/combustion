@@ -162,23 +162,21 @@ pub struct Simulation<'t> {
 }
 
 impl Simulation<'t> {
-	pub fn new(simulation: &'t [u8]) -> ron::Result<Self> {
-		let model::Model{species, state, time_step, ..} = ::ron::de::from_bytes(simulation)?;
-		let species: Box<[_]> = (species.into():Vec<_>).into();
+	pub fn new(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> ron::Result<Self> {
 		let species_names = species.iter().map(|(name,_)| *name).collect():Box<_>;
 
 		let model::State{temperature, pressure, volume, amount_proportions} = state;
 		let pressure = pressure/NA;
-		let temperature = temperature;//*K; // K->J
+		let temperature = *temperature;//*K; // K->J
 		let amount = pressure * volume / (temperature * K);
-		for (specie,_) in &amount_proportions { assert!(species_names.contains(specie)); }
+		for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
 		let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
 		let amounts = amount_proportions.iter().map(|amount_proportion| amount/amount_proportions.iter().sum::<f64>() * amount_proportion).collect();
 
 		Ok(Self{
 			species_names,
-			time_step,
-			state: State{temperature, pressure, volume, amounts}
+			time_step: *time_step,
+			state: State{temperature, pressure, volume: *volume, amounts}
 		})
 	}
 }

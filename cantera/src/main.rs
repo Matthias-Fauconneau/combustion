@@ -4,11 +4,13 @@ use {fehler::throws, error::Error};
 pub use combustion::*;
 pub mod cantera;
 mod reaction;
-mod transport;
+//mod transport;
 
 #[throws] fn main() {
-	let system = default()?;
-	let simulation = new(&system)?;
-	reaction::check(&simulation)?;
+	let model = std::fs::read("CH4+O2.ron")?;
+	let model = model::Model::new(&model)?;
+	let ref simulation = Simulation::new(&model)?;
+	let model = Model::new(model);
+	reaction::check(model, &simulation)?;
 	//transport::check(&simulation)?;
 }

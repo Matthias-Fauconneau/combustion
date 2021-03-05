@@ -17,3 +17,6 @@ combustion= {path='..'}
 cvode= {path='../cvode'}
 itertools= ''
 num= {git='https://github.com/Matthias-Fauconneau/num'}
+
+[profile.dev.package."*"]
+opt-level = 3
