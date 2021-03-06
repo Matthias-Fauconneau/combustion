@@ -15,10 +15,6 @@ impl NASA7 {
 	pub const reference_pressure : f64 = 101325. / (K*NA); // 1 atm
 	pub const T_split : f64 = 1000.;
 	pub fn a(&self, T: f64) -> &[f64; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
-	pub fn specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
-	pub fn specific_enthalpy(&self, T: f64) -> f64 { let a = self.a(T); a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T } // /R
-	//pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
-	pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
 }
 
 #[derive(Clone, Copy)] pub struct RateConstant {
@@ -429,25 +425,14 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 	let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
-	//for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
-	for (i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..}) in reactions.iter().enumerate() {
+	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
 		let log_k_inf = log_arrhenius(*rate_constant, rcpT, logT, f);
-		//f![f store(flags, log_k_inf, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let c = model.efficiency(f, C, logT, rcpT, mT, mrcpT, concentrations, log_k_inf); // todo: CSE
-		//f![f store(flags, c, rate, ((2+i)*size_of::<f32>()) as i32)];
-		//f![f store(flags, dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), rate, ((2+i)*size_of::<f32>()) as i32)];
 		let Rf = exp2(dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), C, f);
-		//f![f store(flags, Rf, rate, ((2+i)*size_of::<f32>()) as i32)];
-		//assert!(net.len() == G_RT.len());
 		let m_log_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
-		//let m_log_equilibrium_constant = dot([].iter().copied().chain(IntoIter::new([-Σnet])).zip([].iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
-		//let m_log_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([])).zip(G_RT.iter().chain(&[]).copied()), None, C, f).unwrap();
-		//f![f store(flags, m_log_equilibrium_constant, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let Rr = exp2(dot(products.iter().copied().zip(log_concentrations.iter().copied()), Some(f![f fadd(log_k_inf, m_log_equilibrium_constant)]), C, f).unwrap(), C, f);
 		let R = f![f fsub(Rf, Rr)];
-		//f![f store(flags, R, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let cR = f![f fmul(c, R)];
-		//f![f store(flags, cR, rate, ((2+i)*size_of::<f32>()) as i32)];
 		for (index, &ν) in net.iter().enumerate() {
 			let dtω = &mut dtω[index];
 			match ν {
@@ -458,7 +443,6 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 			}
 		}
 	}
-	//for (specie, dtω) in dtω.iter().enumerate() { if let None = dtω { panic!("Inactive specie {}", specie); } }
 
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
 	struct Dot<const N: usize>(f64, [(f64, Value); N]);
@@ -479,15 +463,6 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f32>() as i32)];
 	let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
 	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
-	// DEBUG
-	//f![f store(flags, T, rate, 0*size_of::<f32>() as i32)];
-	//f![f store(flags, rcpT, rate, 0*size_of::<f32>() as i32)];
-	//f![f store(flags, logT, rate, 1*size_of::<f32>() as i32)];
-	//f![f store(flags, logP0_RT, rate, 1*size_of::<f32>() as i32)];
-	//for (i, &x) in [T, T2, T3, T4, rcpT, logT].iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
-	//for (i, &x) in G_RT.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
-	//for (i, &x) in log_concentrations.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
-	//for (i, &x) in dtω.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
