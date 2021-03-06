@@ -14,11 +14,11 @@ use model::{Element, Troe};
 impl NASA7 {
 	pub const reference_pressure : f64 = 101325. / (K*NA); // 1 atm
 	pub const T_split : f64 = 1000.;
-	/*pub fn a(&self, T: f32) -> &[f32; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
-	pub fn specific_heat_capacity(&self, T: f32) -> f32 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
-	pub fn specific_enthalpy(&self, T: f32) -> f32 { let a = self.a(T); a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T } // /R
-	pub fn specific_enthalpy_T(&self, T: f32) -> f32 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
-	pub fn specific_entropy(&self, T: f32) -> f32 { let a = self.a(T); a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R*/
+	pub fn a(&self, T: f64) -> &[f64; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
+	pub fn specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
+	pub fn specific_enthalpy(&self, T: f64) -> f64 { let a = self.a(T); a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T } // /R
+	pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
+	pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
 }
 
 #[derive(Clone, Copy)] pub struct RateConstant {
@@ -27,9 +27,9 @@ impl NASA7 {
 	pub activation_temperature: f64
 }
 
-/*pub fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f32) -> f32 {
+pub fn log_arrhenius_(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f64) -> f64 {
 	log_preexponential_factor + temperature_exponent*num::log(T) - activation_temperature*(1./T)
-}*/
+}
 
 impl From<model::RateConstant> for RateConstant {
 	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: model::RateConstant) -> Self {
@@ -419,6 +419,64 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 	let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
+	{ // Test
+		let S = len;
+		let (T, amounts) = (1000.,
+			[0.,0.,0.,4.874638549881687,0.,0.,0.,0.,0.,0.,0.,0.,0.,2.4373192749408434,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]
+		);
+		let pressure_R = 12186.596374704217;
+		let C = pressure_R / T;
+		let logP0_RT = log(NASA7::reference_pressure) - log(T);
+		let H = thermodynamics.iter().map(|s| s.specific_enthalpy(T)).collect():Box<[f64]>;
+		let H_T = H[..S-1].iter().map(|H| H/T).collect():Box<[f64]>;
+		let G = thermodynamics[..S-1].iter().zip(H_T.iter()).map(|(s, h_T)| h_T - s.specific_entropy(T)).collect():Box<[f64]>;
+		let concentrations = amounts;
+		let log_concentrations = concentrations.iter().map(|&x| log(x)).collect():Box<[f64]>;
+		let mut dtω = vec![0.; S-1];
+		for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
+			let log_k_inf = log_arrhenius_(*rate_constant, T);
+			let c = 	match model {
+				ReactionModel::Elementary => 1.,
+				ReactionModel::ThreeBody{efficiencies} => {
+					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
+					sum
+				}
+				ReactionModel::PressureModification{efficiencies, k0} => {
+					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
+					let Pr = sum * f64::exp(log_arrhenius_(*k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
+					Pr / (1.+Pr)
+				}
+				ReactionModel::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
+					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
+					let Pr = sum * f64::exp(log_arrhenius_(*k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
+					let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
+					let log10Fcent = f64::log10(Fcent);
+					let C = -0.4-0.67*log10Fcent;
+					let N = 0.75-1.27*log10Fcent;
+					let log10PrC = f64::log10(Pr) + C;
+					let f1 = log10PrC/(N-0.14*log10PrC);
+					let F = num::exp10(log10Fcent/(1.+f1*f1));
+					Pr / (1.+Pr) * F
+				}
+			};
+			let mut sum = 0.; for (&a, b) in reactants.iter().zip(log_concentrations.iter()) { if a != 0 { sum += a as f64 * b; } }
+			let Rf = f64::exp(sum + log_k_inf);
+			let mut sum = 0.; for (&a, b) in net.iter().zip(G.iter()) { if a != 0 { sum += a as f64 * b; } }
+			let log_equilibrium_constant = -sum + (*Σnet as f64)*logP0_RT;
+			let mut sum = 0.; for (&a, b) in products.iter().zip(log_concentrations.iter()) { if a != 0 { sum += a as f64 * b; } }
+			let Rr = f64::exp(sum + log_k_inf - log_equilibrium_constant);
+			let R = Rf - Rr;
+			let cR = c * R;
+			for (specie, &ν) in net.iter().enumerate() { dtω[specie] += (ν as f64) * cR; }
+		}
+		let Cp = thermodynamics.iter().map(|s| s.specific_heat_capacity(T)).collect():Box<[f64]>;
+		let mut sum = 0.; for (a, b) in concentrations.iter().zip(Cp.iter()) { sum += a * b; }
+		let rcp_ΣCCp = 1./sum;
+		let mut sum = 0.; for (a, b) in dtω.iter().zip(H_T.iter()) { sum += a * b; }
+		let dtT_T = - rcp_ΣCCp * sum; // R/RT
+		let dtn = dtω;
+		dbg!(dtT_T*T, dtn);
+	}
 	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
 		let log_k_inf = log_arrhenius(*rate_constant, rcpT, logT, f);
 		let c = model.efficiency(f, C, logT, rcpT, mT, mrcpT, concentrations, log_k_inf); // todo: CSE

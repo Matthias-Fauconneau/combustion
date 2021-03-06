@@ -2,9 +2,11 @@
 use {fehler::throws, error::Error, combustion::{*, Property::*}};
 
 #[throws] fn main() {
-	let model = Model::new(model::Model::new(&std::fs::read("CH4+O2.ron")?)?);
+	let model = &std::fs::read("CH4+O2.ron")?;
+	let model = model::Model::new(&model)?;
+	let ref state = Simulation::new(&model)?.state;
+	let model = Model::new(model);
 	let (_traps, (_function, _size), rate) = model.rate::<{Volume}>();
-	let ref state = Simulation::new(&std::fs::read("CH4+O2.ron")?)?.state;
 	let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(model.len()).collect());
 	/*{
 		let function = unsafe{std::slice::from_raw_parts(function as *const u8, size)}; // refcheck: leaked from dropped JITModule
