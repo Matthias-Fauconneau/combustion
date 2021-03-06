@@ -7,7 +7,7 @@ use {fehler::throws, error::Error, combustion::{*, Property::*}};
 	let ref state = Simulation::new(&model)?.state;
 	let model = Model::new(model);
 	let (_traps, (_function, _size), rate) = model.rate::<{Volume}>();
-	let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(/*model.len()*/2+model.reactions.len()).collect());
+	let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(2+model.len()-1).collect());
 	/*{
 		let function = unsafe{std::slice::from_raw_parts(function as *const u8, size)}; // refcheck: leaked from dropped JITModule
 		let (constant, ref state, derivative) = (state.constant::<{Volume}>(), state.into(): StateVector::<{Volume}>, &mut derivative);
@@ -24,7 +24,17 @@ use {fehler::throws, error::Error, combustion::{*, Property::*}};
 		guest.print_instructions = true;
 		guest.execute()
 	}*/
-	let rate = {rate(state.constant(), &state.into(), &mut derivative); derivative.0};
-	for (i, v) in rate.iter().enumerate() { if v.abs() > 1e-29 { print!("{}:{:.3e} ", i, v); } }
-	println!("");
+	{
+		let rate = {rate(state.constant(), &state.into(), &mut derivative); &derivative.0};
+		for (i, v) in rate.iter().enumerate() { if v.abs() > 1e-29 { print!("{}:{:.3e} ", i, v); } }
+		println!("");
+	}
+	let len = 100000;
+	let constant = state.constant();
+	let state = state.into();
+	let start = std::time::Instant::now();
+	for _ in 0..len { rate(constant, &state, &mut derivative) }
+	let end = std::time::Instant::now();
+  let time = (end-start).as_secs_f32();
+  println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);
 }
