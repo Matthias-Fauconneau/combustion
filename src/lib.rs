@@ -478,16 +478,16 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let dtS_S = f![f fadd(R_S_Tdtn, dtT_T)];
 	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f32>() as i32)];
 	let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
-	//for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	// DEBUG
 	//f![f store(flags, T, rate, 0*size_of::<f32>() as i32)];
-	f![f store(flags, rcpT, rate, 0*size_of::<f32>() as i32)];
-	f![f store(flags, logT, rate, 1*size_of::<f32>() as i32)];
+	//f![f store(flags, rcpT, rate, 0*size_of::<f32>() as i32)];
+	//f![f store(flags, logT, rate, 1*size_of::<f32>() as i32)];
 	//f![f store(flags, logP0_RT, rate, 1*size_of::<f32>() as i32)];
 	//for (i, &x) in [T, T2, T3, T4, rcpT, logT].iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	//for (i, &x) in G_RT.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	//for (i, &x) in log_concentrations.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
-	for (i, &x) in dtω.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	//for (i, &x) in dtω.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);

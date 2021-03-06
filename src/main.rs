@@ -60,7 +60,7 @@ pub fn log_arrhenius_(RateConstant{log_preexponential_factor, temperature_expone
 	//use itertools::Itertools;
 	//println!("{:7.0e}", {rate(state.constant(), &state.into(), &mut derivative); derivative.0.iter().format(" ")});
 	use std::ops::Deref;
-	let vector = {rate(state.constant(), &state.into(), &mut derivative); &derivative.0.deref()[2..]};
+	let vector = {rate(state.constant(), &state.into(), &mut derivative); &derivative.0.deref()}; //[2..]
 	/*for (i, &v) in {rate(state.constant(), &state.into(), &mut derivative); &derivative.0.deref()[2..]}.iter().enumerate() {
 		if v.abs() > 1e-29 { print!("{}:{:.0e} ", i, v); }
 		//{let v = v-1.; if v.abs() > 1e-29 { print!("{:8}", format!("{}:{:.1}", i, v)); }}
@@ -163,16 +163,16 @@ pub fn log_arrhenius_(RateConstant{log_preexponential_factor, temperature_expone
 		//{let v=cR; if v != 0. { print!("{}:{} ", i, num::relative_error(v, vector[i] as f64)); }}
 		for (specie, &ν) in net.iter().enumerate() { dtω[specie] += (ν as f32) * cR; }
 	}
-	for (i,(&a, &b)) in dtω.iter().zip(vector).enumerate() { if a.abs() > 1e-29 || b.abs() > 1e-29 { print!("{}:{:.3e}|{:.3e} ", i, a, b); } }
-	//for (i,(&a, &b)) in dtω.iter().zip(vector).enumerate() { if a != 0. || b.abs() > 1e-29 { print!("{}:{} ", i, num::relative_error(a as f64, b as f64)); } }
-	println!("");
-	//use itertools::Itertools;
-	//println!("{}", dtω.iter().zip(vector).format(" "));
-	/*let Cp = thermodynamics.iter().map(|s| s.specific_heat_capacity(T)).collect():Box<[f64]>;
+	let Cp = thermodynamics.iter().map(|s| s.specific_heat_capacity(T as f64) as f32).collect():Box<[f32]>;
 	let mut sum = 0.; for (a, b) in concentrations.iter().zip(Cp.iter()) { sum += a * b; }
 	let rcp_ΣCCp = 1./sum;
 	let mut sum = 0.; for (a, b) in dtω.iter().zip(H_T.iter()) { sum += a * b; }
 	let dtT_T = - rcp_ΣCCp * sum; // R/RT
-	let dtn = dtω;*/
-	//dbg!(dtT_T*T, dtn);
+	let dtn = dtω;
+	//dbg!(, dtn);
+	for (i,(&a, &b)) in ([dtT_T*T,0.].iter().chain(dtn.iter())).zip(vector.iter()).enumerate() { if a.abs() > 1e-29 || b.abs() > 1e-29 { print!("{}:{:.3e}|{:.3e} ", i, a, b); } }
+	//for (i,(&a, &b)) in dtω.iter().zip(vector).enumerate() { if a != 0. || b.abs() > 1e-29 { print!("{}:{} ", i, num::relative_error(a as f64, b as f64)); } }
+	println!("");
+	//use itertools::Itertools;
+	//println!("{}", dtω.iter().zip(vector).format(" "));
 }
