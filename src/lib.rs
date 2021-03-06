@@ -1,7 +1,7 @@
 #![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits)]
 #![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
 #![allow(unused_variables, dead_code)]
-use num::log;
+//use num::log;
 
 pub const K : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
@@ -17,8 +17,8 @@ impl NASA7 {
 	pub fn a(&self, T: f64) -> &[f64; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
 	pub fn specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
 	pub fn specific_enthalpy(&self, T: f64) -> f64 { let a = self.a(T); a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T } // /R
-	pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
-	pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
+	//pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
+	pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*f64::ln(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
 }
 
 #[derive(Clone, Copy)] pub struct RateConstant {
@@ -27,14 +27,10 @@ impl NASA7 {
 	pub activation_temperature: f64
 }
 
-pub fn log_arrhenius_(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: f64) -> f64 {
-	log_preexponential_factor + temperature_exponent*num::log(T) - activation_temperature*(1./T)
-}
-
 impl From<model::RateConstant> for RateConstant {
 	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: model::RateConstant) -> Self {
 		const J_per_cal: f64 = 4.184;
-		Self{log_preexponential_factor: log(preexponential_factor)/*-temperature_exponent*log(K)*/, temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
+		Self{log_preexponential_factor: f64::log2(preexponential_factor)/*-temperature_exponent*log(K)*/, temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
 	}
 }
 
@@ -270,8 +266,11 @@ struct Constants {
 	_127: Value,
 	exponent: Value,
 	mantissa: Value,
-	exp: [Value; 3],
-	log: [Value; 3],
+	//exp: [Value; 3],
+	//log: [Value; 3],
+	exp: [Value; 6],
+	log: [Value; 6],
+	_m126_99999: Value,
 	constants: std::collections::HashMap<u32, Value>
 }
 impl Constants {
@@ -281,8 +280,11 @@ impl Constants {
 		_127: f![f iconst(I32, 127)],
 		exponent: f![f iconst(I32, 0x7F800000)],
 		mantissa: f![f iconst(I32, 0x007FFFFF)],
-		exp: [1.0017247, 0.65763628, 0.33718944].map(|c| f![f f32const(c)]),
-		log: [2.28330284476918490682, -1.04913055217340124191, 0.204446009836232697516].map(|c| f![f f32const(c)]),
+		//exp: [1.0017247, 0.65763628, 0.33718944].map(|c| f![f f32const(c)]),
+		exp: [0.99999994, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| f![f f32const(c)]),
+		//log: [2.28330284476918490682, -1.04913055217340124191, 0.204446009836232697516].map(|c| f![f f32const(c)]),
+		log: [3.1157899, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f![f f32const(c)]),
+		_m126_99999: f![f f32const(-126.99999)],
 		constants: Default::default(),
 	}}
 	#[track_caller] fn c(&mut self, f: &mut FunctionBuilder<'t>, constant: f32) -> Value {
@@ -291,11 +293,13 @@ impl Constants {
 	}
 }
 
-fn exp2(x: Value, Constants{_1_2, _127, exp, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+fn exp2(x: Value, Constants{_m126_99999, _1_2, _127, exp, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	let x = f![f fmax(x, *_m126_99999)];
 	let ipart = f![f fcvt_to_sint(I32, f![f fsub(x, *_1_2)])];
 	let fpart = f![f fsub(x, f![f fcvt_from_sint(F32, ipart)])];
 	let expipart = f![f bitcast(F32, f![f ishl_imm(f![f iadd(ipart, *_127)], 23)])];
-	let expfpart = fma![f (fma![f (exp[2], fpart, exp[1])], fpart, exp[0])];
+	//let expfpart = fma![f (fma![f (exp[2], fpart, exp[1])], fpart, exp[0])];
+	let expfpart = fma![f (fma![f (fma![f (fma![f (fma![f (exp[5], fpart, exp[4])], fpart, exp[3])], fpart, exp[2])], fpart, exp[1])], fpart, exp[0])];
 	f![f fmul(expipart, expfpart)]
 }
 
@@ -303,7 +307,8 @@ fn log2(x: Value, Constants{_1, exponent, _127, mantissa, log, ..}: &Constants, 
 	let i = f![f /*raw_?*/bitcast(I32, x)];
 	let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, *exponent)], 23)], *_127)])];
 	let m = f![f bor(f![f bitcast(F32, f![f band(i, *mantissa)])], *_1)];
-	let p = fma![f (fma![f (log[2], m, log[1])], m, log[0])];
+	//let p = fma![f (fma![f (log[2], m, log[1])], m, log[0])];
+	let p = fma![f (fma![f (fma![f (fma![f (fma![f (log[5], m, log[4])], m, log[3])], m, log[2])], m, log[1])], m, log[0])];
 	let p = f![f fmul(p, f![f fsub(m, *_1)])]; //?
 	f![f fadd(p, e)]
 }
@@ -312,7 +317,7 @@ use std::f64::consts::LN_2;
 
 fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant,
 														rcpT: Value, logT: Value, f: &mut FunctionBuilder<'t>) -> Value {
-	let A = f![f f32const((log_preexponential_factor/LN_2) as f32)];
+	let A = f![f f32const((log_preexponential_factor/*/LN_2*/) as f32)];
 	let AeTβ = if temperature_exponent == 0. { A } else { fma![f (f![f f32const(temperature_exponent as f32)], logT, A)] };
 	if activation_temperature == 0. { AeTβ } else { fma![f (f![f f32const((-activation_temperature/LN_2) as f32)], rcpT, AeTβ)] }
 }
@@ -330,7 +335,7 @@ where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 		//use num::{IsZero, IsOne, IsMinusOne};
 		if c.is_zero() {}
 		else if c.is_one() { sum = Some(match sum { Some(sum) => f![f fadd(sum, v)], None => v}); }
-		else if c.is_minus_one() { sum = Some(match sum { Some(sum) => f![f fsub(sum, v)], None => v}); }
+		else if c.is_minus_one() { sum = Some(match sum { Some(sum) => f![f fsub(sum, v)], None => f![f fneg(v)]}); } // fixme: reorder -a+b -> b-a to avoid neg
 		else { let c = C.c(f, c.into() as f32); sum = Some(match sum { Some(sum) => fma![f (c, v, sum)], None => f![f fmul(c, v)] }); }
 	}
 	sum
@@ -349,9 +354,10 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 		Falloff{efficiencies, k0, troe} => {
 			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), exp2(f![f fsub(log_arrhenius(*k0, rcpT, logT, f), log_k_inf)], C, f))];
 			let model::Troe{A, T3, T1, T2} = *troe;
-			let Fcent = fma![f (f![f f32const(1.-A as f32)], exp2(f![f fdiv(mT, f![f f32const(T3 as f32)])], C, f),
-														 fma![f (f![f f32const(A as f32)], exp2(f![f fdiv(mT, f![f f32const(T1 as f32)])], C, f),
-																																							exp2(f![f fmul(mrcpT, f![f f32const(T2 as f32)])], C, f) )] )];
+			fn rcp(x: f64) -> f64 { 1./x }
+			let Fcent = fma![f (f![f f32const(1.-A as f32)], exp2(f![f fmul(mT, f![f f32const(rcp(LN_2*T3) as f32)])], C, f),
+														 fma![f (f![f f32const(A as f32)], exp2(f![f fmul(mT, f![f f32const(rcp(LN_2*T1) as f32)])], C, f),
+																																							exp2(f![f fmul(mrcpT, f![f f32const((T2/LN_2) as f32)])], C, f) )] )];
 			let logFcent = log2(Fcent, C, f);
 			let c =fma![f (C.c(f, -0.67), logFcent, C.c(f, -0.4*f64::log2(10.) as f32))];
 			let N = fma![f (C.c(f, -1.27), logFcent, C.c(f, 0.75*f64::log2(10.) as f32))];
@@ -359,6 +365,7 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 			let f1 = f![f fdiv(logPr𐊛c, fma![f (C.c(f, -0.14), logPr𐊛c, N)])];
 			let F = exp2(f![f fdiv(logFcent, fma![f (f1, f1, C._1)])], C, f);
 			f![f fmul(f![f fdiv(Pr, f![f fadd(C._1, Pr)])], F)]
+			//Fcent
 		}
 	}
 }
@@ -403,9 +410,12 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let len = self.len();
 	let a = thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
 	let G_RT =
-		a.iter().map(|a| dot(
-			IntoIter::new([(a[5], rcpT), (a[0]*LN_2, logT), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4]/5., T4)]),
-			Some(f![f f32const((a[0]-a[6]) as f32)]), C, f).unwrap()).collect(): Box<_>;
+		a[..len-1].iter().map(|a| dot(
+			IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
+			Some(f![f f32const(((a[0]-a[6])/LN_2) as f32)]), C, f).unwrap()).collect(): Box<_>;
+	//pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
+	//pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
+
 	let logP0_RT = f![f fsub(f![f f32const(f64::log2(NASA7::reference_pressure) as f32)], logT)];
 	let variable = f![f load(F32, flags, state, 1*size_of::<f32>() as i32)];
 	let (pressure, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
@@ -419,72 +429,25 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 	let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
-	{ // Test
-		let S = len;
-		let (T, amounts) = (1000.,
-			[0.,0.,0.,4.874638549881687,0.,0.,0.,0.,0.,0.,0.,0.,0.,2.4373192749408434,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]
-		);
-		let pressure_R = 12186.596374704217;
-		let C = pressure_R / T;
-		let logP0_RT = log(NASA7::reference_pressure) - log(T);
-		let H = thermodynamics.iter().map(|s| s.specific_enthalpy(T)).collect():Box<[f64]>;
-		let H_T = H[..S-1].iter().map(|H| H/T).collect():Box<[f64]>;
-		let G = thermodynamics[..S-1].iter().zip(H_T.iter()).map(|(s, h_T)| h_T - s.specific_entropy(T)).collect():Box<[f64]>;
-		let concentrations = amounts;
-		let log_concentrations = concentrations.iter().map(|&x| log(x)).collect():Box<[f64]>;
-		let mut dtω = vec![0.; S-1];
-		for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
-			let log_k_inf = log_arrhenius_(*rate_constant, T);
-			let c = 	match model {
-				ReactionModel::Elementary => 1.,
-				ReactionModel::ThreeBody{efficiencies} => {
-					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
-					sum
-				}
-				ReactionModel::PressureModification{efficiencies, k0} => {
-					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
-					let Pr = sum * f64::exp(log_arrhenius_(*k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
-					Pr / (1.+Pr)
-				}
-				ReactionModel::Falloff{efficiencies, k0, troe: Troe{A, T3, T1, T2}} => {
-					let mut sum = 0.; for (a, b) in efficiencies.iter().zip(concentrations.iter()) { sum += a * b; }
-					let Pr = sum * f64::exp(log_arrhenius_(*k0, T) - log_k_inf); // [k0/kinf] = [1/C] (m3/mol)
-					let Fcent = (1.-A)*f64::exp(-T/T3)+A*f64::exp(-T/T1)+f64::exp(-T2/T);
-					let log10Fcent = f64::log10(Fcent);
-					let C = -0.4-0.67*log10Fcent;
-					let N = 0.75-1.27*log10Fcent;
-					let log10PrC = f64::log10(Pr) + C;
-					let f1 = log10PrC/(N-0.14*log10PrC);
-					let F = num::exp10(log10Fcent/(1.+f1*f1));
-					Pr / (1.+Pr) * F
-				}
-			};
-			let mut sum = 0.; for (&a, b) in reactants.iter().zip(log_concentrations.iter()) { if a != 0 { sum += a as f64 * b; } }
-			let Rf = f64::exp(sum + log_k_inf);
-			let mut sum = 0.; for (&a, b) in net.iter().zip(G.iter()) { if a != 0 { sum += a as f64 * b; } }
-			let log_equilibrium_constant = -sum + (*Σnet as f64)*logP0_RT;
-			let mut sum = 0.; for (&a, b) in products.iter().zip(log_concentrations.iter()) { if a != 0 { sum += a as f64 * b; } }
-			let Rr = f64::exp(sum + log_k_inf - log_equilibrium_constant);
-			let R = Rf - Rr;
-			let cR = c * R;
-			for (specie, &ν) in net.iter().enumerate() { dtω[specie] += (ν as f64) * cR; }
-		}
-		let Cp = thermodynamics.iter().map(|s| s.specific_heat_capacity(T)).collect():Box<[f64]>;
-		let mut sum = 0.; for (a, b) in concentrations.iter().zip(Cp.iter()) { sum += a * b; }
-		let rcp_ΣCCp = 1./sum;
-		let mut sum = 0.; for (a, b) in dtω.iter().zip(H_T.iter()) { sum += a * b; }
-		let dtT_T = - rcp_ΣCCp * sum; // R/RT
-		let dtn = dtω;
-		dbg!(dtT_T*T, dtn);
-	}
-	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
+	//for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
+	for (i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..}) in reactions.iter().enumerate() {
 		let log_k_inf = log_arrhenius(*rate_constant, rcpT, logT, f);
+		//f![f store(flags, log_k_inf, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let c = model.efficiency(f, C, logT, rcpT, mT, mrcpT, concentrations, log_k_inf); // todo: CSE
+		//f![f store(flags, c, rate, ((2+i)*size_of::<f32>()) as i32)];
+		//f![f store(flags, dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), rate, ((2+i)*size_of::<f32>()) as i32)];
 		let Rf = exp2(dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), C, f);
+		//f![f store(flags, Rf, rate, ((2+i)*size_of::<f32>()) as i32)];
+		//assert!(net.len() == G_RT.len());
 		let m_log_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
+		//let m_log_equilibrium_constant = dot([].iter().copied().chain(IntoIter::new([-Σnet])).zip([].iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
+		//let m_log_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([])).zip(G_RT.iter().chain(&[]).copied()), None, C, f).unwrap();
+		//f![f store(flags, m_log_equilibrium_constant, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let Rr = exp2(dot(products.iter().copied().zip(log_concentrations.iter().copied()), Some(f![f fadd(log_k_inf, m_log_equilibrium_constant)]), C, f).unwrap(), C, f);
 		let R = f![f fsub(Rf, Rr)];
+		//f![f store(flags, R, rate, ((2+i)*size_of::<f32>()) as i32)];
 		let cR = f![f fmul(c, R)];
+		//f![f store(flags, cR, rate, ((2+i)*size_of::<f32>()) as i32)];
 		for (index, &ν) in net.iter().enumerate() {
 			let dtω = &mut dtω[index];
 			match ν {
@@ -515,7 +478,16 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let dtS_S = f![f fadd(R_S_Tdtn, dtT_T)];
 	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f32>() as i32)];
 	let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
-	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	//for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	// DEBUG
+	//f![f store(flags, T, rate, 0*size_of::<f32>() as i32)];
+	f![f store(flags, rcpT, rate, 0*size_of::<f32>() as i32)];
+	f![f store(flags, logT, rate, 1*size_of::<f32>() as i32)];
+	//f![f store(flags, logP0_RT, rate, 1*size_of::<f32>() as i32)];
+	//for (i, &x) in [T, T2, T3, T4, rcpT, logT].iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	//for (i, &x) in G_RT.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	//for (i, &x) in log_concentrations.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	for (i, &x) in dtω.into_iter().enumerate() { f![f store(flags, x, rate, ((2+i)*size_of::<f32>()) as i32)]; }
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
