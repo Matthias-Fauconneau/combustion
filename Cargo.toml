@@ -22,4 +22,4 @@ itertools= ''
 cranelift= ''
 cranelift-jit= ''
 cranelift-module= ''
-cranelift-codegen= {version='', features= ['enable-peepmatic']} #'x64',
+cranelift-codegen= {version='', features= ['enable-peepmatic']}

@@ -177,7 +177,7 @@ impl Simulation<'t> {
 
 #[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
 #[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f32);
-#[derive(derive_more::Deref, Debug)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f32/*; T,P|V,[S-1]*/]>);
+#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f32/*; T,P|V,[S-1]*/]>);
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
 
 impl State {
@@ -374,8 +374,9 @@ pub struct Trap {
 	pub trap_code: TrapCode,
 }
 
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *const f32, *mut f32), /*usize*/()), impl Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>)/*+'static*/) {
+pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *const f32, *mut f32), /*usize*/()), impl Rate<CONSTANT>) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
@@ -496,7 +497,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	//let (function, size) = module.get_finalized_function(id);
 	let (function, size) = (module.get_finalized_function(id), ());
 	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32)>(function)};
-	(trap_sink.0.into_boxed_slice(), (function, size), move |constant, state, derivative| {
+	(trap_sink.0.into_boxed_slice(), (function, size), move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
 		let constant = constant.0 as f32;
 		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 	})
