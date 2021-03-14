@@ -17,6 +17,3 @@ xy= {git='https://github.com/Matthias-Fauconneau/xy'}
 [[bin]]
 name= 'plot'
 path= 'main.rs'
-
-[patch.'https://github.com/Matthias-Fauconneau/ui']
-ui= {path= '../ui'}

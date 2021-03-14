@@ -32,8 +32,9 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	let app = ui::app::App::new(Row([plot()/*, plot()*/]))?;
 	let constant = state.constant();
 	let mut state: StateVector<{Volume}> = (&state).into();
-	pub fn promote(v: &[f32]) -> Box<[f64]> { v.iter().map(|&v| v as f64).collect() }
-	pub fn demote(v: &[f64]) -> Box<[f32]> { v.iter().map(|&v| v as f32).collect() }
+	pub fn map<T, U, F: Fn(&T)->U>(v: &[T], f: F) -> Box<[U]> { v.iter().map(f).collect() }
+	pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
+	pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
 	let mut cvode = cvode::CVODE::new(&promote(&state));
 	/*let derivative = move |u| {
 		let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(2+len-1).collect());
@@ -50,8 +51,10 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	}
 	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> Fn<(&[f64],)> for Derivative<Rate, CONSTANT> {
 		extern "rust-call" fn call(&self, (u,): (&[f64],)) -> Self::Output {
+			//dbg!(u);
+			//for &u in u { if u < 0. { return None; } }
 			let mut derivative = self.derivative.take();
-			(self.rate)(self.constant, &StateVector(demote(u)), &mut derivative);
+			(self.rate)(self.constant, &StateVector(map(u, |&v| (v as f32).max(0.))), &mut derivative);
 			let result = Some(promote(&derivative.0));
 			self.derivative.set(derivative);
 			result
@@ -60,7 +63,7 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	let derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(2+len-1).collect());
 	let derivative = Derivative{rate, constant, derivative: std::cell::Cell::new(derivative)};
 	app.run(|plots| { //: &mut Row<[ui::plot::Plot; 2]>
-		for _ in 0..1000 { (time, state) = {
+		for _ in 0..100 { (time, state) = {
 			let (time, state) = cvode.step(&derivative, time+time_step, &promote(&state));
 			(time, StateVector(demote(state)))
 		}}
