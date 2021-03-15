@@ -18,7 +18,7 @@ impl NASA7 {
 }
 
 #[derive(Clone, Copy)] pub struct RateConstant {
-	pub log_preexponential_factor: f64,
+	pub preexponential_factor: f64,
 	pub temperature_exponent: f64,
 	pub activation_temperature: f64
 }
@@ -26,7 +26,7 @@ impl NASA7 {
 impl From<model::RateConstant> for RateConstant {
 	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: model::RateConstant) -> Self {
 		const J_per_cal: f64 = 4.184;
-		Self{log_preexponential_factor: f64::log2(preexponential_factor)/*-temperature_exponent*log(K)*/, temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
+		Self{preexponential_factor, temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
 	}
 }
 
@@ -311,11 +311,25 @@ fn log2(x: Value, Constants{_1, exponent, _127, mantissa, log, ..}: &Constants, 
 
 use std::f64::consts::LN_2;
 
-fn log_arrhenius(RateConstant{log_preexponential_factor, temperature_exponent, activation_temperature}: RateConstant,
-														rcpT: Value, logT: Value, f: &mut FunctionBuilder<'t>) -> Value {
-	let A = f![f f32const((log_preexponential_factor/*/LN_2*/) as f32)];
-	let AeTβ = if temperature_exponent == 0. { A } else { fma![f (f![f f32const(temperature_exponent as f32)], logT, A)] };
-	if activation_temperature == 0. { AeTβ } else { fma![f (f![f f32const((-activation_temperature/LN_2) as f32)], rcpT, AeTβ)] }
+struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mrcp: Value, rcp2: Value }
+
+// A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
+fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: &T, C: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
+		let A = f![f f32const(preexponential_factor as f32)];
+		if temperature_exponent == 0. { A }
+		else if temperature_exponent == -1. { f![f fmul(A, T.rcp)] }
+		else if temperature_exponent == 1. { f![f fmul(A, T._1)] }
+		else if temperature_exponent == 2. { f![f fmul(A, T._2)] }
+		else if temperature_exponent == 4. { f![f fmul(A, T._4)] }
+		else if temperature_exponent == -2. { f![f fmul(A, T.rcp2)] }
+		else { unreachable!() }
+	} else {
+		let logA = f![f f32const(f64::log2(preexponential_factor) as f32)];
+		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma![f (f![f f32const(temperature_exponent as f32)], T.log, logA)] };
+		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma![f (f![f f32const((-activation_temperature/LN_2) as f32)], T.rcp, βlogT𐊛logA)] };
+		exp2(log_arrhenius, C, f)
+	}
 }
 
 fn fdot<'t>(iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut Constants, &mut FunctionBuilder<'t>)->Value)>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Value {
@@ -337,23 +351,33 @@ where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 	sum
 }
 
+// <=> exp(dot(log(a), log(b)))
+#[track_caller] fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, mut product: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+where T: /*num::IsZero + num::IsOne + num::IsMinusOne +*/ Into<i16> {
+	for (c,v) in iter.into_iter() {
+		let c = c.into();
+		if c > 0 { for _ in 0..c { product = Some(match product { Some(product) => f![f fmul(product, v)], None => v}); } }
+		else { for _ in 0..-c { product = Some(match product { Some(product) => f![f fdiv(product, v)], None => f![f fdiv(C._1, v)]}); } } // fixme: reorder 1/a*b -> b/a to avoid rcp
+	}
+	product
+}
 
 impl ReactionModel {
-fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value, rcpT: Value, mT: Value, mrcpT: Value, concentrations: &[Value], log_k_inf: Value) -> Value {
+fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, T: &T, concentrations: &[Value], k_inf: Value) -> Value {
 	use ReactionModel::*; match self {
 		Elementary => C._1,
 		ThreeBody{efficiencies} => { dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap() },
 		PressureModification{efficiencies, k0} => {
-			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), exp2(f![f fsub(log_arrhenius(*k0, rcpT, logT, f), log_k_inf)], C, f))];
+			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
 			f![f fdiv(Pr, f![f fadd(C._1, Pr)])]
 		}
 		Falloff{efficiencies, k0, troe} => {
-			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), exp2(f![f fsub(log_arrhenius(*k0, rcpT, logT, f), log_k_inf)], C, f))];
+			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
 			let model::Troe{A, T3, T1, T2} = *troe;
 			fn rcp(x: f64) -> f64 { 1./x }
-			let Fcent = fma![f (f![f f32const(1.-A as f32)], exp2(f![f fmul(mT, f![f f32const(rcp(LN_2*T3) as f32)])], C, f),
-														 fma![f (f![f f32const(A as f32)], exp2(f![f fmul(mT, f![f f32const(rcp(LN_2*T1) as f32)])], C, f),
-																																							exp2(f![f fmul(mrcpT, f![f f32const((T2/LN_2) as f32)])], C, f) )] )];
+			let Fcent = fma![f (f![f f32const(1.-A as f32)], exp2(f![f fmul(T.m, f![f f32const(rcp(LN_2*T3) as f32)])], C, f),
+														 fma![f (f![f f32const(A as f32)], exp2(f![f fmul(T.m, f![f f32const(rcp(LN_2*T1) as f32)])], C, f),
+																																							exp2(f![f fmul(T.mrcp, f![f f32const((T2/LN_2) as f32)])], C, f) )] )];
 			let logFcent = log2(Fcent, C, f);
 			let c =fma![f (C.c(f, -0.67), logFcent, C.c(f, -0.4*f64::log2(10.) as f32))];
 			let N = fma![f (C.c(f, -1.27), logFcent, C.c(f, 0.75*f64::log2(10.) as f32))];
@@ -402,14 +426,15 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	let T4 = f![f fmul(T3, T)];
 	let mT = f![f fneg(T)];
 	let mrcpT = f![f fneg(rcpT)];
+	let rcpT2 = f![f fmul(rcpT, rcpT)];
 	let Self{species: Species{molar_mass: W, thermodynamics, heat_capacity_ratio, ..}, reactions} = self;
 	let len = self.len();
 	let a = thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
-	let G_RT = a[..len-1].iter().map(|a| dot(
+	let exp_G_RT = a[..len-1].iter().map(|a| exp2(dot(
 			IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
 			Some(f![f f32const(((a[0]-a[6])/LN_2) as f32)]), C, f
-		).unwrap() ).collect(): Box<_>;
-	let logP0_RT = f![f fsub(f![f f32const(f64::log2(NASA7::reference_pressure) as f32)], logT)];
+		).unwrap(), C, f) ).collect():Box<_>;
+	let P0_RT = f![f fmul(f![f f32const(NASA7::reference_pressure as f32)], rcpT)];
 	let variable = f![f load(F32, flags, state, 1*size_of::<f32>() as i32)];
 	let (pressure, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
 	let kT = f![f fmul(C.c(f, K as f32), T)];
@@ -420,14 +445,15 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	let Ca = f![f fsub(total_concentration, dot(std::iter::repeat(1.).zip(concentrations.iter().copied()), None, C, f).unwrap())];
 	//if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
-	let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
+	//let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
 	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
-		let log_k_inf = log_arrhenius(*rate_constant, rcpT, logT, f);
-		let c = model.efficiency(f, C, logT, rcpT, mT, mrcpT, concentrations, log_k_inf); // todo: CSE
-		let Rf = exp2(dot(reactants.iter().copied().zip(log_concentrations.iter().copied()), Some(log_k_inf), C, f).unwrap(), C, f);
-		let m_log_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
-		let Rr = exp2(dot(products.iter().copied().zip(log_concentrations.iter().copied()), Some(f![f fadd(log_k_inf, m_log_equilibrium_constant)]), C, f).unwrap(), C, f);
+		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
+		let k_inf = arrhenius(*rate_constant, T, C, f);
+		let c = model.efficiency(f, C, T, concentrations, k_inf); // todo: CSE
+		let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), Some(k_inf), C, f).unwrap();
+		let equilibrium_constant = product_of_exponentiations(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), None, C, f).unwrap();
+		let Rr = product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), Some(f![f fmul(k_inf, equilibrium_constant)]), C, f).unwrap();
 		let R = f![f fsub(Rf, Rr)];
 		let cR = f![f fmul(c, R)];
 		for (index, &ν) in net.iter().enumerate() {

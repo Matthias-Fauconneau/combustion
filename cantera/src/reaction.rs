@@ -75,7 +75,7 @@ use super::{*, Property::*};
 		derivative
 	};
 
-	let mut last_time = time;
+	//let mut last_time = time;
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(demote(&explicit(total_amount, constant.0 as f64, &state)));
 		let ref cantera_rate = {
@@ -103,14 +103,14 @@ use super::{*, Property::*};
 		fn absolute_error(a: &[f64], b: &[f64]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }
 		fn relative_error(a: &[f64], b: &[f64]) -> f64 {
 			a.iter().zip(b).map(|(&a,&b)|
-				if a.abs() < 1e-3 && b.abs() < 1e-3 { 0. } else { num::relative_error(a,b) }
+				if a.abs() < 1e-2 && b.abs() < 1e-2 { 0. } else { num::relative_error(a,b) }
 			).reduce(f64::max).unwrap()
 		}
 		let abs = absolute_error(rate, cantera_rate);
 		let rel = relative_error(rate, cantera_rate);
-		//println!("{} {:e} {:e} {:e}", time*1e3, time-last_time, abs, rel);
-		last_time = time;
-		if !(abs < 1e-4 && rel < 1e-2) {
+		println!("{} {:.5} {:e} {:e}", time*1e3, state[0], abs, rel);
+		//last_time = time;
+		if !(abs < 1e-3 && rel < 1e-2) {
 			fn table(labels: &[&str], a: &[f64], b: &[f64]) -> Box<[([String; 5], usize)]> {
 				labels.iter().zip(a.iter().zip(b)).filter(|(_,(&a,&b))| a.abs() > 1e-29 || b.abs() > 1e-29).map(|(&header,(&a,&b))| {
 					fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
@@ -125,18 +125,19 @@ use super::{*, Property::*};
 			}
 			print(&table(&species_names[..len-1], rate, &cantera_rate[..len-1]));
 		}
-		assert!(abs < 1e-4 && rel < 1e-2, "{:e} {:e}", abs, rel);
+		assert!(abs < 1e-3 && rel < 1e-2, "{:e} {:e}", abs, rel);
 
-		/*while time < next_time {
-			let (next_time, next_state) = cvode.step(move |u| system.rate_and_jacobian::<CONSTANT>(state.constant::<CONSTANT>(), &State(*u)).map(|(rate, /*jacobian*/)| rate.0), next_time, &((&state).into():reaction::State<CONSTANT,S>)); //dbg!(time);
-			(time, state) = (next_time, State::new(state.amounts.iter().sum(), state.constant::<CONSTANT>(), &reaction::State::<CONSTANT, S>(next_state)))
-		}
+		let next_time = time + time_step;
+		while time < next_time { (time, state) = {
+				let (time, state) = cvode.step(derivative, next_time, &state);
+				(time, state.to_vec().into_boxed_slice())
+		} }
 		assert_eq!(time, next_time);
-		println!("t {}", time);*/
+		/*println!("t {}", time);
 		(time, state) = {
 			let (time, state) = cvode.step(derivative, time+time_step, &state);
 			(time, state.to_vec().into_boxed_slice())
-		}
+		}*/
 
 		/*{
 			println!("T {} {} {:e}", state.temperature, cantera_state.temperature, num::relative_error(state.temperature, cantera_state.temperature));
