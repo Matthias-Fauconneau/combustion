@@ -163,7 +163,7 @@ impl Simulation<'t> {
 		let amount = pressure * volume / (temperature * K);
 		for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
 		let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
-		let amounts = amount_proportions.iter().map(|amount_proportion| amount/amount_proportions.iter().sum::<f64>() * amount_proportion).collect();
+		let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
 
 		Ok(Self{
 			species_names,
@@ -361,7 +361,6 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, logT: Value
 			let f1 = f![f fdiv(logPr𐊛c, fma![f (C.c(f, -0.14), logPr𐊛c, N)])];
 			let F = exp2(f![f fdiv(logFcent, fma![f (f1, f1, C._1)])], C, f);
 			f![f fmul(f![f fdiv(Pr, f![f fadd(C._1, Pr)])], F)]
-			//Fcent
 		}
 	}
 }
@@ -406,13 +405,10 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 	let Self{species: Species{molar_mass: W, thermodynamics, heat_capacity_ratio, ..}, reactions} = self;
 	let len = self.len();
 	let a = thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
-	let G_RT =
-		a[..len-1].iter().map(|a| dot(
+	let G_RT = a[..len-1].iter().map(|a| dot(
 			IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
-			Some(f![f f32const(((a[0]-a[6])/LN_2) as f32)]), C, f).unwrap()).collect(): Box<_>;
-	//pub fn specific_enthalpy_T(&self, T: f64) -> f64 { let a = self.a(T); a[5]/T+a[0]+a[1]/2.*T+a[2]/3.*T*T+a[3]/4.*T*T*T+a[4]/5.*T*T*T*T } // /RT
-	//pub fn specific_entropy(&self, T: f64) -> f64 { let a = self.a(T); a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T } // /R
-
+			Some(f![f f32const(((a[0]-a[6])/LN_2) as f32)]), C, f
+		).unwrap() ).collect(): Box<_>;
 	let logP0_RT = f![f fsub(f![f f32const(f64::log2(NASA7::reference_pressure) as f32)], logT)];
 	let variable = f![f load(F32, flags, state, 1*size_of::<f32>() as i32)];
 	let (pressure, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};

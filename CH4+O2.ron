@@ -531,17 +531,6 @@ species: {
 	),
 	transport: (well_depth_K: 97.53, diameter_A: 3.621, geometry: Linear(polarizability_A3: 1.76, rotational_relaxation: 4))
 ),
-"CH3CHO": (
-	composition: {C: 2, H: 4, O: 1},
-	thermodynamic: (
-		temperature_ranges: [200, 1000, 6000],
-			pieces: [
-			(4.7294595, -0.003193286, 4.7534921e-5, -5.745861e-8, 2.193111e-11, -21572.878, 4.1030159),
-			(5.4041108, 0.011723059, -4.226314e-6, 6.837245e-10, -4.09849e-14, -22593.122, -3.4807917),
-		],
-	),
-	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
-),
 "C3H7": (
 	composition: {C: 3, H: 7},
 	thermodynamic: (
@@ -571,6 +560,17 @@ species: {
 			pieces: [
 			(3.409062, 0.010738574, 1.891492e-6, -7.158583e-9, 2.867385e-12, 1521.4766, 9.55829),
 			(5.97567, 0.008130591, -2.743624e-6, 4.070304e-10, -2.17602e-14, 490.3218, -5.045251),
+		],
+	),
+	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
+),
+"CH3CHO": (
+	composition: {C: 2, H: 4, O: 1},
+	thermodynamic: (
+		temperature_ranges: [200, 1000, 6000],
+			pieces: [
+			(4.7294595, -0.003193286, 4.7534921e-5, -5.745861e-8, 2.193111e-11, -21572.878, 4.1030159),
+			(5.4041108, 0.011723059, -4.226314e-6, 6.837245e-10, -4.09849e-14, -22593.122, -3.4807917),
 		],
 	),
 	transport: (well_depth_K: 436, diameter_A: 3.97, geometry: Nonlinear(rotational_relaxation: 2))
