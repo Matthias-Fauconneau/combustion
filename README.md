@@ -1,1 +1,1 @@
-Chemical reaction kinetics (adiabatic constant-pressure ideal gas batch reactor)
+Chemical reaction kinetics (adiabatic ideal gas batch reactor)

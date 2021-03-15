@@ -1,45 +1,79 @@
-use {std::ops::Deref, itertools::Itertools, super::*};
+//{std::ops::Deref, itertools::Itertools, super::*};
+use super::*;
 
-pub fn promote(v: &[f32]) -> Box<[f64]> { v.iter().map(|&v| v as f64).collect() }
+//pub fn promote(v: &[f32]) -> Box<[f64]> { v.iter().map(|&v| v as f64).collect() }
 
-#[throws] pub fn check(model: Model, Simulation{species_names, time_step, /*mut*/ state, ..}: &Simulation) {
-	#[allow(unused_mut)] let mut time = 0.;
+#[throws] pub fn check(model: Model, Simulation{/*species_names,*/ /*time_step,*/ /*mut*/ state, ..}: &Simulation) {
+	let file = std::ffi::CStr::from_bytes_with_nul(b"gri30.yaml\0").unwrap().as_ptr();
+	let name = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
+	let phase = unsafe{thermo_newFromFile(file, name)};
+	assert!(model.len() == unsafe{thermo_nSpecies(phase)});
+	/*let species = (0..model.len()).map(|k| {
+		let mut specie = [0; 8];
+		thermo_getSpeciesName(phase, k, specie.len(), specie.as_mut_ptr());
+		std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()
+	});*/
+	unsafe{thermo_setTemperature(phase, state.temperature)};
+	unsafe{thermo_setPressure(phase, state.pressure)};
+	assert!(state.amounts.len() == model.len());
+	unsafe{thermo_setMoleFractions(phase, state.amounts.len(), state.amounts.as_ptr(), 1)};
+	let kinetics = unsafe{kin_newFromFile(file, name, phase, 0, 0, 0, 0)};
+	let mut net_production_rates = vec![0.; model.len()];
+	unsafe{kin_getNetProductionRates(kinetics, model.len(), net_production_rates.as_mut_ptr())};
+	println!("{}", net_production_rates);
+	/*#[allow(unused_mut)] let mut time = 0.;
 	const CONSTANT : Property = {use Property::*; Volume};
 	//let mut cvode = cvode::CVODE::new(promote(((&state).into():StateVector<CONSTANT>).0.deref()).deref());
 	while std::hint::black_box(true) {
 		let next_time = time + *time_step;
-		let (equations, equilibrium_constants, [forward, reverse], ref cantera_rate, ref cantera_state/*, _cantera_concentrations*/) : (_,_,_,Box<[f64]>,_) = {
-			let initial_time = time;
+		let (//equations, equilibrium_constants, [forward, reverse],
+		ref cantera_rate,
+		//ref cantera_state/*, _cantera_concentrations*/
+		) /*: (_,_,_,Box<[f64]>,_)*/ = {
+			//let initial_time = time;
+			//let mole_proportions = state.amounts;
 			let mole_proportions = format!("{}", species_names.iter().zip(state.amounts.deref()).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
 			let mole_proportions = std::ffi::CString::new(mole_proportions)?;
 			use std::ptr::null;
 			let mut pressure = state.pressure / NA;
-			let volume = state.volume;
+			//let volume = state.volume;
 			let mut temperature = state.temperature;// / K;
-			let (mut len, mut specie_names, mut net_productions_rates, mut concentrations,
-						mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse]) = (0, null(), null(), null(), 0, null(), null(), [null(); 2]);
+			let (mut len,
+						mut specie_names,
+						mut net_productions_rates,
+						//mut concentrations,
+						//mut reactions_len, mut equations, mut equilibrium_constants, [mut forward, mut reverse]
+						) = (
+						0,
+						null(),
+						null(),
+						//null(), 0, null(), null(), [null(); 2]
+						);
 			unsafe {
 				cantera::reaction(&mut pressure, &mut temperature, mole_proportions.as_ptr(), &mut len, &mut specie_names,
-																		time-initial_time, &mut net_productions_rates, &mut reactions_len, &mut equations, &mut equilibrium_constants, &mut forward, &mut reverse,
-																		next_time-initial_time, &mut concentrations);
+																		//time-initial_time,
+																		&mut net_productions_rates,
+																		//&mut reactions_len, &mut equations, &mut equilibrium_constants, &mut forward, &mut reverse,
+																		//next_time-initial_time, &mut concentrations
+																		);
 				let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
 				let order = |o:&[_]| -> Box<[_]> { species_names.iter().map(|s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}", s, species_names))]).collect() };
-				let net_productions_rates = order(std::slice::from_raw_parts(net_productions_rates, len)).iter().map(|c| c*1000.).take(len-1).collect(); // kmol/m^3/s => mol/s [1m^3]
-				let concentrations = order(std::slice::from_raw_parts(concentrations, len)).iter().map(|c| c*1000.).collect(); // kmol/m^3 => mol/m^3
+				let net_productions_rates = order(std::slice::from_raw_parts(net_productions_rates, len)).iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>(); // kmol/m^3/s => mol/s [1m^3]
+				//let concentrations = order(std::slice::from_raw_parts(concentrations, len)).iter().map(|c| c*1000.).collect(); // kmol/m^3 => mol/m^3
 				(
-					iter::box_collect(std::slice::from_raw_parts(equations, reactions_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())),
-					iter::box_collect(std::slice::from_raw_parts(equilibrium_constants, reactions_len).iter().zip(model.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet as f64))),
-					[forward, reverse].map(|r| iter::box_collect(std::slice::from_raw_parts(r, reactions_len).iter().map(|c| c*1000.))),
+					//iter::box_collect(std::slice::from_raw_parts(equations, reactions_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())),
+					//iter::box_collect(std::slice::from_raw_parts(equilibrium_constants, reactions_len).iter().zip(model.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet as f64))),
+					//[forward, reverse].map(|r| iter::box_collect(std::slice::from_raw_parts(r, reactions_len).iter().map(|c| c*1000.))),
 					(net_productions_rates /* *volume*/),
-					State{temperature, pressure, volume, amounts: concentrations}
+					//State{temperature, pressure, volume, amounts: concentrations}
 				)
 			}
 		};
-		let cantera_reactions = iter::box_collect(iter::zip!(equations, equilibrium_constants, forward, reverse).into_iter());
+		/*let cantera_reactions = iter::box_collect(iter::zip!(equations, equilibrium_constants, forward, reverse).into_iter());
 		for (index, reaction) in cantera_reactions.iter().enumerate() {
 			let net = reaction.2-reaction.3;
 			if net != 0. { println!("{} {:.0e}", index, net); }
-		}
+		}*/
 		let (_, _, rate) = model.rate::<CONSTANT>();
 		let mut derivative = /*Derivative*/StateVector::<CONSTANT>(std::iter::repeat(0.).take(model.len()).collect());
 		let rate = {rate(state.constant(), &state.into(), &mut derivative); derivative};
@@ -126,7 +160,7 @@ pub fn promote(v: &[f32]) -> Box<[f64]> { v.iter().map(|&v| v as f64).collect() 
 		assert_eq!(time, next_time);
 		println!("t {}", time);
 
-		{
+		/*{
 			println!("T {} {} {:e}", state.temperature, cantera_state.temperature, num::relative_error(state.temperature, cantera_state.temperature));
 			print(&table(species_names, &state.amounts, &cantera_state.amounts));
 			{
@@ -135,8 +169,8 @@ pub fn promote(v: &[f32]) -> Box<[f64]> { v.iter().map(|&v| v as f64).collect() 
 				println!("state {:e} {:e}", abs, rel);
 				assert!(abs < 1e-8 || rel < 0., "state {:e} {:e}", abs, rel);
 			}
-		}
+		}*/
 
 		//state = *cantera_state; // Check rates along cantera trajectory
-	}
+	}*/
 }
