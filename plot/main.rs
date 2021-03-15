@@ -36,17 +36,8 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	let constant = state.constant();
 	//let mut state: StateVector<{Pressure}> = (&state).into();
 	let mut state = ideal(&promote(&((&state).into():StateVector<{Pressure}>)));
-	pub fn map<T, U, F: Fn(&T)->U>(v: &[T], f: F) -> Box<[U]> { v.iter().map(f).collect() }
-	pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
-	pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
-	fn ideal(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // Skip extra state variable (P|V): for ideal gas (PV=nRT) one constant directly imply the other through T
-	fn real(total_amount: f64, pressure: f64, u: &[f64]) -> Box<[f64]> { // Reconstructs extra state variable (P|V) using ideal gas law
-		let temperature = u[0];
-		let volume = K * total_amount / pressure * temperature;
-		[temperature, volume].iter().chain(&u[1..]).copied().collect()
-	}
 	let mut cvode = cvode::CVODE::new(&state);
-	struct Derivative<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> {
+	/*struct Derivative<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> {
 		rate: Rate,
 		constant: Constant<CONSTANT>,
 		total_amount: f64,
@@ -70,14 +61,24 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 			result
 		}
 	}
-	let derivative = /*Derivative*/StateVector::<{Pressure}>(std::iter::repeat(0.).take(2+len-1).collect());
+	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
 	let derivative = Derivative{
 		rate,
 		constant,
 		total_amount,
-		derivative: std::cell::Cell::new(derivative)
+		derivative
+	};*/
+	let derivative = std::cell::Cell::new(derivative);
+	let derivative = move |u| {
+		let mut derivative = self.derivative.take();
+		let pressure = self.constant.0 as f64;
+		(self.rate)(self.constant, &StateVector(map(&real(self.total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative);
+		let result = Some(ideal(&promote(&derivative.0)));
+		self.derivative.set(derivative);
+		//eprintln!("{:e}", result.as_ref().unwrap()[0]);
+		result
 	};
-	app.run(|plots| { //: &mut Row<[ui::plot::Plot; 2]>
+	app.run(move |plots| { //: &mut Row<[ui::plot::Plot; 2]>
 		for _ in 0..100 { (time, state) = {
 			let (time, state) = cvode.step(&derivative, time+time_step, &state);
 			(time, state.to_vec().into_boxed_slice())

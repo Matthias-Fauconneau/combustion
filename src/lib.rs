@@ -375,7 +375,7 @@ pub struct Trap {
 
 pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *const f32, *mut f32), /*usize*/()), impl Rate<CONSTANT>) {
+pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut f32), impl Rate<CONSTANT>) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
@@ -480,20 +480,11 @@ pub fn rate<const CONSTANT: Property>(&self) -> (Box<[Trap]>, (extern fn(f32, *c
 		//for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
 	}*/
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
-  struct Traps (Vec<Trap>);
-  impl Traps { fn new() -> Self { Self(Vec::new()) } }
-	impl binemit::TrapSink for Traps {
-    fn trap(&mut self, code_offset: CodeOffset, source_location: SourceLoc, trap_code: TrapCode) {
-			self.0.push(Trap{code_offset, source_location, trap_code});
-    }
-	}
-	let mut trap_sink = Traps::new();
-	module.define_function(id, &mut context, &mut trap_sink).unwrap();
+  module.define_function(id, &mut context, &mut binemit::NullTrapSink{}).unwrap();
 	module.finalize_definitions();
-	//let (function, size) = module.get_finalized_function(id);
-	let (function, size) = (module.get_finalized_function(id), ());
+	let function = module.get_finalized_function(id);
 	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32)>(function)};
-	(trap_sink.0.into_boxed_slice(), (function, size), move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
+	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
 		let constant = constant.0 as f32;
 		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 	})
