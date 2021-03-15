@@ -75,6 +75,7 @@ use super::{*, Property::*};
 		derivative
 	};
 
+	let mut last_time = time;
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(demote(&explicit(total_amount, constant.0 as f64, &state)));
 		let ref cantera_rate = {
@@ -95,37 +96,36 @@ use super::{*, Property::*};
 			derivative.0
 		};
 
-		/*fn table(labels: &[&str], a: &[f64], b: &[f64]) -> Box<[([String; 4], usize)]> {
-			labels.iter().zip(a.iter().zip(b)).filter(|(_,(&a,&b))| a.abs() > 1e-29 || b.abs() > 1e-29).map(|(&header,(&a,&b))| {
-				fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
-				let column = [header.to_owned(), to_string(a), to_string(b), to_string(num::relative_error(a,b))];
-				let width = column.iter().map(|s| s.len()).max().unwrap();
-				(column, width)
-			}).collect()
-		}
-		fn print<const R: usize>(table: &[([String; R], usize)]) {
-			use itertools::Itertools;
-			for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); }
-		}*/
-
 		let rate = &rate[2..];
 		let rate = promote(&rate);
 		let ref rate = rate.iter().map(|dtn| dtn/volume).collect::<Box<_>>();
 		//let ref rate = rate.iter().map(|&dtn| if dtn.abs() < 1e-29 { 0. } else { dtn }).collect::<Box<_>>(); // Correct max relative error
-		//let len = species_names.len();
-		//print(&table(&species_names[..len-1], rate, &cantera_rate[..len-1]));
 		fn absolute_error(a: &[f64], b: &[f64]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }
 		fn relative_error(a: &[f64], b: &[f64]) -> f64 {
 			a.iter().zip(b).map(|(&a,&b)|
-				if a.abs() < 1e-5 && b.abs() < 1e-5 { 0. } else { num::relative_error(a,b) }
+				if a.abs() < 1e-3 && b.abs() < 1e-3 { 0. } else { num::relative_error(a,b) }
 			).reduce(f64::max).unwrap()
 		}
-		{
-			let abs = absolute_error(rate, cantera_rate);
-			let rel = relative_error(rate, cantera_rate);
-			println!("rate {:e} {:e}", abs, rel);
-			assert!(abs < 1e-5 && rel < 1e-2, "rate {:e} {:e}", abs, rel);
+		let abs = absolute_error(rate, cantera_rate);
+		let rel = relative_error(rate, cantera_rate);
+		//println!("{} {:e} {:e} {:e}", time*1e3, time-last_time, abs, rel);
+		last_time = time;
+		if !(abs < 1e-4 && rel < 1e-2) {
+			fn table(labels: &[&str], a: &[f64], b: &[f64]) -> Box<[([String; 5], usize)]> {
+				labels.iter().zip(a.iter().zip(b)).filter(|(_,(&a,&b))| a.abs() > 1e-29 || b.abs() > 1e-29).map(|(&header,(&a,&b))| {
+					fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
+					let column = [header.to_owned(), to_string(a), to_string(b), to_string(num::abs(a-b)), to_string(num::relative_error(a,b))];
+					let width = column.iter().map(|s| s.len()).max().unwrap();
+					(column, width)
+				}).collect()
+			}
+			fn print<const R: usize>(table: &[([String; R], usize)]) {
+				use itertools::Itertools;
+				for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); }
+			}
+			print(&table(&species_names[..len-1], rate, &cantera_rate[..len-1]));
 		}
+		assert!(abs < 1e-4 && rel < 1e-2, "{:e} {:e}", abs, rel);
 
 		/*while time < next_time {
 			let (next_time, next_state) = cvode.step(move |u| system.rate_and_jacobian::<CONSTANT>(state.constant::<CONSTANT>(), &State(*u)).map(|(rate, /*jacobian*/)| rate.0), next_time, &((&state).into():reaction::State<CONSTANT,S>)); //dbg!(time);
