@@ -340,7 +340,7 @@ fn fdot<'t>(iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut Constants, &mu
 	sum
 }
 
-#[track_caller] fn dot<T>(iter: impl IntoIterator<Item=(T, Value)>, mut sum: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+fn dot<T>(iter: impl IntoIterator<Item=(T, Value)>, mut sum: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
 where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 	for (c,v) in iter.into_iter() {
 		if c.is_zero() {}
@@ -352,7 +352,7 @@ where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 }
 
 // <=> exp(dot(log(a), log(b)))
-fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, mut product: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+/*fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, mut product: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
 where T: Into<i16> {
 	for (c,v) in iter.into_iter() {
 		let c = c.into();
@@ -365,6 +365,18 @@ where T: Into<i16> {
 		else { assert!(c==0); }
 	}
 	product
+}*/
+fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+where T: Into<i16> {
+	let (num, div) = iter.into_iter().map(|(c,v)| (c.into(), v)).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0):(Vec::<_>,Vec::<_>);
+	let num = num.into_iter().fold(None, |mut a, (c,v)|{ for _ in 0..c { a = Some(match a { Some(a) => f![f fmul(a, v)], None => v }); } a });
+	let div = div.into_iter().fold(None, |mut a, (c,v)|{ for _ in 0..-c { a = Some(match a { Some(a) => f![f fmul(a, v)], None => v }); } a });
+	match (num, div) {
+		(None, None) => None,
+		(Some(num), None) => Some(num),
+		(None, Some(div)) => Some(f![f fdiv(C._1, div)]), // Perf: rcp would be faster (12bit)
+		(Some(num), Some(div)) => Some(f![f fdiv(num, div)]) // Perf: mul rcp would be faster (12bit)
+	}
 }
 
 impl ReactionModel {
@@ -456,13 +468,17 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
 		let k_inf = arrhenius(*rate_constant, T, C, f);
 		let c = model.efficiency(f, C, T, concentrations, k_inf); // todo: CSE
-		let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), Some(k_inf), C, f).unwrap();
-		let R = if let ReactionModel::Irreversible = model { Rf } else {
-			let rcp_equilibrium_constant = product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), None, C, f).unwrap();
+		let Rf = f![f fmul(k_inf, product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap())];
+		let R = if let ReactionModel::Irreversible = model {
+			f![f store(flags, f![f f32const(f32::NAN)], debug, (_reaction_index*size_of::<f32>()) as i32)];
+			Rf
+		} else {
+			//let log_rcp_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
+			let rcp_equilibrium_constant = product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), C, f).unwrap();
 			f![f store(flags, rcp_equilibrium_constant, debug, (_reaction_index*size_of::<f32>()) as i32)];
 			//let debug = f![f iadd(debug, f![f iconst(I64, (_reaction_index*size_of::<f32>()) as i64)])];
 			//f![f store(flags, rcp_equilibrium_constant, debug, 0)];
-			let Rr = product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), Some(f![f fmul(k_inf, rcp_equilibrium_constant)]), C, f).unwrap();
+			let Rr = f![f fmul(f![f fmul(k_inf, rcp_equilibrium_constant)], product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap())];
 			f![f fsub(Rf, Rr)]
 		};
 		let cR = f![f fmul(c, R)];
