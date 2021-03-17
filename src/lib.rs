@@ -177,14 +177,14 @@ impl Simulation<'t> {
 #[cfg(test)] mod test;
 
 #[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
-#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f32);
-#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f32/*; T,P|V,[S-1]*/]>);
+#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
+#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,P|V,[S-1]*/]>);
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
 
 impl State {
-	//pub fn constant<const CONSTANT: Property>(&Self{pressure, volume, ..}: &Self) -> f32 { // arbitrary_self_types
+	//pub fn constant<const CONSTANT: Property>(&Self{pressure, volume, ..}: &Self) -> f64 { // arbitrary_self_types
 	pub fn constant<const CONSTANT: Property>(&self) -> Constant<CONSTANT> { let Self{pressure, volume, ..} = self;
-		Constant(*{use Property::*; match CONSTANT {Pressure => pressure, Volume => volume}} as f32)
+		Constant(*{use Property::*; match CONSTANT {Pressure => pressure, Volume => volume}})
 	}
 }
 
@@ -192,7 +192,7 @@ use std::array::IntoIter;
 
 impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
 	fn from(State{temperature, pressure, volume, amounts}: &State) -> Self {
-		Self(IntoIter::new([*temperature as f32, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure}} as f32]).chain(amounts[..amounts.len()-1].iter().map(|&n| n as f32)).collect())
+		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
 	}
 }
 
@@ -205,10 +205,10 @@ impl State {
 			Volume => (u[1], thermodynamic_state_constant)
 		}};
 		State{
-			temperature: u[0] as f64,
-			pressure: pressure as f64,
-			volume: volume as f64,
-			amounts: amounts.iter().chain(&[total_amount as f32 - iter::into::Sum::<f32>::sum(amounts)]).map(|&n| n as f64).collect()
+			temperature: u[0],
+			pressure: pressure,
+			volume: volume,
+			amounts: amounts.iter().chain(&[total_amount - iter::into::Sum::<f64>::sum(amounts)]).copied().collect()
 		}
 	}
 }
@@ -220,7 +220,7 @@ impl std::fmt::Display for State {
 	}
 }
 
-use {cranelift::prelude::{*, types::{I32, F32}, codegen::{ir, binemit}}, cranelift_module::{Linkage, Module}};
+use {cranelift::prelude::{*, types::{I32, F64}, codegen::{ir, binemit}}, cranelift_module::{Linkage, Module}};
 
 macro_rules! f {
 	[$f:ident $function:ident($arg0:expr)] => {{
@@ -257,8 +257,11 @@ macro_rules! fma {
 	}};
 }
 
-struct Constants {
+struct Constants<'t> {
+	module: &'t mut cranelift_jit::JITModule,
+	constants: std::collections::HashMap<u64, Value>,
 	_1: Value,
+	_1_f32: Value,
 	_1_2: Value,
 	_127: Value,
 	exponent: Value,
@@ -268,11 +271,13 @@ struct Constants {
 	exp: [Value; 6],
 	log: [Value; 6],
 	_m126_99999: Value,
-	constants: std::collections::HashMap<u32, Value>
 }
-impl Constants {
-	fn new(f: &mut FunctionBuilder<'t>) -> Self { Self{
-		_1: f![f f32const(1.)],
+impl Constants<'t> {
+	fn new(module: &'t mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'t>) -> Self { Self{
+		module,
+		constants: Default::default(),
+		_1: f![f f64const(1.)],
+		_1_f32: f![f f32const(1.)],
 		_1_2: f![f f32const(1./2.)],
 		_127: f![f iconst(I32, 127)],
 		exponent: f![f iconst(I32, 0x7F800000)],
@@ -282,32 +287,42 @@ impl Constants {
 		//log: [2.28330284476918490682, -1.04913055217340124191, 0.204446009836232697516].map(|c| f![f f32const(c)]),
 		log: [3.1157899, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f![f f32const(c)]),
 		_m126_99999: f![f f32const(-126.99999)],
-		constants: Default::default(),
 	}}
-	#[track_caller] fn c(&mut self, f: &mut FunctionBuilder<'t>, constant: f32) -> Value {
+	#[track_caller] fn c(&mut self, f: &mut FunctionBuilder<'t>, constant: f64) -> Value {
 		assert!(constant.is_finite(), "{}", constant);
-		*self.constants.entry(constant.to_bits()).or_insert_with(|| f![f f32const(constant)])
+		match self.constants.entry(constant.to_bits()) {
+			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+			std::collections::hash_map::Entry::Vacant(entry) => {
+				let data = self.module.declare_data(&constant.to_string(), Linkage::Local, false, false).unwrap();
+				self.module.define_data(data, &{let mut data_ctx = cranelift_module::DataContext::new(); data_ctx.define(Box::new(unsafe{std::mem::transmute::<f64,[u8; 8]>(constant)})); data_ctx}).unwrap();
+				*entry.insert(f![f bitcast(F64, f![f symbol_value(types::I64, self.module.declare_data_in_func(data, f.func))])]) // FIXME: symbol_value(F64) ?
+			}
+		}
 	}
 }
 
 fn exp2(x: Value, Constants{_m126_99999, _1_2, _127, exp, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	use types::F32;
+	let x = f![f fdemote(F32, x)];
 	let x = f![f fmax(x, *_m126_99999)];
 	let ipart = f![f fcvt_to_sint(I32, f![f fsub(x, *_1_2)])];
 	let fpart = f![f fsub(x, f![f fcvt_from_sint(F32, ipart)])];
 	let expipart = f![f bitcast(F32, f![f ishl_imm(f![f iadd(ipart, *_127)], 23)])];
 	//let expfpart = fma![f (fma![f (exp[2], fpart, exp[1])], fpart, exp[0])];
 	let expfpart = fma![f (fma![f (fma![f (fma![f (fma![f (exp[5], fpart, exp[4])], fpart, exp[3])], fpart, exp[2])], fpart, exp[1])], fpart, exp[0])];
-	f![f fmul(expipart, expfpart)]
+	f![f fpromote(F64, f![f fmul(expipart, expfpart)])]
 }
 
-fn log2(x: Value, Constants{_1, exponent, _127, mantissa, log, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
-	let i = f![f /*raw_?*/bitcast(I32, x)];
+fn log2(x: Value, Constants{_1_f32: _1, exponent, _127, mantissa, log, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	use types::F32;
+	let x = f![f fdemote(F32, x)];
+	let i = f![f bitcast(I32, x)];
 	let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, *exponent)], 23)], *_127)])];
 	let m = f![f bor(f![f bitcast(F32, f![f band(i, *mantissa)])], *_1)];
 	//let p = fma![f (fma![f (log[2], m, log[1])], m, log[0])];
 	let p = fma![f (fma![f (fma![f (fma![f (fma![f (log[5], m, log[4])], m, log[3])], m, log[2])], m, log[1])], m, log[0])];
 	let p = f![f fmul(p, f![f fsub(m, *_1)])]; //?
-	f![f fadd(p, e)]
+	f![f fpromote(F64, f![f fadd(p, e)])]
 }
 
 use std::f64::consts::LN_2;
@@ -317,7 +332,7 @@ struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mr
 // A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
 fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: &T, C: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		let A = f![f f32const(preexponential_factor as f32)];
+		let A = f![f f64const(preexponential_factor)];
 		if temperature_exponent == 0. { A }
 		else if temperature_exponent == -1. { f![f fmul(A, T.rcp)] }
 		else if temperature_exponent == 1. { f![f fmul(A, T._1)] }
@@ -326,27 +341,27 @@ fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activatio
 		else if temperature_exponent == -2. { f![f fmul(A, T.rcp2)] }
 		else { unreachable!() }
 	} else {
-		let logA = f![f f32const(f64::log2(preexponential_factor) as f32)];
-		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma![f (f![f f32const(temperature_exponent as f32)], T.log, logA)] };
-		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma![f (f![f f32const((-activation_temperature/LN_2) as f32)], T.rcp, βlogT𐊛logA)] };
+		let logA = f![f f64const(f64::log2(preexponential_factor))];
+		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma![f (f![f f64const(temperature_exponent)], T.log, logA)] };
+		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma![f (f![f f64const(-activation_temperature/LN_2)], T.rcp, βlogT𐊛logA)] };
 		exp2(log_arrhenius, C, f)
 	}
 }
 
-fn fdot<'t>(iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut Constants, &mut FunctionBuilder<'t>)->Value)>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Value {
+fn fdot<'t>(iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut Constants<'t>, &mut FunctionBuilder<'t>)->Value)>, C: &mut Constants<'t>, f: &mut FunctionBuilder<'t>) -> Value {
 	let mut iter = iter.into_iter();
 	let mut sum = {let (a,b) = iter.next().unwrap(); f![f fmul(a, b(C, f))]};
 	for (a,b) in iter { sum = fma![f (a, b(C, f), sum)]; }
 	sum
 }
 
-fn dot<T>(iter: impl IntoIterator<Item=(T, Value)>, mut sum: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+fn dot<T>(iter: impl IntoIterator<Item=(T, Value)>, mut sum: Option<Value>, C: &mut Constants<'t>, f: &mut FunctionBuilder<'t>) -> Option<Value>
 where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 	for (c,v) in iter.into_iter() {
 		if c.is_zero() {}
 		else if c.is_one() { sum = Some(match sum { Some(sum) => f![f fadd(sum, v)], None => v}); }
 		else if c.is_minus_one() { sum = Some(match sum { Some(sum) => f![f fsub(sum, v)], None => f![f fneg(v)]}); } // fixme: reorder -a+b -> b-a to avoid neg
-		else { let c = C.c(f, c.into() as f32); sum = Some(match sum { Some(sum) => fma![f (c, v, sum)], None => f![f fmul(c, v)] }); }
+		else { let c = C.c(f, c.into()); sum = Some(match sum { Some(sum) => fma![f (c, v, sum)], None => f![f fmul(c, v)] }); }
 	}
 	sum
 }
@@ -380,7 +395,7 @@ where T: Into<i16> {
 }
 
 impl ReactionModel {
-fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, T: &T, concentrations: &[Value], k_inf: Value) -> Value {
+fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants<'t>, T: &T, concentrations: &[Value], k_inf: Value) -> Value {
 	use ReactionModel::*; match self {
 		Elementary|Irreversible => C._1,
 		ThreeBody{efficiencies} => { dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap() },
@@ -392,12 +407,12 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, T: &T, conc
 			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
 			let model::Troe{A, T3, T1, T2} = *troe;
 			fn rcp(x: f64) -> f64 { 1./x }
-			let Fcent = fma![f (f![f f32const(1.-A as f32)], exp2(f![f fmul(T.m, f![f f32const(rcp(LN_2*T3) as f32)])], C, f),
-														 fma![f (f![f f32const(A as f32)], exp2(f![f fmul(T.m, f![f f32const(rcp(LN_2*T1) as f32)])], C, f),
-																																							exp2(f![f fmul(T.mrcp, f![f f32const((T2/LN_2) as f32)])], C, f) )] )];
+			let Fcent = fma![f (f![f f64const(1.-A)], exp2(f![f fmul(T.m, f![f f64const(rcp(LN_2*T3))])], C, f),
+														 fma![f (f![f f64const(A)], exp2(f![f fmul(T.m, f![f f64const(rcp(LN_2*T1))])], C, f),
+																																							exp2(f![f fmul(T.mrcp, f![f f64const(T2/LN_2)])], C, f) )] )];
 			let logFcent = log2(Fcent, C, f);
-			let c =fma![f (C.c(f, -0.67), logFcent, C.c(f, -0.4*f64::log2(10.) as f32))];
-			let N = fma![f (C.c(f, -1.27), logFcent, C.c(f, 0.75*f64::log2(10.) as f32))];
+			let c =fma![f (C.c(f, -0.67), logFcent, C.c(f, -0.4*f64::log2(10.)))];
+			let N = fma![f (C.c(f, -1.27), logFcent, C.c(f, 0.75*f64::log2(10.)))];
 			let logPr𐊛c = f![f fadd(log2(Pr, C, f), c)];
 			let f1 = f![f fdiv(logPr𐊛c, fma![f (C.c(f, -0.14), logPr𐊛c, N)])];
 			let F = exp2(f![f fdiv(logFcent, fma![f (f1, f1, C._1)])], C, f);
@@ -414,14 +429,14 @@ pub struct Trap {
 	pub trap_code: TrapCode,
 }
 
-pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f32]/*[&mut [f32]; 2]*/);
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut f32, *mut f32), impl Rate<CONSTANT>) {
+pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f64, *const f64, *mut f64), impl Rate<CONSTANT>) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
 	let PTR = module.target_config().pointer_type();
-  let params = [("constant", F32), ("state", PTR), ("rate", PTR), ("debug", PTR)/*, ("debug1", PTR)*/];
+  let params = [("constant", F64), ("state", PTR), ("rate", PTR)];
 	context.func.signature.params = params.iter().map(|(_,r#type)| AbiParam::new(*r#type)).collect();
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut builder = FunctionBuilder::new(&mut context.func, &mut function_builder_context);
@@ -429,13 +444,13 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	builder.append_block_params_for_function_params(entry_block);
 	builder.switch_to_block(entry_block);
 	builder.seal_block(entry_block);
-	let [constant, state, rate, debug/*0, debug1*/]: [Value; 4] = builder.block_params(entry_block).try_into().unwrap();
+	let [constant, state, rate]: [Value; 3] = builder.block_params(entry_block).try_into().unwrap();
 	let flags = MemFlags::new();
 	let ref mut f = builder;
-	let ref mut C = Constants::new(f);
-	let _m1 = f![f f32const(-1.)];
+	let ref mut C = Constants::new(&mut module, f);
+	let _m1 = C.c(f, -1.);
 	use std::mem::size_of;
-	let T = f![f load(F32, flags, state, 0*size_of::<f32>() as i32)];
+	let T = f![f load(F64, flags, state, 0*size_of::<f64>() as i32)];
 	let logT = log2(T, C, f);
 	let rcpT = f![f fdiv(C._1, T)];
 	let T2 = f![f fmul(T, T)];
@@ -449,14 +464,14 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	let a = thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
 	let exp_G_RT = a[..len-1].iter().map(|a| exp2(dot(
 			IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
-			Some(f![f f32const(((a[0]-a[6])/LN_2) as f32)]), C, f
+			Some(f![f f64const((a[0]-a[6])/LN_2)]), C, f
 		).unwrap(), C, f) ).collect():Box<_>;
-	let P0_RT = f![f fmul(f![f f32const(NASA7::reference_pressure as f32)], rcpT)];
-	let variable = f![f load(F32, flags, state, 1*size_of::<f32>() as i32)];
+	let P0_RT = f![f fmul(C.c(f, NASA7::reference_pressure), rcpT)];
+	let variable = f![f load(F64, flags, state, 1*size_of::<f64>() as i32)];
 	let (pressure, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
-	let kT = f![f fmul(C.c(f, K as f32), T)];
+	let kT = f![f fmul(C.c(f, K), T)];
 	let total_concentration = f![f fdiv(pressure/*/Na*/, kT)]; // n/V = P/RT
-	let amounts = (0..len-1).map(|i| f![f load(F32, flags, state, ((2+i)*size_of::<f32>()) as i32)]).collect(): Box<_>;
+	let amounts = (0..len-1).map(|i| f![f load(F64, flags, state, ((2+i)*size_of::<f64>()) as i32)]).collect(): Box<_>;
 	let rcpV = f![f fdiv(C._1, volume)];
 	let concentrations = amounts.iter().map(|&n| f![f fmul(n/*.max(0.)*/, rcpV)]).collect(): Box<_>;
 	let Ca = f![f fsub(total_concentration, dot(std::iter::repeat(1.).zip(concentrations.iter().copied()), None, C, f).unwrap())];
@@ -467,39 +482,31 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	for (_reaction_index, Reaction{reactants, products, net, Σnet, rate_constant, model, ..}) in reactions.iter().enumerate() {
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
 		let k_inf = arrhenius(*rate_constant, T, C, f);
-		let c = model.efficiency(f, C, T, concentrations, k_inf); // todo: CSE
-		let Rf = f![f fmul(k_inf, product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap())];
-		let R = if let ReactionModel::Irreversible = model {
-			f![f store(flags, f![f f32const(f32::NAN)], debug, (_reaction_index*size_of::<f32>()) as i32)];
-			Rf
-		} else {
-			//let log_rcp_equilibrium_constant = dot(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(G_RT.iter().chain(&[logP0_RT]).copied()), None, C, f).unwrap();
+		let c = f![f fmul(k_inf, model.efficiency(f, C, T, concentrations, k_inf))]; // todo: CSE
+		let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap();
+		let R = if let ReactionModel::Irreversible = model { Rf } else {
 			let rcp_equilibrium_constant = product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), C, f).unwrap();
-			f![f store(flags, rcp_equilibrium_constant, debug, (_reaction_index*size_of::<f32>()) as i32)];
-			//let debug = f![f iadd(debug, f![f iconst(I64, (_reaction_index*size_of::<f32>()) as i64)])];
-			//f![f store(flags, rcp_equilibrium_constant, debug, 0)];
-			let Rr = f![f fmul(f![f fmul(k_inf, rcp_equilibrium_constant)], product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap())];
+			let Rr = f![f fmul(rcp_equilibrium_constant, product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), C, f).unwrap())];
 			f![f fsub(Rf, Rr)]
 		};
 		let cR = f![f fmul(c, R)];
-		//f![f store(flags, cR, debug, (_reaction_index*size_of::<f32>()) as i32)];
 		for (index, &ν) in net.iter().enumerate() {
 			let dtω = &mut dtω[index];
 			match ν {
 					0 => {},
 					1 => match dtω { None => *dtω = Some(cR), Some(dtω) => *dtω = f![f fadd(*dtω, cR)] }
 					-1 => match dtω { None => *dtω = Some(f![f fneg(cR)]), Some(dtω) => *dtω = f![f fsub(*dtω, cR)] }
-					ν => match dtω { None => *dtω = Some(f![f fmul(C.c(f, ν as f32), cR)]), Some(dtω) => *dtω = fma![f (C.c(f, ν as f32), cR, *dtω)] }
+					ν => match dtω { None => *dtω = Some(f![f fmul(C.c(f, ν as f64), cR)]), Some(dtω) => *dtω = fma![f (C.c(f, ν as f64), cR, *dtω)] }
 			}
 		}
 	}
 
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
 	struct Dot<const N: usize>(f64, [(f64, Value); N]);
-	impl<'t, const N: usize> FnOnce<(&mut Constants, &mut FunctionBuilder<'t>,)> for Dot<N> {
+	impl<'t, const N: usize> FnOnce<(&mut Constants<'t>, &mut FunctionBuilder<'t>,)> for Dot<N> {
 		type Output = Value;
-		extern "rust-call" fn call_once(self, (C, f,): (&mut Constants, &mut FunctionBuilder<'t>,)) -> Self::Output {
-			dot(IntoIter::new(self.1), Some(f![f f32const(self.0 as f32)]), C, f).unwrap()
+		extern "rust-call" fn call_once(self, (C, f,): (&mut Constants<'t>, &mut FunctionBuilder<'t>,)) -> Self::Output {
+			dot(IntoIter::new(self.1), Some(C.c(f, self.0)), C, f).unwrap()
 		}
 	}
 	let Cc/*Cp|Cv*/ = a.iter().map(|a| Dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
@@ -507,17 +514,18 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| Dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
 	let dtω = dtω.into_iter().map(|dtω| dtω.unwrap()).collect(): Box<_>;
 	let dtT_T = f![f fmul(m_rcp_ΣCCc, fdot(dtω.iter().copied().zip(E_RT), C, f))];
-	f![f store(flags, f![f fmul(dtT_T, T)], rate, 0*size_of::<f32>() as i32)];
+	f![f store(flags, f![f fmul(dtT_T, T)], rate, 0*size_of::<f64>() as i32)];
 	let R_S_Tdtn = f![f fmul(f![f fdiv(kT, pressure/*/Na*/)], dot(W[0..len-1].iter().map(|w| 1. - w/W[len-1]).zip(dtω.iter().copied()), None, C, f).unwrap())]; // R/A Tdtn (constant pressure: A=V, constant volume: A=P)
 	let dtS_S = f![f fadd(R_S_Tdtn, dtT_T)];
-	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f32>() as i32)];
+	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f64>() as i32)];
 	let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
-	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f32>()) as i32)]; }
+	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f64>()) as i32)]; }
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
 	//eprintln!("{}", clif);
-	/*{
+	std::fs::write("/tmp/CH4+O2.clif", clif.to_string()).unwrap();
+	{
 		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0);
 		let mut context = codegen::Context::new();
 		context.func = function;
@@ -530,16 +538,17 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 		use capstone::arch::BuildsCapstone;
 		let capstone = capstone::Capstone::new().x86().mode(capstone::arch::x86::ArchMode::Mode64).build().unwrap();
 		let instructions = capstone.disasm_all(&mem, 0).unwrap();
-		//for i in instructions.iter() { println!("{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()); }
-	}*/
+		let mut file = std::fs::File::create("/tmp/CH4+O2.asm").unwrap();
+		for i in instructions.iter() { use std::io::Write; writeln!(file, "{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()).unwrap(); }
+	}
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
   module.define_function(id, &mut context, &mut binemit::NullTrapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32, *mut f32)>(function)};
-	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, debug: &mut [f32]/*[&mut [f32]; 2]*/| {
-		let constant = constant.0 as f32;
-		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr(), debug.as_mut_ptr()/*debug[0].as_mut_ptr(), debug[1].as_mut_ptr()*/);
+	let function = unsafe{std::mem::transmute::<_,extern fn(f64, *const f64, *mut f64)>(function)};
+	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
+		let constant = constant.0;
+		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 	})
 }
 }

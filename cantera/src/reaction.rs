@@ -1,6 +1,6 @@
 pub fn map<T, U, F: Fn(&T)->U>(v: &[T], f: F) -> Box<[U]> { v.iter().map(f).collect() }
-pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
-pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
+//pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
+//pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
 fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
 fn explicit(total_amount: f64, pressure: f64, u: &[f64]) -> Box<[f64]> { // Reconstructs P|V using ideal gas law
 	let temperature = u[0];
@@ -52,7 +52,7 @@ use itertools::Itertools;
 	let total_amount = state.amounts.iter().sum();
 	let volume = state.volume;
 	let constant = state.constant();
-	let mut state = implicit(&promote(&(state.into():StateVector<{Volume}>)));
+	let mut state = implicit(/*&promote(*/&(state.into():StateVector<{Volume}>)/*)*/);
 	let mut cvode = cvode::CVODE::new(&state);
 	let mut time = 0.;
 	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
@@ -88,9 +88,8 @@ use itertools::Itertools;
 			let Self{rate, constant, total_amount, derivative} = self;
 			get_mut(derivative, |mut derivative| {
 				let pressure = constant.0 as f64;
-				let mut reactions = vec![0.; 325].into_boxed_slice();
-				rate(*constant, &StateVector(map(&explicit(*total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative, &mut reactions);
-				Some(implicit(&promote(&derivative.0)))
+				rate(*constant, &StateVector(map(&explicit(*total_amount, pressure, u), |&v| (v /*as f32*/).max(0.))), &mut derivative);
+				Some(implicit(/*&promote(*/&derivative.0)/*)*/)
 			})
 		}
 	}
@@ -103,8 +102,8 @@ use itertools::Itertools;
 
 	//let mut last_time = time;
 	while std::hint::black_box(true) {
-		let ref state_vector = StateVector(demote(&explicit(total_amount, constant.0 as f64, &state)));
-		let (ref cantera_equilibrium_constants, ref _cantera_reactions, ref cantera_rates)/*(cantera_creation, cantera_destruction)*/ = {
+		let ref state_vector = StateVector(/*demote(&*/explicit(total_amount, constant.0 as f64, &state)/*)*/);
+		let (ref _cantera_equilibrium_constants, ref _cantera_reactions, ref cantera_rates)/*(cantera_creation, cantera_destruction)*/ = {
 			let state = State::new(total_amount, constant, state_vector);
 			assert!(state.amounts.len() == len);
 			unsafe{thermo_setMoleFractions(phase, state.amounts.len(), state.amounts.as_ptr(), 1)}; // /!\ Needs to be set before pressure
@@ -139,13 +138,13 @@ use itertools::Itertools;
 			(equilibrium_constants, reaction_rates, rates)
 		};
 
-		let mut rcp_equilibrium_constants = vec![f32::NAN; model.reactions.len()].into_boxed_slice();
+		//let mut rcp_equilibrium_constants = vec![f32::NAN; model.reactions.len()].into_boxed_slice();
 		//let mut reactions_rates = vec![0.; model.reactions.len()].into_boxed_slice();
 		//let mut [creation, destruction] = [vec![0.; len].into_boxed_slice(); 2];
 		let rate = {
 			let ref rate = derivative.rate;
 			let mut derivative = /*Derivative*/StateVector::<{Volume}>(vec![0.; 2+len-1].into_boxed_slice());
-			rate(constant, state_vector, &mut derivative, &mut rcp_equilibrium_constants);
+			rate(constant, state_vector, &mut derivative/*, &mut rcp_equilibrium_constants*/);
 			//rate(constant, state_vector, &mut derivative, &mut reactions_rates);
 			//rate(constant, state_vector, &mut derivative, [&mut creation, &mut destruction]);
 			derivative.0
@@ -153,7 +152,7 @@ use itertools::Itertools;
 
 		fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
 
-		if false {
+		/*if false {
 			/*let reactions = {
 					let Model{species: Species{thermodynamics, ..}, reactions, ..} = &model;
 					let State{volume, temperature, amounts, ..} = state;
@@ -207,10 +206,10 @@ use itertools::Itertools;
 				assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 				assert!(num::relative_error(a, b) < 0.002, "{:.1e} {:.1e} {}", a, b, num::relative_error(a, b));
 			}*/
-		}
+		}*/
 
 		let rate = &rate[2..];
-		let rate = promote(&rate);
+		//let rate = promote(&rate);
 		let ref rate = rate.iter().map(|dtn| dtn/volume).collect::<Box<_>>();
 		//let ref rate = rate.iter().map(|&dtn| if dtn.abs() < 1e-29 { 0. } else { dtn }).collect::<Box<_>>(); // Correct max relative error
 		fn absolute_error(a: &[f64], b: &[f64]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }

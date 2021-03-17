@@ -23,3 +23,5 @@ cranelift= ''
 cranelift-jit= ''
 cranelift-module= ''
 cranelift-codegen= {version='', features= ['enable-peepmatic']}
+capstone= ''
+cranelift-reader= ''
