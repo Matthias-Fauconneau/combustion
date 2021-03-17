@@ -42,6 +42,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub enum ReactionModel<'t> {
 	Elementary,
+	Irreversible,
 	ThreeBody { #[serde(borrow)] efficiencies: Map<&'t str, f64> },
 	PressureModification { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant },
 	Falloff { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant, troe: Troe },

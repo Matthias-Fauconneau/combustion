@@ -1,7 +1,6 @@
 #![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits)]
 #![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
 #![allow(unused_variables, dead_code)]
-//use num::log;
 
 pub const K : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
@@ -50,6 +49,7 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 
 pub enum ReactionModel {
 	Elementary,
+	Irreversible,
 	ThreeBody { efficiencies: Box<[f64]> },
 	PressureModification { efficiencies: Box<[f64]>, k0: RateConstant },
 	Falloff { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
@@ -129,6 +129,7 @@ pub fn new(model::Model{species, reactions, ..}: model::Model) -> Self {
 			rate_constant: rate_constant.into(),
 			model: {use model::ReactionModel::*; match model {
 				Elementary => ReactionModel::Elementary,
+				Irreversible => ReactionModel::Irreversible,
 				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
 				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
 				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe},
@@ -342,7 +343,6 @@ fn fdot<'t>(iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut Constants, &mu
 #[track_caller] fn dot<T>(iter: impl IntoIterator<Item=(T, Value)>, mut sum: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
 where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 	for (c,v) in iter.into_iter() {
-		//use num::{IsZero, IsOne, IsMinusOne};
 		if c.is_zero() {}
 		else if c.is_one() { sum = Some(match sum { Some(sum) => f![f fadd(sum, v)], None => v}); }
 		else if c.is_minus_one() { sum = Some(match sum { Some(sum) => f![f fsub(sum, v)], None => f![f fneg(v)]}); } // fixme: reorder -a+b -> b-a to avoid neg
@@ -352,12 +352,17 @@ where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 }
 
 // <=> exp(dot(log(a), log(b)))
-#[track_caller] fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, mut product: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
-where T: /*num::IsZero + num::IsOne + num::IsMinusOne +*/ Into<i16> {
+fn product_of_exponentiations<T>(iter: impl IntoIterator<Item=(T, Value)>, mut product: Option<Value>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value>
+where T: Into<i16> {
 	for (c,v) in iter.into_iter() {
 		let c = c.into();
 		if c > 0 { for _ in 0..c { product = Some(match product { Some(product) => f![f fmul(product, v)], None => v}); } }
-		else { for _ in 0..-c { product = Some(match product { Some(product) => f![f fdiv(product, v)], None => f![f fdiv(C._1, v)]}); } } // fixme: reorder 1/a*b -> b/a to avoid rcp
+		else if c < 0 {
+			let mut term = v;
+			for _ in 1..-c { term = f![f fmul(term, v)]; }
+			product = Some(match product { Some(product) => f![f fdiv(product, term)], None => f![f fdiv(C._1, term)]}); // fixme: reorder 1/a*b -> b/a to avoid rcp
+		}
+		else { assert!(c==0); }
 	}
 	product
 }
@@ -365,7 +370,7 @@ where T: /*num::IsZero + num::IsOne + num::IsMinusOne +*/ Into<i16> {
 impl ReactionModel {
 fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, T: &T, concentrations: &[Value], k_inf: Value) -> Value {
 	use ReactionModel::*; match self {
-		Elementary => C._1,
+		Elementary|Irreversible => C._1,
 		ThreeBody{efficiencies} => { dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap() },
 		PressureModification{efficiencies, k0} => {
 			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
@@ -397,14 +402,14 @@ pub struct Trap {
 	pub trap_code: TrapCode,
 }
 
-pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f32]/*[&mut [f32]; 2]*/);
 impl Model {
-pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut f32), impl Rate<CONSTANT>) {
+pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut f32, *mut f32), impl Rate<CONSTANT>) {
 	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
 	let mut module = cranelift_jit::JITModule::new(builder);
   let mut context = module.make_context();
 	let PTR = module.target_config().pointer_type();
-  let params = [("constant", F32), ("state", PTR), ("rate", PTR)];
+  let params = [("constant", F32), ("state", PTR), ("rate", PTR), ("debug", PTR)/*, ("debug1", PTR)*/];
 	context.func.signature.params = params.iter().map(|(_,r#type)| AbiParam::new(*r#type)).collect();
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut builder = FunctionBuilder::new(&mut context.func, &mut function_builder_context);
@@ -412,7 +417,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	builder.append_block_params_for_function_params(entry_block);
 	builder.switch_to_block(entry_block);
 	builder.seal_block(entry_block);
-	let [constant, state, rate]: [Value; 3] = builder.block_params(entry_block).try_into().unwrap();
+	let [constant, state, rate, debug/*0, debug1*/]: [Value; 4] = builder.block_params(entry_block).try_into().unwrap();
 	let flags = MemFlags::new();
 	let ref mut f = builder;
 	let ref mut C = Constants::new(f);
@@ -447,15 +452,21 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 	//let log_concentrations = concentrations.iter().map(|&x| log2(x, C, f)).collect(): Box<[Value]>;
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
-	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions.iter() {
+	for (_reaction_index, Reaction{reactants, products, net, Σnet, rate_constant, model, ..}) in reactions.iter().enumerate() {
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
 		let k_inf = arrhenius(*rate_constant, T, C, f);
 		let c = model.efficiency(f, C, T, concentrations, k_inf); // todo: CSE
 		let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()), Some(k_inf), C, f).unwrap();
-		let equilibrium_constant = product_of_exponentiations(net.iter().copied().chain(IntoIter::new([-Σnet])).zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), None, C, f).unwrap();
-		let Rr = product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), Some(f![f fmul(k_inf, equilibrium_constant)]), C, f).unwrap();
-		let R = f![f fsub(Rf, Rr)];
+		let R = if let ReactionModel::Irreversible = model { Rf } else {
+			let rcp_equilibrium_constant = product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), None, C, f).unwrap();
+			f![f store(flags, rcp_equilibrium_constant, debug, (_reaction_index*size_of::<f32>()) as i32)];
+			//let debug = f![f iadd(debug, f![f iconst(I64, (_reaction_index*size_of::<f32>()) as i64)])];
+			//f![f store(flags, rcp_equilibrium_constant, debug, 0)];
+			let Rr = product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied()), Some(f![f fmul(k_inf, rcp_equilibrium_constant)]), C, f).unwrap();
+			f![f fsub(Rf, Rr)]
+		};
 		let cR = f![f fmul(c, R)];
+		//f![f store(flags, cR, debug, (_reaction_index*size_of::<f32>()) as i32)];
 		for (index, &ν) in net.iter().enumerate() {
 			let dtω = &mut dtω[index];
 			match ν {
@@ -509,10 +520,10 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f32, *const f32, *mut
   module.define_function(id, &mut context, &mut binemit::NullTrapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32)>(function)};
-	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
+	let function = unsafe{std::mem::transmute::<_,extern fn(f32, *const f32, *mut f32, *mut f32)>(function)};
+	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, debug: &mut [f32]/*[&mut [f32]; 2]*/| {
 		let constant = constant.0 as f32;
-		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
+		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr(), debug.as_mut_ptr()/*debug[0].as_mut_ptr(), debug[1].as_mut_ptr()*/);
 	})
 }
 }

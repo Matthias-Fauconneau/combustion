@@ -9,9 +9,24 @@ fn explicit(total_amount: f64, pressure: f64, u: &[f64]) -> Box<[f64]> { // Reco
 }
 
 use super::{*, Property::*};
+use itertools::Itertools;
 
 #[throws] pub fn check(model: Model, Simulation{species_names, time_step, state, ..}: &Simulation) {
 	let len = model.len();
+	let reactions = map(&model.reactions, |Reaction{reactants, products, model, ..}| {
+		format!("{}", [reactants, products].iter().format_with(if let ReactionModel::Irreversible = model { " => " } else { " <=> " }, |side, f| {
+			f(&side.iter().enumerate().filter(|(_,&ν)| ν > 0)
+				.sorted_by_key(|&(k,_)| species_names[k])
+				.format_with(" + ", |(specie, &ν), f| if ν > 1 { f(&format_args!("{} {}",ν,species_names[specie])) } else { f(&species_names[specie]) }))?;
+			use ReactionModel::*; match model {
+					Elementary|Irreversible => {},
+					ThreeBody{..} => f(&" + M")?,
+					PressureModification{..}|Falloff{..} => f(&" (+M)")?,
+			};
+			Ok(())
+		}))
+	});
+
 	let file = std::ffi::CStr::from_bytes_with_nul(b"gri30.yaml\0").unwrap().as_ptr();
 	let name = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
 	let phase = unsafe{thermo_newFromFile(file, name)};
@@ -23,6 +38,16 @@ use super::{*, Property::*};
 			unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
 		}).collect::<Box<_>>();
 		assert_eq!(&cantera_species_name.iter().map(String::as_str).collect::<Box<_>>(), species_names);
+	}
+	let kinetics = unsafe{kin_newFromFile(file, name, phase, 0, 0, 0, 0)};
+	{
+		let cantera_reactions = (0..model.reactions.len()).map(|i| {
+			let mut reaction = [0; 64];
+			unsafe{kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr())};
+			unsafe{std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()}
+		}).collect::<Box<_>>();
+		for (cantera, reaction) in cantera_reactions.iter().zip(reactions.iter()) { assert_eq!(cantera, reaction); }
+		assert_eq!(cantera_reactions, reactions);
 	}
 	let total_amount = state.amounts.iter().sum();
 	let volume = state.volume;
@@ -63,7 +88,8 @@ use super::{*, Property::*};
 			let Self{rate, constant, total_amount, derivative} = self;
 			get_mut(derivative, |mut derivative| {
 				let pressure = constant.0 as f64;
-				rate(*constant, &StateVector(map(&explicit(*total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative);
+				let mut reactions = vec![0.; 325].into_boxed_slice();
+				rate(*constant, &StateVector(map(&explicit(*total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative, &mut reactions);
 				Some(implicit(&promote(&derivative.0)))
 			})
 		}
@@ -78,23 +104,95 @@ use super::{*, Property::*};
 	//let mut last_time = time;
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(demote(&explicit(total_amount, constant.0 as f64, &state)));
-		let ref cantera_rate = {
+		let (ref cantera_equilibrium_constants, ref _cantera_reactions, ref cantera_rates)/*(cantera_creation, cantera_destruction)*/ = {
 			let state = State::new(total_amount, constant, state_vector);
 			assert!(state.amounts.len() == len);
 			unsafe{thermo_setMoleFractions(phase, state.amounts.len(), state.amounts.as_ptr(), 1)}; // /!\ Needs to be set before pressure
 			unsafe{thermo_setTemperature(phase, state.temperature)};
 			unsafe{thermo_setPressure(phase, state.pressure * NA)}; // /!\ Needs to be set after mole fractions
-			let kinetics = unsafe{kin_newFromFile(file, name, phase, 0, 0, 0, 0)};
-			let mut net_productions_rates = vec![0.; len];
-			unsafe{kin_getNetProductionRates(kinetics, len, net_productions_rates.as_mut_ptr())};
-			net_productions_rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
+			let equilibrium_constants = {
+				let mut equilibrium_constants = vec![0.; model.reactions.len()];
+				unsafe{kin_getEquilibriumConstants(kinetics, model.reactions.len(), equilibrium_constants.as_mut_ptr())};
+				equilibrium_constants.iter().zip(model.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet as f64)).collect::<Box<_>>() // kmol -> mol
+			};
+			let reaction_rates = {
+				let mut rates = vec![0.; model.reactions.len()];
+				unsafe{kin_getNetRatesOfProgress(kinetics, model.reactions.len(), rates.as_mut_ptr())};
+				rates.iter().map(|c| c*1000.).collect::<Box<_>>() // kmol -> mol
+			};
+			let rates = {
+				let mut rates = vec![0.; len];
+				unsafe{kin_getNetProductionRates(kinetics, len, rates.as_mut_ptr())};
+				rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
+			};
+			/*let creation = {
+				let mut rates = vec![0.; len];
+				unsafe{kin_getCreationRates(kinetics, len, rates.as_mut_ptr())};
+				rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
+			}
+			let destruction = {
+				let mut rates = vec![0.; len];
+				unsafe{kin_getDestructionRates(kinetics, len, destruction_rates.as_mut_ptr())};
+				rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
+			}
+			(creation, destruction)*/
+			(equilibrium_constants, reaction_rates, rates)
 		};
+
+		let mut rcp_equilibrium_constants = vec![0.; model.reactions.len()].into_boxed_slice();
+		//let mut reactions_rates = vec![0.; model.reactions.len()].into_boxed_slice();
+		//let mut [creation, destruction] = [vec![0.; len].into_boxed_slice(); 2];
 		let rate = {
 			let ref rate = derivative.rate;
-			let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(2+len-1).collect());
-			rate(constant, state_vector, &mut derivative);
+			let mut derivative = /*Derivative*/StateVector::<{Volume}>(vec![0.; 2+len-1].into_boxed_slice());
+			rate(constant, state_vector, &mut derivative, &mut rcp_equilibrium_constants);
+			//rate(constant, state_vector, &mut derivative, &mut reactions_rates);
+			//rate(constant, state_vector, &mut derivative, [&mut creation, &mut destruction]);
 			derivative.0
 		};
+
+		if true {
+			/*let reactions = {
+					let Model{species: Species{thermodynamics, ..}, reactions, ..} = &model;
+					let State{volume, temperature, amounts, ..} = state;
+					let T = temperature;
+					use num::log;
+					let logP0_RT = log(NASA7::reference_pressure) - log(T);
+					use iter::{vec::eval, eval};
+					let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));
+					let ref H_T = eval(H.prefix(), |H| H/T);
+					let ref G = eval!(thermodynamics.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
+					let ref concentrations = eval(amounts, |n| n / volume);
+					let ref log_concentrations = eval(concentrations, |&c| f64::ln(c));
+					iter::box_collect(reactions.iter().map(move |Reaction{reactants, products, rate_constant, model, net, Σnet, ..}| {
+							let log_kf = log_arrhenius(rate_constant, T);
+							let c = model.efficiency(T, concentrations, log_kf);
+							let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
+							use iter::{into::IntoMap, vec::Dot};
+							let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
+							let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
+							let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
+							(equation, f64::exp(log_equilibrium_constant), c*Rf, c*Rr)
+					}))
+			};*/
+			for ((r, e), (&a, &b)) in model.reactions.iter().zip(reactions.iter()).zip(rcp_equilibrium_constants.iter().zip(cantera_equilibrium_constants.iter())) {
+				if let ReactionModel::Irreversible = r.model { continue; }
+				let a = 1./a as f64;
+				if num::relative_error(a,b) != 0. { println!("{:32} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
+				use num::sign;
+				assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
+				fn product_of_exponentiations(iter: impl IntoIterator<Item=(u8, f32)>) -> f32 { iter.into_iter().map(|(c,v)| pow(v, c)).product() }
+				let rcp_equilibrium_constant = product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied()), None, C, f).unwrap();
+				assert!(num::relative_error(a, b) < 0.002, rcp_equilibrium_constant);
+			}
+			/*for (e, (&a, &b)) in reactions.iter().zip(reactions_rates.iter().zip(cantera_reactions.iter())) {
+				let a = a as f64;
+				if num::relative_error(a,b) != 0. { println!("{:32} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
+				use num::sign;
+				assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
+				assert!(num::relative_error(a, b) < 0.002, "{:.1e} {:.1e} {}", a, b, num::relative_error(a, b));
+			}*/
+		}
 
 		let rate = &rate[2..];
 		let rate = promote(&rate);
@@ -106,8 +204,8 @@ use super::{*, Property::*};
 				if a.abs() < 1e-2 && b.abs() < 1e-2 { 0. } else { num::relative_error(a,b) }
 			).reduce(f64::max).unwrap()
 		}
-		let abs = absolute_error(rate, cantera_rate);
-		let rel = relative_error(rate, cantera_rate);
+		let abs = absolute_error(rate, cantera_rates);
+		let rel = relative_error(rate, cantera_rates);
 		println!("{} {:.5} {:e} {:e}", time*1e3, state[0], abs, rel);
 		//last_time = time;
 		if !(abs < 1e-3 && rel < 1e-2) {
@@ -120,10 +218,9 @@ use super::{*, Property::*};
 				}).collect()
 			}
 			fn print<const R: usize>(table: &[([String; R], usize)]) {
-				use itertools::Itertools;
 				for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); }
 			}
-			print(&table(&species_names[..len-1], rate, &cantera_rate[..len-1]));
+			print(&table(&species_names[..len-1], rate, &cantera_rates[..len-1]));
 		}
 		assert!(abs < 1e-3 && rel < 1e-2, "{:e} {:e}", abs, rel);
 
