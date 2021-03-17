@@ -25,3 +25,4 @@ cranelift-module= ''
 cranelift-codegen= {version='', features= ['enable-peepmatic']}
 capstone= ''
 cranelift-reader= ''
+cranelift-native= ''

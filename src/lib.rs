@@ -257,6 +257,31 @@ macro_rules! fma {
 	}};
 }
 
+/*trait Type { const r#type: types::Type; }
+impl Type for i32 { const r#type : types::Type = types::I32; }
+impl Type for f32 { const r#type : types::Type = types::F32; }
+impl Type for f64 { const r#type : types::Type = types::F64; }
+fn constant<T:/*std::fmt::Display+*/Type>(module: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>, constant: T) -> Value {
+where [(); std::mem::size_of::<T>()]: {
+	let data = module.declare_data(&format!("{}: {}", constant, T::r#type), Linkage::Local, false, false).unwrap();
+	module.define_data(
+		data,
+		&{let mut data_ctx = cranelift_module::DataContext::new(); data_ctx.define(Box::new(unsafe{std::mem::transmute_copy::<_,[u8; std::mem::size_of::<T>()]>(&constant)})); data_ctx}
+	).unwrap();
+	let data = module.declare_data_in_func(data, f.func);
+	match T::r#type {
+		r#type@types::F64 => f![f bitcast(r#type, f![f symbol_value(types::I64, data)])],  // FIXME: symbol_value(F64) ?
+		r#type@types::F32 => f![f bitcast(r#type, f![f ireduce(types::I32, f![f symbol_value(types::I64, data)])])],  // FIXME: symbol_value(F32) ?
+		r#type@types::I32 => f![f ireduce(r#type, f![f symbol_value(types::I64, data)])],  // FIXME: symbol_value(I32) ?
+		r#type => f![f symbol_value(r#type, data)]
+	} // Static data does not seem to work with JIT module
+}*/
+trait Load { fn load(self, _: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>) -> Value; }
+impl Load for u32 { fn load(self, _: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>) -> Value { f![f iconst(I32, self as i64)] } }
+impl Load for i32 { fn load(self, _: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>) -> Value { f![f iconst(I32, self as i64)] } }
+impl Load for f32 { fn load(self, _: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>) -> Value { f![f f32const(self)] } }
+impl Load for f64 { fn load(self, _: &mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'_>) -> Value { f![f f64const(self)] } }
+
 struct Constants<'t> {
 	module: &'t mut cranelift_jit::JITModule,
 	constants: std::collections::HashMap<u64, Value>,
@@ -274,29 +299,25 @@ struct Constants<'t> {
 }
 impl Constants<'t> {
 	fn new(module: &'t mut cranelift_jit::JITModule, f: &mut FunctionBuilder<'t>) -> Self { Self{
-		module,
 		constants: Default::default(),
-		_1: f![f f64const(1.)],
-		_1_f32: f![f f32const(1.)],
-		_1_2: f![f f32const(1./2.)],
-		_127: f![f iconst(I32, 127)],
-		exponent: f![f iconst(I32, 0x7F800000)],
-		mantissa: f![f iconst(I32, 0x007FFFFF)],
+		_1: 1f64.load(module, f),
+		_1_f32: 1f32.load(module, f),
+		_1_2: (1./2f32).load(module, f),
+		_127: 127.load(module, f),
+		exponent: 0x7F800000u32.load(module, f),
+		mantissa: 0x007FFFFFu32.load(module, f),
 		//exp: [1.0017247, 0.65763628, 0.33718944].map(|c| f![f f32const(c)]),
-		exp: [0.99999994, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| f![f f32const(c)]),
+		exp: [0.99999994f32, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| c.load(module, f)),
 		//log: [2.28330284476918490682, -1.04913055217340124191, 0.204446009836232697516].map(|c| f![f f32const(c)]),
-		log: [3.1157899, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f![f f32const(c)]),
-		_m126_99999: f![f f32const(-126.99999)],
+		log: [3.1157899f32, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| c.load(module, f)),
+		_m126_99999: (-126.99999f32).load(module, f),
+		module,
 	}}
 	#[track_caller] fn c(&mut self, f: &mut FunctionBuilder<'t>, constant: f64) -> Value {
 		assert!(constant.is_finite(), "{}", constant);
 		match self.constants.entry(constant.to_bits()) {
 			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
-			std::collections::hash_map::Entry::Vacant(entry) => {
-				let data = self.module.declare_data(&constant.to_string(), Linkage::Local, false, false).unwrap();
-				self.module.define_data(data, &{let mut data_ctx = cranelift_module::DataContext::new(); data_ctx.define(Box::new(unsafe{std::mem::transmute::<f64,[u8; 8]>(constant)})); data_ctx}).unwrap();
-				*entry.insert(f![f bitcast(F64, f![f symbol_value(types::I64, self.module.declare_data_in_func(data, f.func))])]) // FIXME: symbol_value(F64) ?
-			}
+			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(constant.load(self.module, f))
 		}
 	}
 }
@@ -330,9 +351,9 @@ use std::f64::consts::LN_2;
 struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mrcp: Value, rcp2: Value }
 
 // A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
-fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: &T, C: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: &T, C: &mut Constants<'t>, f: &mut FunctionBuilder<'t>) -> Value {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		let A = f![f f64const(preexponential_factor)];
+		let A = C.c(f, preexponential_factor);
 		if temperature_exponent == 0. { A }
 		else if temperature_exponent == -1. { f![f fmul(A, T.rcp)] }
 		else if temperature_exponent == 1. { f![f fmul(A, T._1)] }
@@ -341,9 +362,9 @@ fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activatio
 		else if temperature_exponent == -2. { f![f fmul(A, T.rcp2)] }
 		else { unreachable!() }
 	} else {
-		let logA = f![f f64const(f64::log2(preexponential_factor))];
-		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma![f (f![f f64const(temperature_exponent)], T.log, logA)] };
-		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma![f (f![f f64const(-activation_temperature/LN_2)], T.rcp, βlogT𐊛logA)] };
+		let logA = C.c(f, f64::log2(preexponential_factor));
+		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma![f (C.c(f, temperature_exponent), T.log, logA)] };
+		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma![f (C.c(f, -activation_temperature/LN_2), T.rcp, βlogT𐊛logA)] };
 		exp2(log_arrhenius, C, f)
 	}
 }
@@ -407,9 +428,9 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants<'t>, T: &T, 
 			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
 			let model::Troe{A, T3, T1, T2} = *troe;
 			fn rcp(x: f64) -> f64 { 1./x }
-			let Fcent = fma![f (f![f f64const(1.-A)], exp2(f![f fmul(T.m, f![f f64const(rcp(LN_2*T3))])], C, f),
-														 fma![f (f![f f64const(A)], exp2(f![f fmul(T.m, f![f f64const(rcp(LN_2*T1))])], C, f),
-																																							exp2(f![f fmul(T.mrcp, f![f f64const(T2/LN_2)])], C, f) )] )];
+			let Fcent = fma![f (C.c(f, 1.-A), exp2(f![f fmul(T.m, C.c(f, rcp(LN_2*T3)))], C, f),
+														 fma![f (C.c(f, A), exp2(f![f fmul(T.m, C.c(f, rcp(LN_2*T1)))], C, f),
+																																							exp2(f![f fmul(T.mrcp, C.c(f, T2/LN_2))], C, f) )] )];
 			let logFcent = log2(Fcent, C, f);
 			let c =fma![f (C.c(f, -0.67), logFcent, C.c(f, -0.4*f64::log2(10.)))];
 			let N = fma![f (C.c(f, -1.27), logFcent, C.c(f, 0.75*f64::log2(10.)))];
@@ -432,13 +453,22 @@ pub struct Trap {
 pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
 impl Model {
 pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f64, *const f64, *mut f64), impl Rate<CONSTANT>) {
-	let builder = cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names());
-	let mut module = cranelift_jit::JITModule::new(builder);
+	let mut module = cranelift_jit::JITModule::new({
+		//cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names()))
+		let mut flag_builder = settings::builder();
+		//flag_builder.set("use_colocated_libcalls", "false").unwrap();
+		//flag_builder.set("is_pic", "false").unwrap(); // FIXME set back to true once the x64 backend supports it.
+		flag_builder.enable("is_pic").unwrap();
+		flag_builder.set("enable_probestack", "false").unwrap();
+		let isa_builder = cranelift_native::builder().unwrap();
+		let isa = isa_builder.finish(settings::Flags::new(flag_builder));
+		cranelift_jit::JITBuilder::with_isa(isa, cranelift_module::default_libcall_names())
+	});
   let mut context = module.make_context();
+	let mut function_builder_context = FunctionBuilderContext::new();
 	let PTR = module.target_config().pointer_type();
   let params = [("constant", F64), ("state", PTR), ("rate", PTR)];
 	context.func.signature.params = params.iter().map(|(_,r#type)| AbiParam::new(*r#type)).collect();
-	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut builder = FunctionBuilder::new(&mut context.func, &mut function_builder_context);
 	let entry_block = builder.create_block();
 	builder.append_block_params_for_function_params(entry_block);
@@ -464,7 +494,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f64, *const f64, *mut
 	let a = thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
 	let exp_G_RT = a[..len-1].iter().map(|a| exp2(dot(
 			IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
-			Some(f![f f64const((a[0]-a[6])/LN_2)]), C, f
+			Some(C.c(f, (a[0]-a[6])/LN_2)), C, f
 		).unwrap(), C, f) ).collect():Box<_>;
 	let P0_RT = f![f fmul(C.c(f, NASA7::reference_pressure), rcpT)];
 	let variable = f![f load(F64, flags, state, 1*size_of::<f64>() as i32)];
@@ -518,14 +548,15 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f64, *const f64, *mut
 	let R_S_Tdtn = f![f fmul(f![f fdiv(kT, pressure/*/Na*/)], dot(W[0..len-1].iter().map(|w| 1. - w/W[len-1]).zip(dtω.iter().copied()), None, C, f).unwrap())]; // R/A Tdtn (constant pressure: A=V, constant volume: A=P)
 	let dtS_S = f![f fadd(R_S_Tdtn, dtT_T)];
 	f![f store(flags, f![f fmul(dtS_S, variable)], rate, 1*size_of::<f64>() as i32)];
-	let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
-	for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f64>()) as i32)]; }
+	//let dtn = dtω.into_iter().map(|&dtω| f![f fmul(volume, dtω)]).collect(): Box<_>;
+	//for (i, &dtn) in dtn.into_iter().enumerate() { f![f store(flags, dtn, rate, ((2+i)*size_of::<f64>()) as i32)]; }
+	for (i, &dtω) in dtω.into_iter().enumerate() { f![f store(flags, f![f fmul(volume, dtω)], rate, ((2+i)*size_of::<f64>()) as i32)]; }
 	builder.ins().return_(&[]);
 	builder.finalize();
 	let clif = builder.display(None);
 	//eprintln!("{}", clif);
-	std::fs::write("/tmp/CH4+O2.clif", clif.to_string()).unwrap();
-	{
+	//std::fs::write("/tmp/CH4+O2.clif", clif.to_string()).unwrap();
+	if true {
 		let function = cranelift_reader::parse_functions(&clif.to_string()).unwrap().remove(0);
 		let mut context = codegen::Context::new();
 		context.func = function;
@@ -533,6 +564,7 @@ pub fn rate<const CONSTANT: Property>(&self) -> (extern fn(f64, *const f64, *mut
 		let isa_builder = isa::lookup(target_lexicon::Triple::host()).unwrap();
 		let mut flag_builder = settings::builder();
 		flag_builder.enable("is_pic").unwrap();
+		flag_builder.set("enable_probestack", "false").unwrap();
 		let isa = isa_builder.finish(settings::Flags::new(flag_builder));
 		let code_info = context.compile_and_emit(&*isa, &mut mem, &mut binemit::NullRelocSink{}, &mut binemit::NullTrapSink{}, &mut binemit::NullStackMapSink{});
 		use capstone::arch::BuildsCapstone;
