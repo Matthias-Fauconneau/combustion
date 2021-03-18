@@ -22,7 +22,7 @@ itertools= ''
 cranelift= ''
 cranelift-jit= ''
 cranelift-module= ''
-cranelift-codegen= {version='', features= ['enable-peepmatic']}
-capstone= ''
-cranelift-reader= ''
+cranelift-codegen= ''#{version='', features= ['enable-peepmatic']}
 cranelift-native= ''
+capstone= {version='', optional= true}
+cranelift-reader= {version='', optional= true}

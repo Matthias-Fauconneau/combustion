@@ -1,4 +1,4 @@
-#![allow(mixed_script_confusables, non_snake_case, incomplete_features, confusable_idents)]
+#![allow(mixed_script_confusables, non_snake_case, incomplete_features, confusable_idents, uncommon_codepoints)]
 #![feature(type_ascription, array_map, non_ascii_idents, const_generics, const_evaluatable_checked, destructuring_assignment, test)]
 #![feature(unboxed_closures, fn_traits)] // CVODE shim
 
@@ -9,8 +9,8 @@ include!(concat!(env!("OUT_DIR"), "/cantera.rs"));
 
 use {fehler::throws, error::Error};
 pub use combustion::*;
-//pub mod cantera;
-mod reaction;
+mod cantera;
+//mod reaction;
 //mod transport;
 
 #[throws] fn main() {
@@ -18,6 +18,7 @@ mod reaction;
 	let model = model::Model::new(&model)?;
 	let ref simulation = Simulation::new(&model)?;
 	let model = Model::new(model);
-	reaction::check(model, &simulation)?;
+	cantera::check(model, &simulation);
+	//reaction::check(model, &simulation)?;
 	//transport::check(&simulation)?;
 }
