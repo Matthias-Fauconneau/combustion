@@ -130,7 +130,7 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 		))
 	);
 	let amount = pressure / T * volume;
-	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{:e}", e);}
+	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{} {} {:e}", amounts.iter().sum::<f64>(), amount, e);}
 	let thermal_conductivity = 1./2. * (
 		dot(zip(amounts.iter().copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +
 		amount / dot(zip(amounts.iter().copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
