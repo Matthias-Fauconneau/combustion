@@ -1,5 +1,5 @@
 use super::*;
-#[allow(dead_code)] #[throws] pub fn check<const S: usize>(Simulation{system, state, species_names, ..}: &Simulation<S>) where [(); S-1]: {
+#[throws] pub fn check<const S: usize>(Simulation{system, state, species_names, ..}: &Simulation<S>) where [(); S-1]: {
 	let transport = system.transport(state);
 	let cantera = {
 		use itertools::Itertools;

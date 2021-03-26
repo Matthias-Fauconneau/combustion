@@ -13,7 +13,7 @@ fehler= ''
 error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 combustion= {path='..'}
-cvode= {path='../cvode'}
+cvode= {path='../cvode', optional=true}
 itertools= ''
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 
