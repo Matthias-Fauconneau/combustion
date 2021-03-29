@@ -1,4 +1,3 @@
-//fn dot(iter: impl IntoIterator<Item=(f64, f64)>) -> f64 { iter.into_iter().map(|(a,b)| a*b).sum() }
 use {itertools::Itertools, super::*};
 
 pub fn check(model: Model, Simulation{species_names, state, ..}: &Simulation) {

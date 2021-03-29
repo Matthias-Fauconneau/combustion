@@ -1,24 +1,27 @@
+//fn dot(iter: impl IntoIterator<Item=(f64, f64)>) -> f64 { iter.into_iter().map(|(a,b)| a*b).sum() }
 use super::*;
-#[throws] pub fn check<const S: usize>(Simulation{system, state, species_names, ..}: &Simulation<S>) where [(); S-1]: {
-	let transport = system.transport(state);
-	let cantera = {
-		use itertools::Itertools;
-		let mole_proportions = format!("{}", species_names.iter().zip(&state.amounts).filter(|(_,&n)| n > 0.).map(|(s,n)| format!("{}:{}", s, n)).format(", "));
-		let mole_proportions = std::ffi::CString::new(mole_proportions)?;
-		use std::ptr::null;
-		let ([mut viscosity, mut thermal_conductivity], mut species_len, mut specie_names, mut mixture_averaged_thermal_diffusion_coefficients) = ([0.; 2], 0, null(), null());
-		unsafe {
-			let pressure = state.pressure / NA;
-			cantera::transport(pressure, state.temperature, mole_proportions.as_ptr(), &mut viscosity, &mut thermal_conductivity, &mut species_len, &mut specie_names,
-																		&mut mixture_averaged_thermal_diffusion_coefficients);
-			let specie_names = iter::box_collect(std::slice::from_raw_parts(specie_names, species_len).iter().map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap()));
-			let order = |o:&[_]| iter::vec::eval(species_names, |s| o[specie_names.iter().position(|&k| k==s.to_uppercase()).expect(&format!("{} {:?}", s, species_names))]);
-			let mixture_averaged_thermal_diffusion_coefficients = order(std::slice::from_raw_parts(mixture_averaged_thermal_diffusion_coefficients, species_len));
-			Transport{viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients}
-		}
-	};
-	dbg!(&transport, &cantera);
-	dbg!((transport.viscosity-cantera.viscosity)/cantera.viscosity, (transport.thermal_conductivity-cantera.thermal_conductivity)/cantera.thermal_conductivity);
-	assert!(f64::abs(transport.viscosity-cantera.viscosity)/cantera.viscosity < 0.03, "{}", transport.viscosity/cantera.viscosity);
-	assert!(f64::abs(transport.thermal_conductivity-cantera.thermal_conductivity)/cantera.thermal_conductivity < 0.05, "{:?}", (transport.thermal_conductivity, cantera.thermal_conductivity));
+
+pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
+	let (_species_names, species) = Species::new(model.species);
+	let transport_polynomials = species.transport_polynomials();
+
+	let len = species.len();
+	let file = std::ffi::CStr::from_bytes_with_nul(b"gri30.yaml\0").unwrap().as_ptr();
+	let name = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
+	let phase = unsafe{thermo_newFromFile(file, name)};
+	assert!(unsafe{thermo_nSpecies(phase)} == len);
+	assert!(state.amounts.len() == len && !state.amounts.iter().any(|&n| n<0.));
+	unsafe{thermo_setMoleFractions(phase, state.amounts.len(), state.amounts.as_ptr(), 1)}; // /!\ Needs to be set before pressure
+	dbg!(state.pressure * NA, state.temperature);
+	unsafe{thermo_setTemperature(phase, state.temperature)};
+	unsafe{thermo_setPressure(phase, state.pressure * NA)}; // /!\ Needs to be set after mole fractions
+	let transport = unsafe{trans_newDefault(phase, 5)};
+	let viscosity = unsafe{trans_viscosity(transport)};
+	let thermal_conductivity  = unsafe{trans_thermalConductivity(transport)};
+	let mixture_averaged_thermal_diffusion_coefficients = {let mut array = vec![0.; len]; unsafe{trans_getThermalDiffCoeffs(transport, len as i32, array.as_mut_ptr())}; array};
+	let transport = combustion::transport::transport(&species.molar_mass, &transport_polynomials, state);
+	dbg!(&transport, viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients);
+	dbg!((transport.viscosity-viscosity)/viscosity, (transport.thermal_conductivity-thermal_conductivity)/thermal_conductivity);
+	assert!(f64::abs(transport.viscosity-viscosity)/viscosity < 0.03, "{}", transport.viscosity/viscosity);
+	assert!(f64::abs(transport.thermal_conductivity-thermal_conductivity)/thermal_conductivity < 0.05, "{:?}", (transport.thermal_conductivity, thermal_conductivity));
 }

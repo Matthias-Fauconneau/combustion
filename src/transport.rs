@@ -47,7 +47,9 @@ impl Species {
 
 		let header_log_T⃰ = vec::eval(collision_integrals::header_T⃰.copied(), log);
 		// Least square fits polynomials in δ⃰, for each T⃰  row of the collision integrals tables
-		let [Ω⃰22,A⃰ ,_B⃰,_C⃰] = {use collision_integrals::*; [&Ω⃰22,&A⃰ ,&B⃰,&C⃰].map(|table| from_iter(table.map(|T⃰_row:&[f64; 8]| polynomial_regression(header_δ⃰.copied(), T⃰_row.copied()))))};
+		let [Ω⃰22,A⃰ ,_B⃰,_C⃰] = {
+			use collision_integrals::*; [&Ω⃰22,&A⃰ ,&B⃰,&C⃰].map(|table| from_iter(table.map(|T⃰_row:&[_; 8]| polynomial_regression(header_δ⃰.copied(), T⃰_row.copied())))))
+		};
 		let Self{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
 		let χ = |a, b| { // Corrections to the effective diameter and well depth to account for interaction between a polar and a non-polar molecule
 			if (permanent_dipole_moment[a]>0.) == (permanent_dipole_moment[b]>0.) { 1. } else {
@@ -60,7 +62,7 @@ impl Species {
 		//let reduced_dipole_moment = |a, b| permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.)); // ̃δ⃰
 		let reduced_diameter = |a,b| (diameter[a] + diameter[b])/2. * pow(χ(a, b), -1./6.);
 		let reduced_dipole_moment = |a, b| 1./4. * permanent_dipole_moment[a]*permanent_dipole_moment[b] / (interaction_well_depth(a,b) * cb(reduced_diameter(a,b))) * χ(a,b); // ̃δ⃰
-		let collision_integral = |table : &[[f64; /*8 FIXME*/8/*1*/]; 39], a, b, T| {
+		let collision_integral = |table : &[[f64; /*8 FIXME*/7/*8*//*1*/]; 39], a, b, T| {
 			let log_T⃰ = log(T⃰ (a, a, T));
 			//assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap(), "{} {} {} {} {}", header_log_T⃰ .first().unwrap(), log_T⃰ ,  *header_log_T⃰ .last().unwrap(), T, T⃰ (a, a, T));
 			use std::convert::TryInto;

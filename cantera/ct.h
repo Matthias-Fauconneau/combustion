@@ -15,3 +15,7 @@ int kin_getFwdRatesOfProgress(int n, size_t len, double* rate);
 int kin_getRevRatesOfProgress(int n, size_t len, double* rate);
 int kin_getNetRatesOfProgress(int n, size_t len, double* rate);
 int kin_getReactionString(int n, size_t i, size_t len, /*out*/ char* buffer);
+int trans_newDefault(int th, int loglevel);
+double trans_viscosity(int n);
+double trans_thermalConductivity(int n);
+int trans_getThermalDiffCoeffs(int n, int ldt, double* dt);

@@ -17,8 +17,7 @@ mod transport;
 	let model = std::fs::read("CH4+O2.ron")?;
 	let model = model::Model::new(&model)?;
 	let ref simulation = Simulation::new(&model)?;
-	let model = Model::new(model);
 	//cantera::check(model, &simulation);
 	//reaction::check(model, &simulation)?;
-	transport::check(&simulation)?;
+	transport::check(model, &simulation);
 }
