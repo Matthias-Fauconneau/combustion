@@ -12,10 +12,10 @@ bindgen= ''
 fehler= ''
 error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+#itertools= ''
+num= {git='https://github.com/Matthias-Fauconneau/num'}
 combustion= {path='..'}
 cvode= {path='../cvode', optional=true}
-itertools= ''
-num= {git='https://github.com/Matthias-Fauconneau/num'}
 
-[profile.dev.package."*"]
-opt-level = 3
+[patch.'https://github.com/Matthias-Fauconneau/iter']
+iter= {path='../iter'}
