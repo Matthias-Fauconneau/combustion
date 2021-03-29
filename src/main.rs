@@ -1,4 +1,4 @@
-#![feature(type_ascription)]#![feature(non_ascii_idents)]#![allow(confusable_idents,non_snake_case,unused_variables,unused_mut)]
+#![feature(type_ascription)]#![feature(non_ascii_idents)]#![allow(confusable_idents,non_snake_case,unused_variables,unused_mut,uncommon_codepoints)]
 use {fehler::throws, error::Error, combustion::*};
 
 #[throws] fn main() {
@@ -8,6 +8,17 @@ use {fehler::throws, error::Error, combustion::*};
 	#[cfg(feature="transport")] {
 		let (species_names, species) = Species::new(model.species);
 		let transport_polynomials = species.transport_polynomials();
+		/*use itertools::Itertools;
+		use transport::*;
+		/*for ((((T⃰, Ω22), A), B), C) in header_T⃰.iter().zip(Ω⃰22.iter()).zip(A⃰.iter()).zip(B⃰.iter()).zip(C⃰.iter()).skip(1) {
+			println!("delta* fit at T* = {}", T⃰);
+			println!("omega22 = [{:.5}]", Ω22.iter().format(", "));
+			println!("A* = [{:.5}]", A.iter().format(", "));
+			println!("B* = [{:.5}]", B.iter().format(", "));
+			println!("C* = [{:.5}]", C.iter().format(", "));
+		}*/
+		/*let TransportPolynomials{sqrt_viscosity_T14, ..} = &transport_polynomials;
+		for (specie, sqrt_viscosity_T14) in species_names.iter().zip(sqrt_viscosity_T14.iter()) { println!("{} = [{:.5}]", specie, sqrt_viscosity_T14.iter().format(", ")); }*/*/
 		let transport = |single_specie: &str, temperature_C| {
 				let pressure = 1e5/(K*NA);
 				let temperature = 273.15+temperature_C;
@@ -19,10 +30,19 @@ use {fehler::throws, error::Error, combustion::*};
 												//amounts: {let amounts=vec![0.; species_names.len()].into_boxed_slice(); amounts[species_names.iter().position(|&specie| specie==single_specie).unwrap()] = amount; amounts}
 												} )
 		};
-		let viscosity = |single_specie: &str, T, expected| { let e = f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected; println!("{} {} {} {}", single_specie, T, transport(single_specie, T).viscosity, e); assert!(e < 0.07); };
-		viscosity("AR", 25., 22.58);
-		viscosity("CH4", 25., 11.07);
-		let thermal_conductivity = |single_specie, T, expected| { let got = transport(single_specie, T).thermal_conductivity; let e = f64::abs(got-expected)/expected; println!("{}", e);  assert!(e < 0.05, "{} {}", got, expected); };
+		let viscosity = |single_specie: &str, T, expected| {
+			let e = f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected;
+			//println!("{} {} {} {}", single_specie, T, transport(single_specie, T).viscosity, e);
+			assert!(e < 0.03);
+		};
+		viscosity("AR", 25., 22.58); // 23
+		viscosity("CH4", 25., 11.07); // 11.4
+		let thermal_conductivity = |single_specie, T, expected| {
+			let value = transport(single_specie, T).thermal_conductivity;
+			let e = f64::abs(value-expected)/expected;
+			//println!("{}", e);
+			assert!(e < 0.001, "{} {}", value, expected);
+		};
 		thermal_conductivity("AR",500., 0.03650);
 	}
 	#[cfg(feature="reaction")] {

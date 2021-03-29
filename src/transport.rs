@@ -30,15 +30,16 @@ const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
 const ε0 : f64 = 1./(light_speed*light_speed*μ0); // F/m (Farad=s⁴A²/(m²kg)
 use super::{K, NA, Species, State};
 mod collision_integrals; // Reduced collision integrals table computed from Chapman-Enskog theory with Stockmayer potential by L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys.
+pub use collision_integrals::{header_T⃰, header_δ⃰};
 // Least square fits polynomials in δ⃰, for each T⃰  row of the collision integrals tables
-fn polynomial_regression_δ⃰(table: &[[f64; 8]; 39]) -> [[f64; 7]; 39] { table.each_ref().map(|T⃰_row:&[_; 8]| polynomial_regression(collision_integrals::header_δ⃰.copied(), T⃰_row.copied())) }
+fn polynomial_regression_δ⃰(table: &[[f64; 8]; 39]) -> [[f64; 7]; 39] { table.each_ref().map(|T⃰_row:&[_; 8]| polynomial_regression(header_δ⃰.copied(), T⃰_row.copied())) }
 use std::lazy::SyncLazy;
-/*const*/static Ω⃰22: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
-/*const*/static A⃰ : SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::A⃰));
-///*const*/static _B⃰ = SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
-///*const*/static _C⃰ = SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
+/*const*/pub static Ω⃰22: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
+/*const*/pub static A⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::A⃰));
+/*const*/pub static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
+/*const*/pub static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
 
-const D : usize = 4;
+const D : usize = 5;
 #[derive(Debug)] pub struct TransportPolynomials {
 	pub sqrt_viscosity_T14: Box<[[f64; D]]>,
 	pub thermal_conductivity_T12: Box<[[f64; D]]>,
@@ -61,7 +62,7 @@ impl Species {
 		let Self{well_depth_J, ..} = self;
 		sqrt(well_depth_J[a]*well_depth_J[b]) * sq(self.χ(a, b))
 	}
-	fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T / self.interaction_well_depth(a, b) }
+	fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * K / self.interaction_well_depth(a, b) }
 	fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 { // ̃δ⃰ Cantera
 		let Self{well_depth_J, permanent_dipole_moment, diameter, ..} = self;
 		permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.))
@@ -73,20 +74,20 @@ impl Species {
 	fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
 		let log_T⃰ = log(self.T⃰ (a, a, T));
 		let δ⃰ = self.reduced_dipole_moment(a, b);
-		/*const*/let header_log_T⃰ = vec::eval(collision_integrals::header_T⃰.copied(), log);
+		/*const*/let header_log_T⃰ = vec::eval(header_T⃰.copied(), log);
 		let interpolation_start_index = min((1+header_log_T⃰ [1..header_log_T⃰.len()].iter().position(|&header_log_T⃰ | log_T⃰ < header_log_T⃰ ).unwrap())-1, header_log_T⃰.len()-3);
 		let header_log_T⃰ : &[_; 3] = header_log_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		let polynomials: &[_; 3] = &table[interpolation_start_index..][..3].try_into().unwrap();
 		let image = quadratic_interpolation(header_log_T⃰, &from_iter(polynomials.map(|P| eval_poly(P, δ⃰ ))), log_T⃰);
 		assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap());
-		assert!(*collision_integrals::header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *collision_integrals::header_δ⃰ .last().unwrap());
+		assert!(*header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *header_δ⃰ .last().unwrap());
 		assert!(image > 0.);
 		image
 	}
 	fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral(&Ω⃰22, a, b, T) }
 	fn viscosity(&self, a: usize, T: f64) -> f64 {
 		let Self{molar_mass, diameter, ..} = self;
-		5./16. * sqrt(π * molar_mass[a]/NA * T) / (self.Ω⃰22(a, a, T) * π * sq(diameter[a]))
+		5./16. * sqrt(π * molar_mass[a]/NA * K*T) / (self.Ω⃰22(a, a, T) * π * sq(diameter[a]))
 	}
 	fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral(&A⃰, a, b, T) }
 	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {
@@ -94,10 +95,9 @@ impl Species {
 		let self_diffusion_coefficient = 3./16. * sqrt(2.*π/self.reduced_mass(a,a)) * pow(T, 3./2.) / (π * sq(diameter[a]) * self.Ω⃰11(a, a, T));
 		let f_internal = molar_mass[a]/NA/T * self_diffusion_coefficient / self.viscosity(a, T);
 		let T⃰ = self.T⃰ (a, a, T);
-		let fz_T⃰ = 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
+		let fz = |T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
 		// Scaling factor for temperature dependence of rotational relaxation: Kee, Coltrin [2003:12.112, 2017:11.115]
-		let fz_298 = (|T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰)(298.*K / well_depth_J[a]);
-		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz_298 / fz_T⃰ + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
+		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz(298.*K / well_depth_J[a]) / fz(T⃰) + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
 		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[a]/(3./2.));
 		let f_rotation = f_internal * (1. + c1);
 		let Cv_internal = thermodynamics[a].specific_heat_capacity(T) - 5./2. - internal_degrees_of_freedom[a];
@@ -107,11 +107,11 @@ impl Species {
 		3./16. * sqrt(2.*π/self.reduced_mass(a,b)) * pow(T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
-		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300.*K, /*3000.*/1000.*K];
+		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., /*3000.*/1000.]; //|*K
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T : [_; N] = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 		TransportPolynomials{
-			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(self.viscosity(a,T))/sqrt(sqrt(T)))),
+			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))),
 			thermal_conductivity_T12: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, log, |T| self.thermal_conductivity(a,T)/sqrt(T))),
 			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, log, |T| self.binary_thermal_diffusion_coefficient(a,b,T)/pow(T,3./2.))))
 		}
