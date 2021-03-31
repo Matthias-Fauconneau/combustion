@@ -22,10 +22,14 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task; },
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
 	use iter::{vec::{eval, generate, Vector}, box_collect};
 	let system = std::fs::read("CH4+O2.ron")?;
-	use combustion::*;
-	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = time!(Simulation::<35>::new(&system))?;
-	let transport =  system.transport(pressure_R, &state);
-	benchmark!(system.transport(pressure_R, &state), 100);
+	use combustion::{*, transport::*};
+	let model = &std::fs::read("CH4+O2.ron")?;
+	let model = model::Model::new(&model)?;
+	let ref state = Simulation::new(&model)?.state;
+	#[cfg(feature="transport")] {
+		let (species_names, species) = Species::new(model.species);
+		let transport_polynomials = species.transport_polynomials();
+benchmark!(system.transport(pressure_R, &state), 100);
 
 	use vulkan::{Device, Buffer};
 	let ref device = Device::new()?;

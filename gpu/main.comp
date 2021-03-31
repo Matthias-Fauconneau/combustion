@@ -4,9 +4,9 @@ double log(double x) { return double(log(float(x))); }
 double exp(double x) { return double(exp(float(x))); }
 double pow(double x, double y) { return double(pow(float(x), float(y))); }
 
-double dot(double[4] a, double[4] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-double eval_poly(double [4] P, double x) {
-	double[4] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
+double dot(double[5] a, double[5] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
+double eval_poly(double [5] P, double x) {
+	double[5] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
 	return dot(P, generate_k);
 }
 
@@ -127,29 +127,29 @@ void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, ino
 }
 
 struct TransportPolynomials {
-	double[S][4] sqrt_viscosity_T14;
-	double[S][4] thermal_conductivity_T12;
-	double[S][S][4] binary_thermal_diffusion_coefficients_T32;
+	double[S][5] sqrt_viscosity_T14;
+	double[S][5] thermal_conductivity_T12;
+	double[S][S][5] binary_thermal_diffusion_coefficients_T32;
 };
 
-struct System {
+struct Species {
 	double[S] molar_mass;
 	double[S][2][7] thermodynamics;
-	Elementary[ELEMENTARY] elementary;
+	/*Elementary[ELEMENTARY] elementary;
 	ThreeBody[THREE_BODY] three_body;
 	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
 	double[EFFICIENCIES][S] efficiencies;
-	Falloff[FALLOFF] falloff;
+	Falloff[FALLOFF] falloff;*/
 	TransportPolynomials transport_polynomials;
 };
-const System system =
-#include "system.h"
+const Species species =
+#include "species.h"
 ;
 const double volume = 1.;
 
-double sqrt_viscosity(uint a, double T) { return sqrt(sqrt(T)) * eval_poly(system.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
-double thermal_conductivity(uint a, double T) { return sqrt(T) * eval_poly(system.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
-double binary_thermal_diffusion_coefficient(uint a, uint b, double T) { return pow(T,3./2.) * eval_poly(system.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a>b?a:b][a>b?b:a], log(T)); }
+double sqrt_viscosity(uint a, double T) { return sqrt(sqrt(T)) * eval_poly(species.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
+double thermal_conductivity(uint a, double T) { return sqrt(T) * eval_poly(species.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
+double binary_thermal_diffusion_coefficient(uint a, uint b, double T) { return pow(T,3./2.) * eval_poly(species.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a>b?a:b][a>b?b:a], log(T)); }
 
 layout(push_constant) uniform Constants {
 double pressure_R;
@@ -173,11 +173,11 @@ void main() {
 	//double rcp_amount = rcpV * rcpC;
 	double logP0_RT = log(reference_pressure_R) - log(T);
 	double[S-1] H;
-	for(uint k=0;k<H.length();k++) H[k] = specific_enthalpy(system.thermodynamics[k], T);
+	for(uint k=0;k<H.length();k++) H[k] = specific_enthalpy(species.thermodynamics[k], T);
 	double[S-1] H_T;
 	for(uint k=0;k<H_T.length();k++) H_T[k] = H[k] / T;
 	double[S-1] G;
-	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - specific_entropy(system.thermodynamics[k], T);
+	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - specific_entropy(species.thermodynamics[k], T);
 	//double[S-1] dT_G; for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);
 	double[S-1] active_concentrations;
 	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i];
@@ -194,33 +194,33 @@ void main() {
 	for(uint k=0;k<net_rates.length();k++) net_rates[k] = 0.;
 	//double[S-1] dT_net_rates; for(uint k=0;k<dT_net_rates.length();k++) dT_net_rates[k] = 0.;
 	//double[S-1][S-1] dn_net_rates; for(uint k=0;k<dn_net_rates.length();k++) for(uint l=0;l<dn_net_rates.length();l++) dn_net_rates[k][l] = 0.;
-	for(uint j=0;j<system.elementary.length();j++) {
-		Elementary r = system.elementary[j];
+	for(uint j=0;j<species.elementary.length();j++) {
+		Elementary r = species.elementary[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		//double zero[S]; for(uint k=0;k<zero.length();k++) zero[k] = 0.;
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*zero, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, 1.);
 	}
-	for(uint j=0;j<system.three_body.length();j++) {
-		ThreeBody r = system.three_body[j];
+	for(uint j=0;j<species.three_body.length();j++) {
+		ThreeBody r = species.three_body[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, dot(r.efficiencies, concentrations));
 	}
-	for(uint j=0;j<system.pressure_modification.length();j++) {
-		PressureModification r = system.pressure_modification[j];
+	for(uint j=0;j<species.pressure_modification.length();j++) {
+		PressureModification r = species.pressure_modification[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, pressure_modification(r, T, concentrations, log_kf));
 	}
 	double[EFFICIENCIES] efficiencies;
-	for(uint j=0;j<system.efficiencies.length();j++) {
-		efficiencies[j] = dot(system.efficiencies[j], concentrations);
+	for(uint j=0;j<species.efficiencies.length();j++) {
+		efficiencies[j] = dot(species.efficiencies[j], concentrations);
 	}
-	for(uint j=0;j<system.falloff.length();j++) {
-		Falloff r = system.falloff[j];
+	for(uint j=0;j<species.falloff.length();j++) {
+		Falloff r = species.falloff[j];
 		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
 		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, falloff(r, T, efficiencies[r.efficiency], log_kf));
 	}
 	double Cp[S];
-	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(system.thermodynamics[k], T);
+	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(species.thermodynamics[k], T);
 	double rcp_sumCCp = 1. / dot(concentrations, Cp);
 	double dtT_T = - rcp_sumCCp * dot(H_T, net_rates);
 	d_temperature.data[i] = dtT_T;
@@ -229,15 +229,15 @@ void main() {
 	/*double[1+S-1][1+S-1] J;
 	double dtT = - rcp_sumCCp * dot(H, net_rates);
 	double Cpa = Cp[a];
-	double Ha = specific_enthalpy(system.thermodynamics[a], T);
-	double HaWa = Ha/system.molar_mass[a];
+	double Ha = specific_enthalpy(species.thermodynamics[a], T);
+	double HaWa = Ha/species.molar_mass[a];
 	double HaWaWH[S-1];
-	for(uint k=0;k<HaWaWH.length();k++) HaWaWH[k] = HaWa*system.molar_mass[k] - H[k];
-	double Cpa_Wa = Cpa / system.molar_mass[a];
+	for(uint k=0;k<HaWaWH.length();k++) HaWaWH[k] = HaWa*species.molar_mass[k] - H[k];
+	double Cpa_Wa = Cpa / species.molar_mass[a];
 	double[S-1] Cpa_T_dT_Cp;
-	for(uint k=0;k<Cpa_T_dT_Cp.length();k++) Cpa_T_dT_Cp[k] = Cpa/T - dT_specific_heat_capacity(system.thermodynamics[k], T);
+	for(uint k=0;k<Cpa_T_dT_Cp.length();k++) Cpa_T_dT_Cp[k] = Cpa/T - dT_specific_heat_capacity(species.thermodynamics[k], T);
 	double[S-1] WCpa_Wa_Cp;
-	for(uint k=0;k<WCpa_Wa_Cp.length();k++) WCpa_Wa_Cp[k] = system.molar_mass[k]*Cpa_Wa - Cp[k];
+	for(uint k=0;k<WCpa_Wa_Cp.length();k++) WCpa_Wa_Cp[k] = species.molar_mass[k]*Cpa_Wa - Cp[k];
 	double dTdtT = rcp_sumCCp * (dtT * dot(active_concentrations, Cpa_T_dT_Cp) + dot(HaWaWH, dT_net_rates) + dot(WCpa_Wa_Cp, net_rates)); //R/R
 	J[0][0] = dTdtT;
 	double dndtT[S-1];
@@ -255,8 +255,8 @@ void main() {
 	double[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
 		double[S] generate_j;
 		for(uint j=0;j<generate_j.length();j++) {
-			generate_j[j] = sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(system.molar_mass[j]/system.molar_mass[k]))) /
-				(sqrt(8.) * sqrt(1. + system.molar_mass[k]/system.molar_mass[j]));
+			generate_j[j] = sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(species.molar_mass[j]/species.molar_mass[k]))) /
+				(sqrt(8.) * sqrt(1. + species.molar_mass[k]/species.molar_mass[j]));
 		}
 		generate_k[k] = sq(sqrt_viscosity(k, T)) / dot(amounts, generate_j);
 	}

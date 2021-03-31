@@ -31,6 +31,3 @@ cranelift-codegen= {optional= true, version=''} # features= ['enable-peepmatic']
 cranelift-native= {optional= true, version=''}
 capstone= {optional= true, version=''}
 cranelift-reader= {optional= true, version=''}
-
-[patch.'https://github.com/Matthias-Fauconneau/iter']
-iter= {path='../iter'}
