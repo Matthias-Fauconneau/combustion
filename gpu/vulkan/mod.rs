@@ -20,13 +20,15 @@ impl Device {
 		let ref main = CStr::from_bytes_with_nul(b"main\0")?;
 		unsafe {
 			let entry = Entry::new()?;
-			let instance = entry.create_instance(&InstanceCreateInfo::builder().application_info(
-				&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main))
-				.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
+			let instance = entry.create_instance(
+				&InstanceCreateInfo::builder().application_info(
+					&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main)
+				)
+				//.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
-				.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
-				,
-				None)?;
+				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF])
+				, None
+			)?;
 			let debug_utils = DebugUtils::new(&entry, &instance);
 			unsafe extern "system" fn vulkan_debug_callback(severity: DebugUtilsMessageSeverityFlagsEXT, r#type: DebugUtilsMessageTypeFlagsEXT, data: *const DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> Bool32 {
 				let data = *data;
@@ -43,11 +45,14 @@ impl Device {
 			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_size);
 			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_count);
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
-			let device = instance.create_device(device, &DeviceCreateInfo::builder()
-				.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
-				.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
-				.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()])
-				, None)?;
+			let device = instance.create_device(
+				device,
+				&DeviceCreateInfo::builder()
+					.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
+					.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
+					.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()]),
+				None
+			)?;
 			let queue = device.get_device_queue(queue_family_index, 0);
 			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)?;
 			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
@@ -156,7 +161,9 @@ impl Device {
 		let Self{device, queue, fence, query_pool, ..} = self;
 		unsafe {
 			device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], *fence)?;
+			dbg!();
 			device.wait_for_fences(&[*fence], true, !0)?;
+			dbg!();
 			device.reset_fences(&[*fence])?;
 			let mut results = vec![0; 2];
 			device.get_query_pool_results::<u64>(*query_pool, 0, 2, &mut results, vk::QueryResultFlags::TYPE_64)?;

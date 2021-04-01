@@ -134,7 +134,7 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 			(sqrt(8.) * sqrt(1. + molar_mass[k]/molar_mass[j]))
 		))
 	));
-	let amount = pressure / T * volume;
+	let amount = pressure * volume / (K * T);
 	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{} {} {:e}", amounts.iter().sum::<f64>(), amount, e);}
 	let thermal_conductivity = 1./2. * (
 		dot(zip(amounts.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +
@@ -148,3 +148,35 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 }
 
 #[cfg(test)] mod test;
+
+pub trait AbsError {
+	fn error(&self, o: &Self) -> f64;
+}
+
+impl AbsError for f64 {
+	fn error(&self, o: &Self) -> f64 {
+		f64::abs(self-o)
+	}
+}
+
+impl<const N: usize> AbsError for [f64; N] {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+
+impl AbsError for Box<[f64]> {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o.iter()).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+
+impl AbsError for Transport {
+	fn error(&self, o: &Self) -> f64 {
+		[
+			self.viscosity.error(&o.viscosity),
+			self.thermal_conductivity.error(&o.thermal_conductivity),
+			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
+		].iter().copied().reduce(f64::max).unwrap()
+	}
+}

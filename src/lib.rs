@@ -1,4 +1,4 @@
-#![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods)]
+#![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at)]
 #![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
 #![allow(unused_variables, dead_code)]
 
@@ -15,19 +15,6 @@ impl NASA7 {
 	pub const T_split : f64 = 1000.;
 	pub fn a(&self, T: f64) -> &[f64; 7] { if T < Self::T_split { &self.0[0] } else { &self.0[1] } }
 	pub fn specific_heat_capacity(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
-}
-
-#[derive(Clone, Copy)] pub struct RateConstant {
-	pub preexponential_factor: f64,
-	pub temperature_exponent: f64,
-	pub activation_temperature: f64
-}
-
-impl From<model::RateConstant> for RateConstant {
-	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: model::RateConstant) -> Self {
-		const J_per_cal: f64 = 4.184;
-		Self{preexponential_factor, temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
-	}
 }
 
 use {std::{convert::TryInto, lazy::SyncLazy}, linear_map::LinearMap as Map};
@@ -87,56 +74,6 @@ impl Species {
 	pub fn len(&self) -> usize { self.molar_mass.len() }
 }
 
-pub enum ReactionModel {
-	Elementary,
-	Irreversible,
-	ThreeBody { efficiencies: Box<[f64]> },
-	PressureModification { efficiencies: Box<[f64]>, k0: RateConstant },
-	Falloff { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
-}
-
-pub struct Reaction {
-	pub reactants: Box<[u8]>,
-	pub products: Box<[u8]>,
-	pub net: Box<[i8/*; S-1*/]>,
-	pub Σreactants: u8,
-	pub Σproducts: u8,
-	pub Σnet: i8,
-	pub rate_constant: RateConstant,
-	pub model: ReactionModel,
-}
-
-impl Reaction {
-	fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}:model::Reaction) -> Self {
-		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
-		let [reactants, products] = iter::vec::eval(equation, |e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
-		let net = products.into_iter().zip(reactants.into_iter()).take(reactants.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
-		/*{let mut net_composition = Map::new();
-			for (s, &ν) in net.into_iter().enumerate() {
-				for (element, &count) in species_composition[s] {
-					if !net_composition.contains_key(&element) { net_composition.insert(element, 0); }
-					*net_composition.get_mut(&element).unwrap() += ν as i8 * count as i8;
-				}
-			}
-			for (_, &ν) in &net_composition { assert!(ν == 0, "{:?} {:?}", net_composition, equation); }
-		}*/
-		let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
-		let Σnet = Σproducts as i8 - Σreactants as i8;
-		let from = |efficiencies:Map<_,_>| species_names.iter().map(|&specie| *efficiencies.get(specie).unwrap_or(&1.)).collect();
-		Reaction{
-			reactants, products, net, Σreactants, Σproducts, Σnet,
-			rate_constant: rate_constant.into(),
-			model: {use model::ReactionModel::*; match model {
-				Elementary => ReactionModel::Elementary,
-				Irreversible => ReactionModel::Irreversible,
-				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
-				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
-				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe},
-			}}
-		}
-	}
-}
-
 pub struct State {
     pub temperature: f64,
     pub pressure: f64, // /R
@@ -156,8 +93,8 @@ impl Simulation<'t> {
 
 		let model::State{temperature, pressure, volume, amount_proportions} = state;
 		let pressure = pressure/NA;
-		let temperature = *temperature;//*K; // K->J
-		let amount = pressure * volume / (temperature * K);
+		let temperature = *temperature; //K*: K->J
+		let amount = pressure * volume / (K * temperature);
 		for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
 		let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
 		let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();

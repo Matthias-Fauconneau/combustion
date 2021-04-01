@@ -10,7 +10,7 @@ use {super::{*, super::*}};
 			let pressure = 1e5/(K*NA);
 			let temperature = 273.15+temperature_C;
 			let volume = 1.;
-			let amount = pressure / temperature * volume;
+			let amount = pressure * volume / (K * temperature);
 			transport(&species.molar_mass, &transport_polynomials,
 											&State{volume, temperature, pressure, amounts: species_names.iter().map(|&specie| if specie==single_specie {amount} else {0.}).collect()} )
 	};
