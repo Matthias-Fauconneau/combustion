@@ -9,7 +9,6 @@ include!(concat!(env!("OUT_DIR"), "/cantera.rs"));
 
 use {fehler::throws, error::Error};
 pub use combustion::*;
-//mod cantera;
 //mod reaction;
 mod transport;
 
@@ -17,7 +16,6 @@ mod transport;
 	let model = std::fs::read("CH4+O2.ron")?;
 	let model = model::Model::new(&model)?;
 	let ref simulation = Simulation::new(&model)?;
-	//cantera::check(model, &simulation);
 	//reaction::check(model, &simulation)?;
 	transport::check(model, &simulation);
 }

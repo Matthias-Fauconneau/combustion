@@ -10,6 +10,7 @@ ash= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools= ''
 fehler= ''
+num= {git='https://github.com/Matthias-Fauconneau/num'} #debug
 
 [build-dependencies]
 combustion= {path='..'}

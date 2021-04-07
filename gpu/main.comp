@@ -1,130 +1,17 @@
 #version 460
 double sq(double x) { return x*x; }
 double log(double x) { return double(log(float(x))); }
-double exp(double x) { return double(exp(float(x))); }
 double pow(double x, double y) { return double(pow(float(x), float(y))); }
 
 double dot(double[5] a, double[5] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-double eval_poly(double [5] P, double x) {
+double eval_poly(double[5] P, double x) {
 	double[5] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
 	return dot(P, generate_k);
 }
 
-const double ideal_gas_constant = 8.31446261815324;
-
-const double reference_pressure_R = 101325. / ideal_gas_constant;
-const double T_split = 1000.;
-double[7] a(double[2][7] s, double T) { if (T < T_split) { return s[0]; } else { return s[1]; } }
-double specific_heat_capacity(double[2][7] s, double T) { double[7] a = a(s, T); return a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T; } // /R
-double specific_enthalpy(double[2][7] s, double T) { double[7] a = a(s, T); return a[5]+a[0]*T+a[1]/2.*T*T+a[2]/3.*T*T*T+a[3]/4.*T*T*T*T+a[4]/5.*T*T*T*T*T; } // /R
-double specific_entropy(double[2][7] s, double T) { double[7] a = a(s, T); return a[6]+a[0]*log(T)+a[1]*T+a[2]/2.*T*T+a[3]/3.*T*T*T+a[4]/4.*T*T*T*T; } // /R
-/*double dT_specific_heat_capacity(double[2][7] s, double T) { 	double[7] a = a(s, T); return (a[1]+2.*a[2]*T+3.*a[3]*T*T+4.*a[4]*T*T*T); } // /R
-double dT_Gibbs_free_energy(double[2][7] s, double T) { double[7] a = a(s, T); return (1.-a[0])/T - a[1]/2. - a[2]/12.*T - a[3]/36.*T*T - a[4]/80.*T*T*T - a[5]/(T*T); } // dT((H-TS)/RT)*/
-
 const uint S = SPECIES;
 
-double dot(double[S-1] a, double[S-1] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 double dot(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-
-struct RateConstant {
-	double log_preexponential_factor;
-	double temperature_exponent;
-	double activation_temperature;
-};
-
-double log_arrhenius(RateConstant r, double T) { return r.log_preexponential_factor + r.temperature_exponent*log(T) - r.activation_temperature*(1./T); }
-
-struct Reaction {
-	double[S] reactants;
-	double[S] products;
-	double[S-1] net;
-	double sum_reactants;
-	double sum_products;
-	double sum_net;
-	RateConstant rate_constant;
-};
-
-struct Elementary {
-	Reaction reaction;
-};
-
-struct ThreeBody {
-	Reaction reaction;
-	double[S] efficiencies;
-};
-
-struct PressureModification {
-	Reaction reaction;
-	double[S] efficiencies;
-	RateConstant k0;
-};
-
-struct Falloff {
-	Reaction reaction;
-	uint efficiency;
-	RateConstant k0;
-	double A;
-	double T3;
-	double T1;
-	double T2;
-};
-
-double log10(double x) { return log(x)/log(10.); }
-double exp10(double x) { return exp(log(10.)*x); }
-
-double pressure_modification(PressureModification r, double T, double[S] concentrations, double log_k_inf) {
-	double Pr = dot(r.efficiencies, concentrations) * exp(log_arrhenius(r.k0, T) - log_k_inf);
-	return Pr / (1.+Pr);
-}
-
-double falloff(Falloff r, double T, double efficiency, double log_k_inf) {
-	double Pr = efficiency * exp(log_arrhenius(r.k0, T) - log_k_inf);
-	double Fcent = (1.-r.A)*exp(-T/r.T3)+r.A*exp(-T/r.T1)+exp(-r.T2/T);
-	double log10Fcent = log10(Fcent);
-	double C = -0.4-0.67*log10Fcent;
-	double N = 0.75-1.27*log10Fcent;
-	double log10PrC = log10(Pr) + C;
-	double f1 = log10PrC/(N-0.14*log10PrC);
-	double F = exp10(log10Fcent/(1.+f1*f1));
-	return Pr / (1.+Pr) * F;
-}
-
-void reaction(inout double[S-1] net_rates, /*inout double[S-1] dT_net_rates, inout double[S-1] dV_net_rates, inout double[S-1][S-1] dn_net_rates,*/ Reaction r, /*double[S] efficiencies, double T, double rcpV, double rcp_amount,*/ double logP0_RT, double[S-1] G, /*double[S-1] dT_G,*/ double log_kf, double[S] log_concentrations, double c) {
-	double Rf = exp(dot(r.reactants, log_concentrations) + log_kf);
-	double log_equilibrium_constant = -dot(r.net, G) + r.sum_net*logP0_RT;
-	double Rr = exp(dot(r.products, log_concentrations) + log_kf - log_equilibrium_constant);
-	double R = Rf - Rr;
-	double cR = c * R;
-
-	/*double nufRfnurRr[S];
-	for(uint k=0;k<nufRfnurRr.length();k++) nufRfnurRr[k] = r.reactants[k]*Rf - r.products[k]*Rr;
-	const uint a = S-1;
-	double has_a = efficiencies[a] != 0. ? 1. : 0.;
-
-	double dTc = has_a * -c/T;
-	double dTR = (r.rate_constant.temperature_exponent+r.rate_constant.activation_temperature/T)/T*R + Rr*dot(r.net, dT_G) - nufRfnurRr[a] / T;
-	double RdTccdTR = R * dTc + c * dTR;
-
-	double sum = 0.; for(int k=0;k<efficiencies.length();k++) sum += efficiencies[k]; // const
-	double dVc = rcpV * (has_a*c  - sum);
-	double dVR = rcpV * ( nufRfnurRr[a] - (r.sum_reactants*Rf - r.sum_products*Rr));
-	double RdVccdVR = R * dVc + c * dVR;
-
-	double dnc[S-1];
-	for(uint k=0;k<dnc.length();k++) dnc[k] = rcpV * ((efficiencies[k] != 0. ? 1. : 0.) - has_a);
-	double dnR[S-1];
-	for(uint k=0;k<dnR.length();k++) dnR[k] = rcp_amount * (nufRfnurRr[k] - nufRfnurRr[a]);
-	double RdnccdnR[S-1];
-	for(uint k=0;k<RdnccdnR.length();k++) RdnccdnR[k] = R*dnc[k] + c*dnR[k];*/
-
-	for(uint k=0;k<net_rates.length();k++) {
-		double net = r.net[k];
-		net_rates[k] += net * cR;
-		/*dT_net_rates[k] += net * RdTccdTR;
-		dV_net_rates[k] += net * RdVccdVR;
-		for(uint l=0;l<RdnccdnR.length();k++) dn_net_rates[k][l] += net * RdnccdnR[l];*/
-	}
-}
 
 struct TransportPolynomials {
 	double[S][5] sqrt_viscosity_T14;
@@ -135,11 +22,6 @@ struct TransportPolynomials {
 struct Species {
 	double[S] molar_mass;
 	double[S][2][7] thermodynamics;
-	/*Elementary[ELEMENTARY] elementary;
-	ThreeBody[THREE_BODY] three_body;
-	PressureModification[PRESSURE_MODIFICATION] pressure_modification;
-	double[EFFICIENCIES][S] efficiencies;
-	Falloff[FALLOFF] falloff;*/
 	TransportPolynomials transport_polynomials;
 };
 const Species species =
@@ -162,95 +44,9 @@ layout(set = 0, binding = 4) buffer Viscosity { double data[]; } viscosity;
 layout(set = 0, binding = 5) buffer ThermalConductivity { double data[]; } _thermal_conductivity;
 layout(set = 0, binding = 6) buffer MixtureAveragedThermalDiffusionCoeffficent { double data[]; } mixture_averaged_thermal_diffusion_coefficients[S];
 
-//layout(set = 0, binding = 2) buffer Jacobian { writeonly double data[]; } jacobian[(1+S-1)*(1+S-1)];
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	//double rcpV = 1. / V;
 	double T = temperature.data[i];
-#if 0
-	double C = constants.pressure_R / T;
-	//double rcpC = 1. / C;
-	//double rcp_amount = rcpV * rcpC;
-	double logP0_RT = log(reference_pressure_R) - log(T);
-	double[S-1] H;
-	for(uint k=0;k<H.length();k++) H[k] = specific_enthalpy(species.thermodynamics[k], T);
-	double[S-1] H_T;
-	for(uint k=0;k<H_T.length();k++) H_T[k] = H[k] / T;
-	double[S-1] G;
-	for(uint k=0;k<G.length();k++) G[k] = H_T[k] - specific_entropy(species.thermodynamics[k], T);
-	//double[S-1] dT_G; for(uint k=0;k<dT_G.length();k++) dT_G[k] = dT_Gibbs_free_energy(system.thermodynamics[k], T);
-	double[S-1] active_concentrations;
-	for(int k=0;k<active_concentrations.length();k++) active_concentrations[k] = amounts[k].data[i];
-	double sumC = 0.;
-	for(int k=0;k<active_concentrations.length();k++) sumC += active_concentrations[k];
-	double Ca = C - sumC;
-	double[S] concentrations;
-	for(int k=0;k<concentrations.length();k++) concentrations[k] = active_concentrations[k];
-	const uint a = S-1;
-	concentrations[a] = Ca;
-	double[S] log_concentrations;
-	for(uint k=0;k<log_concentrations.length();k++) log_concentrations[k] = log(concentrations[k]);
-	double[S-1] net_rates;
-	for(uint k=0;k<net_rates.length();k++) net_rates[k] = 0.;
-	//double[S-1] dT_net_rates; for(uint k=0;k<dT_net_rates.length();k++) dT_net_rates[k] = 0.;
-	//double[S-1][S-1] dn_net_rates; for(uint k=0;k<dn_net_rates.length();k++) for(uint l=0;l<dn_net_rates.length();l++) dn_net_rates[k][l] = 0.;
-	for(uint j=0;j<species.elementary.length();j++) {
-		Elementary r = species.elementary[j];
-		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		//double zero[S]; for(uint k=0;k<zero.length();k++) zero[k] = 0.;
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*zero, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, 1.);
-	}
-	for(uint j=0;j<species.three_body.length();j++) {
-		ThreeBody r = species.three_body[j];
-		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, dot(r.efficiencies, concentrations));
-	}
-	for(uint j=0;j<species.pressure_modification.length();j++) {
-		PressureModification r = species.pressure_modification[j];
-		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, pressure_modification(r, T, concentrations, log_kf));
-	}
-	double[EFFICIENCIES] efficiencies;
-	for(uint j=0;j<species.efficiencies.length();j++) {
-		efficiencies[j] = dot(species.efficiencies[j], concentrations);
-	}
-	for(uint j=0;j<species.falloff.length();j++) {
-		Falloff r = species.falloff[j];
-		double log_kf = log_arrhenius(r.reaction.rate_constant, T);
-		reaction(net_rates, /*dT_net_rates, dV_net_rates, dn_net_rates,*/ r.reaction, /*r.efficiencies, T, rcpV, rcp_amount,*/ logP0_RT, G, /*dT_G,*/ log_kf, log_concentrations, falloff(r, T, efficiencies[r.efficiency], log_kf));
-	}
-	double Cp[S];
-	for(uint k=0;k<Cp.length();k++) Cp[k] = specific_heat_capacity(species.thermodynamics[k], T);
-	double rcp_sumCCp = 1. / dot(concentrations, Cp);
-	double dtT_T = - rcp_sumCCp * dot(H_T, net_rates);
-	d_temperature.data[i] = dtT_T;
-	for(uint k=0;k<d_amounts.length();k++) d_amounts[k].data[i] = net_rates[k];
-
-	/*double[1+S-1][1+S-1] J;
-	double dtT = - rcp_sumCCp * dot(H, net_rates);
-	double Cpa = Cp[a];
-	double Ha = specific_enthalpy(species.thermodynamics[a], T);
-	double HaWa = Ha/species.molar_mass[a];
-	double HaWaWH[S-1];
-	for(uint k=0;k<HaWaWH.length();k++) HaWaWH[k] = HaWa*species.molar_mass[k] - H[k];
-	double Cpa_Wa = Cpa / species.molar_mass[a];
-	double[S-1] Cpa_T_dT_Cp;
-	for(uint k=0;k<Cpa_T_dT_Cp.length();k++) Cpa_T_dT_Cp[k] = Cpa/T - dT_specific_heat_capacity(species.thermodynamics[k], T);
-	double[S-1] WCpa_Wa_Cp;
-	for(uint k=0;k<WCpa_Wa_Cp.length();k++) WCpa_Wa_Cp[k] = species.molar_mass[k]*Cpa_Wa - Cp[k];
-	double dTdtT = rcp_sumCCp * (dtT * dot(active_concentrations, Cpa_T_dT_Cp) + dot(HaWaWH, dT_net_rates) + dot(WCpa_Wa_Cp, net_rates)); //R/R
-	J[0][0] = dTdtT;
-	double dndtT[S-1];
-	for(uint k=0;k<dndtT.length();k++) dndtT[k] = rcp_sumCCp * (dot(HaWaWH,dn_net_rates[k]) + rcpV * dtT * (Cpa-Cp[k]) );
-	for(uint k=0;k<dndtT.length();k++) J[0][1+k] = dndtT[k];
-	double[S-1][S-1] dndtn;
-	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) dndtn[k][l] = dn_net_rates[l][k]; // Transpose [l][k] -> [k][l]
-	double dTdtn[S-1];
-	for(uint k=0;k<dTdtn.length();k++) dTdtn[k] = dT_net_rates[k];
-	for(uint k=0;k<dTdtn.length();k++) J[1+k][0] = dTdtn[k];
-	for(uint k=0;k<dndtn.length();k++) for(uint l=0;l<dndtn.length();l++) J[2+k][l] = dndtn[l][k]; // Transpose back
-	for(uint k=0;k<1+S-1;k++) for(uint l=0;l<1+S-1;l++) jacobian[k*(1+S-1)+l].data[i] = J[k][l];*/
-#endif
 	double[S] amounts; for(int k=0;k<amounts.length();k++) amounts[k] = _amounts[k].data[i];
 	double[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
 		double[S] generate_j;
@@ -261,7 +57,7 @@ void main() {
 		generate_k[k] = sq(sqrt_viscosity(k, T)) / dot(amounts, generate_j);
 	}
 	viscosity.data[i] = dot(amounts, generate_k);
-	double amount = constants.pressure_R / T * volume;
+	double amount = constants.pressure_R * volume / T; // pressure/NA * volume / (K * T)
 	double[S] thermal_conductivities; for(uint k=0;k<thermal_conductivities.length();k++) { thermal_conductivities[k] = thermal_conductivity(k, T); }
 	double[S] rcp_thermal_conductivities; for(uint k=0;k<rcp_thermal_conductivities.length();k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(k, T); }
 	_thermal_conductivity.data[i] = 1./2. * (dot(amounts, thermal_conductivities) / amount + amount / dot(amounts, rcp_thermal_conductivities));
@@ -278,4 +74,4 @@ void main() {
 	}
 }
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

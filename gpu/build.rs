@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		reaction: Reaction<S>,
 		efficiency: usize,
 	}
-	elementary: Box<[Reaction<S>]>,
+		elementary: Box<[Reaction<S>]>,
 		three_body: Box<[Reaction<S>]>,
 		pressure_modification: Box<[Reaction<S>]>,
 		efficiencies: Box<[[f64; S]]>,
@@ -82,12 +82,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	}*/
 	impl GLSL for TransportPolynomials {
-		fn r#type(&self) -> String { "TransportPolynomials".to_string() }
+		//fn r#type(&self) -> String { "TransportPolynomials".to_string() }
  		fn glsl(&self) -> String { format!("{}({},{},{})", self.r#type(), self.sqrt_viscosity_T14.as_slice().glsl(), self.thermal_conductivity_T12.as_slice().glsl(), self.binary_thermal_diffusion_coefficients_T32.as_slice().glsl()) }
 	}
 	impl GLSL for NASA7 { fn r#type(&self) -> String { self.0.r#type() } fn glsl(&self) -> String { self.0.glsl() } }
 	impl GLSL for Species {
-		fn r#type(&self) -> String { "Species".to_string() }
+		//fn r#type(&self) -> String { "Species".to_string() }
 		fn glsl(&self) -> String {
 			format!("{}({},\n{},\n{})", self.r#type(),
 				self.molar_mass.glsl(),
@@ -116,11 +116,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	options.add_macro_definition("EFFICIENCIES", Some(&system.efficiencies.len().to_string()));
 	options.add_macro_definition("FALLOFF", Some(&system.falloff.len().to_string()));*/
 	let OUT_DIR = std::env::var("OUT_DIR").unwrap();
-	//std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("system.h"), format!("const System system = {};\n", system.glsl()))?;
 	std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("species.h"), species.glsl())?;
 	options.set_include_callback(|_,_,_,_| Ok(shaderc::ResolvedInclude{resolved_name:"species.h".to_string(), content: species.glsl()}));
-	//std::fs::write(std::path::PathBuf::from(&OUT_DIR).join("main.comp"), include_str!("main.comp").replace("SYSTEM", &system.glsl()))?;
-	//options.add_macro_definition("SYSTEM", Some(&system.glsl()));
 	std::fs::write(std::path::PathBuf::from(OUT_DIR).join("main.spv"),
 											shaderc::Compiler::new().unwrap().compile_into_spirv(include_str!("main.comp"), shaderc::ShaderKind::Compute, "main.comp", "main", Some(&options))?.as_binary_u8())?;
 	Ok(())

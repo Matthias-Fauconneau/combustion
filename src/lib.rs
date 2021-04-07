@@ -7,7 +7,7 @@ pub const NA : f64 = 6.02214076e23;
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 
 pub mod model;
-use model::{Element, Troe};
+use model::Element;
 
 #[derive(PartialEq, Debug, /*Eq*/)] pub struct NASA7(pub [[f64; 7]; 2]);
 impl NASA7 {
@@ -76,7 +76,7 @@ impl Species {
 
 pub struct State {
     pub temperature: f64,
-    pub pressure: f64, // /R
+    pub pressure: f64, // /Na
     pub volume: f64,
     pub amounts: Box<[f64]>
 }

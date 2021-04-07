@@ -1,4 +1,3 @@
-//fn dot(iter: impl IntoIterator<Item=(f64, f64)>) -> f64 { iter.into_iter().map(|(a,b)| a*b).sum() }
 use super::*;
 
 pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
@@ -18,10 +17,18 @@ pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
 	let transport = unsafe{trans_newDefault(phase, 5)};
 	let viscosity = unsafe{trans_viscosity(transport)};
 	let thermal_conductivity  = unsafe{trans_thermalConductivity(transport)};
-	let mixture_averaged_thermal_diffusion_coefficients = {let mut array = vec![0.; len]; unsafe{trans_getThermalDiffCoeffs(transport, len as i32, array.as_mut_ptr())}; array};
-	let transport = combustion::transport::transport(&species.molar_mass, &transport_polynomials, state);
-	dbg!(&transport, viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients);
-	dbg!((transport.viscosity-viscosity)/viscosity, (transport.thermal_conductivity-thermal_conductivity)/thermal_conductivity);
-	assert!(f64::abs(transport.viscosity-viscosity)/viscosity < 0.03, "{}", transport.viscosity/viscosity);
-	assert!(f64::abs(transport.thermal_conductivity-thermal_conductivity)/thermal_conductivity < 0.05, "{:?}", (transport.thermal_conductivity, thermal_conductivity));
+	let ref mixture_averaged_thermal_diffusion_coefficients = {let mut array = vec![0.; len]; unsafe{trans_getThermalDiffCoeffs(transport, len as i32, array.as_mut_ptr())}; array};
+	let ref transport = combustion::transport::transport(&species.molar_mass, &transport_polynomials, state);
+	dbg!(&transport);
+	dbg!(viscosity, transport.viscosity, num::relative_error(transport.viscosity, viscosity));
+	dbg!(thermal_conductivity, transport.thermal_conductivity, num::relative_error(transport.thermal_conductivity, thermal_conductivity));
+	if false {
+		dbg!(mixture_averaged_thermal_diffusion_coefficients);
+		dbg!(&transport.mixture_averaged_thermal_diffusion_coefficients);
+		for (&a, &b) in mixture_averaged_thermal_diffusion_coefficients.iter().zip(transport.mixture_averaged_thermal_diffusion_coefficients.iter()) {
+			dbg!(a, b, num::relative_error(a,b));
+		}
+	}
+	assert!(num::relative_error(transport.viscosity, viscosity) < 0.03);
+	assert!(num::relative_error(transport.thermal_conductivity, thermal_conductivity) < 0.05);
 }

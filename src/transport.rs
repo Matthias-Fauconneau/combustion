@@ -149,7 +149,7 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 
 #[cfg(test)] mod test;
 
-pub trait AbsError {
+/*pub trait AbsError {
 	fn error(&self, o: &Self) -> f64;
 }
 
@@ -172,6 +172,38 @@ impl AbsError for Box<[f64]> {
 }
 
 impl AbsError for Transport {
+	fn error(&self, o: &Self) -> f64 {
+		[
+			self.viscosity.error(&o.viscosity),
+			self.thermal_conductivity.error(&o.thermal_conductivity),
+			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
+		].iter().copied().reduce(f64::max).unwrap()
+	}
+}*/
+
+pub trait RelError {
+	fn error(&self, o: &Self) -> f64;
+}
+
+impl RelError for f64 {
+	fn error(&self, o: &Self) -> f64 {
+		num::relative_error(*self, *o)
+	}
+}
+
+impl<const N: usize> RelError for [f64; N] {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+
+impl RelError for Box<[f64]> {
+	fn error(&self, o: &Self) -> f64 {
+		self.iter().zip(o.iter()).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
+	}
+}
+
+impl RelError for Transport {
 	fn error(&self, o: &Self) -> f64 {
 		[
 			self.viscosity.error(&o.viscosity),

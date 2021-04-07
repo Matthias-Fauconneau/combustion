@@ -36,21 +36,29 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 
 	use vulkan::{Device, Buffer};
 	let ref device = Device::new()?;
-	let stride = 32;
-	let len = 32/stride*stride;
+	let stride = 1;
+	let len = 1/stride*stride;
 	let State{temperature, pressure, amounts, ..} = state;
-	let temperature = Buffer::new(device, (0..len).map(|_| temperature))?;
-	let amounts_buffers = box_collect(amounts.iter().map(|n| Buffer::new(device, (0..len).map(|_| n)).unwrap()));
+	let temperature = Buffer::new(device, (0..len).map(|_| *temperature))?;
+	let amounts_buffers = box_collect(amounts.iter().map(|n| Buffer::new(device, (0..len).map(|_| *n)).unwrap()));
 	let ref_amounts = box_collect(amounts_buffers.iter().map(|n| n));
 	let d_temperature = Buffer::new(device, (0..len).map(|_| f64::NAN))?;
 	let d_amounts = box_collect(amounts.iter().map(|_| Buffer::new(device, (0..len).map(|_| f64::NAN)).unwrap()));
 	let ref_d_amounts = box_collect(d_amounts.iter().map(|n| n));
 	let viscosity = Buffer::new(device, (0..len).map(|_| f64::NAN))?;
 	let thermal_conductivity = Buffer::new(device, (0..len).map(|_| f64::NAN))?;
-	let mixture_averaged_thermal_diffusion_coefficients = iter::eval(len, |_| Buffer::new(device, (0..len).map(|_| f64::NAN)).unwrap());
+	let mixture_averaged_thermal_diffusion_coefficients = iter::eval(species.len(), |_| Buffer::new(device, (0..len).map(|_| f64::NAN)).unwrap());
 	let ref_mixture_averaged_thermal_diffusion_coefficients = box_collect(mixture_averaged_thermal_diffusion_coefficients.iter().map(|n| n));
-	let ref buffers = [&[&temperature] as &[_], &ref_amounts, &[&d_temperature] as &[_], &ref_d_amounts, &[&viscosity] as &[_], &[&thermal_conductivity] as &[_], &ref_mixture_averaged_thermal_diffusion_coefficients];
-	let ref constants = [pressure];
+	let ref buffers = [
+		&[&temperature] as &[_],
+		&ref_amounts,
+		&[&d_temperature] as &[_],
+		&ref_d_amounts,
+		&[&viscosity] as &[_],
+		&[&thermal_conductivity] as &[_],
+		&ref_mixture_averaged_thermal_diffusion_coefficients
+	];
+	let ref constants = [/*pressure/R:*/*pressure/*/Na*//K];
 	let ref pipeline = time!(device.pipeline(constants, buffers))?; // Compiles SPIRV -> Gen
 	device.bind(pipeline.descriptor_set, buffers)?;
 	let command_buffer  = device.command_buffer(pipeline, constants, stride, len)?;
@@ -67,7 +75,9 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			thermal_conductivity: all_same(&thermal_conductivity),
 			mixture_averaged_thermal_diffusion_coefficients: box_collect(mixture_averaged_thermal_diffusion_coefficients.iter().map(|buffer| all_same(buffer))),
 		};
-		use AbsError;
+		use RelError;
+		/*if transport.viscosity.error(&all_same(&viscosity)) > 2e-6 { println!("{:?}\n{:?}", transport.viscosity, all_same(&viscosity)); }
+		if dbg!(transport.thermal_conductivity.error(&all_same(&thermal_conductivity))) > 2e-6 { println!("{:?}\n{:?}", transport.thermal_conductivity, all_same(&thermal_conductivity)); }*/
 		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}

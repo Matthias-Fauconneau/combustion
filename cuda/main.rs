@@ -1,10 +1,29 @@
-#![feature(type_ascription, array_map, array_methods, bindings_after_at, try_blocks)] #![allow(non_snake_case)]
+#![feature(type_ascription, array_map, array_methods, bindings_after_at, try_blocks, unboxed_closures)] #![allow(non_snake_case)]
+
+fn time<T:Fn<()>>(task: T) -> (T::Output, f32) {
+	let start = std::time::Instant::now();
+	let result = task();
+	(result, (std::time::Instant::now()-start).as_secs_f32())
+}
+
+fn benchmark<T>(task: impl Fn()->T, times: usize, header: impl std::fmt::Display) -> T {
+	let result = task();
+	println!("{}: {:.1}ms", header, time(|| for _ in 0..times { task(); }).1/(times as f32)*1e3);
+	result
+}
+
+macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, $times, stringify!($task)) } }
+
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
-	use iter::{box_collect, vec::ConstRange, into::map, array_from_iter as from_iter};
-	let system = std::fs::read("CH4+O2.ron").expect("CH4+O2.ron");
-	use combustion::*;
-	let Simulation{system, pressure_R, state: state@combustion::State{temperature, amounts}, ..} = Simulation::<35>::new(&system).expect("parse");
-	let transport =  system.transport(pressure_R, &state);
+	use iter::box_collect;
+	let model = &std::fs::read("CH4+O2.ron")?;
+	use combustion::{*, transport::*};
+	let model = model::Model::new(&model)?;
+	let ref state = Simulation::new(&model)?.state;
+	//#[cfg(feature="transport")] {
+	let (_species_names, species) = Species::new(model.species);
+	let ref transport_polynomials = species.transport_polynomials();
+	let transport = benchmark!(transport::transport(&species.molar_mass, transport_polynomials, state), 1);
 
 	let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
 	let _ : std::io::Result<_> = try { std::process::Command::new("nvidia-modprobe").spawn()?.wait()? };
@@ -19,7 +38,8 @@
 	let stride = 1;//256;
 	let len = (1/*00_000*//stride)*stride;
 	if len < 1000 { println!("{}", len) } else { println!("{}K", len/1000); }
-	let mut temperature = DeviceBuffer::from_slice(&vec![temperature; len]).unwrap();
+	let State{temperature, pressure, amounts, ..} = state;
+	let mut temperature = DeviceBuffer::from_slice(&vec![*temperature; len]).unwrap();
 	let mut amounts_buffer = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n).take(len)).flatten())).unwrap();
 	let mut d_temperature = DeviceBuffer::from_slice(&vec![f64::NAN; len]).unwrap();
 	let mut d_amounts = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|_| std::iter::repeat(f64::NAN).take(len)).flatten())).unwrap();
@@ -30,7 +50,7 @@
 	for _ in 0..1/*0*/ {
 		let start = std::time::Instant::now();
 		unsafe {
-			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, pressure_R,
+			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, *pressure,
 									 temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), d_temperature.as_device_ptr(), d_amounts.as_device_ptr(), viscosity.as_device_ptr(), thermal_conductivity.as_device_ptr(), mixture_averaged_thermal_diffusion_coefficients.as_device_ptr())).expect("launch");
 		}
 		stream.synchronize().expect("synchronize");
@@ -59,10 +79,11 @@
 			mixture_averaged_thermal_diffusion_coefficients: {
 				let mut host = vec![0.; mixture_averaged_thermal_diffusion_coefficients.len()];
 				mixture_averaged_thermal_diffusion_coefficients.copy_to(&mut host).unwrap();
-				from_iter(map(ConstRange::<35>, move |n| host[n*len]))
+				(0..len).map(|n| host[n*len]).collect()
 			}
 		};
-		use combustion::Error;
+		use AbsError;
+		//if dbg!(transport.viscosity.error(&all_same(&gpu_transport.viscosity))) > 3e-6 { println!("{:?}\n{:?}", transport.viscosity, all_same(&viscosity)); }
 		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
 		println!("{:.1}ms\t{:.0}M/s", time*1e3, (len as f32)/time/1e6);
 	}
