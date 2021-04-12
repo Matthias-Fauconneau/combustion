@@ -54,7 +54,7 @@ pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
 	let State{temperature, pressure, volume, amounts, ..} = state;
 	let T = *temperature;
 	let amount = pressure * volume / (K * T);
-	assert!(dbg!(num::abs(amounts.iter().sum::<f64>()-amount) < 2e-6));
+	assert!(dbg!(num::abs(amounts.iter().sum::<f64>()-amount)) < 2e-6);
 	let mole_fractions = amounts.iter().map(|n| n/amount).collect::<Box<_>>();
 	let direct_viscosity = dot(zip(mole_fractions.copied(), |k|
 		species.viscosity(k, T) /
@@ -75,7 +75,7 @@ pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
 	);
 	dbg!(direct_thermal_conductivity);
 	dbg!(num::relative_error(transport.thermal_conductivity, thermal_conductivity));
-	assert!(num::relative_error(transport.thermal_conductivity, thermal_conductivity) < 0.24);
+	assert!(num::relative_error(transport.thermal_conductivity, thermal_conductivity) < 0.024);
 
 	/*for k in 0..len { for j in 0..len {
 		let r = binary_thermal_diffusion_coefficients[len*j+k];
@@ -94,6 +94,8 @@ pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
 	for (i, (&a, &b)) in
 		species_names.iter().zip(mixture_mass_averaged_thermal_diffusion_coefficients.iter().zip(transport_mixture_mass_averaged_thermal_diffusion_coefficients.iter())) {
 		//dbg!(a, b, num::relative_error(a,b));
+		//println!("{} {} {:e}", a, b, num::abs(a-b));
 		assert!(num::relative_error(a, b) < 0.14, "{}: {}", i, num::relative_error(a, b));
+		assert!(num::abs(a-b) < 6e-5, "{}: {:e}", i, num::abs(a-b));
 	}
 }

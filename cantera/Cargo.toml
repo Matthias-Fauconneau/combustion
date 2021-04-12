@@ -5,8 +5,8 @@ version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
-[build-dependencies]
-bindgen= ''
+#[build-dependencies]
+#bindgen= ''
 
 [dependencies]
 fehler= ''
