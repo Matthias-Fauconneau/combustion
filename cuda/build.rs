@@ -2,8 +2,6 @@
 use core::slice::SlicePattern;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	println!("cargo:rerun-if-changed=CH4+O2.ron");
-	println!("cargo:rerun-if-changed=main.cu");
 	let model = &std::fs::read("CH4+O2.ron")?;
 	use combustion::{*, transport::*};
 	let model = model::Model::new(&model)?;
@@ -119,5 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		&format!("-DFALLOFF={}", system.falloff.len()),*/
 		"--ptx","main.cu","-o",&format!("{}/main.ptx",OUT_DIR)
 	]).spawn()?.wait()?.success().then_some(()).unwrap();
+	println!("cargo:rerun-if-changed=CH4+O2.ron");
+	println!("cargo:rerun-if-changed=main.cu");
 	Ok(())
 }
