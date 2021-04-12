@@ -76,9 +76,15 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			mixture_averaged_thermal_diffusion_coefficients: box_collect(mixture_averaged_thermal_diffusion_coefficients.iter().map(|buffer| all_same(buffer))),
 		};
 		use RelError;
-		/*if transport.viscosity.error(&all_same(&viscosity)) > 2e-6 { println!("{:?}\n{:?}", transport.viscosity, all_same(&viscosity)); }
-		if dbg!(transport.thermal_conductivity.error(&all_same(&thermal_conductivity))) > 2e-6 { println!("{:?}\n{:?}", transport.thermal_conductivity, all_same(&thermal_conductivity)); }*/
-		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
+		if transport.error(&gpu_transport) > 3e-5 {
+			println!("{:?}\n{:?}\n{:e}", transport, gpu_transport, transport.error(&gpu_transport));
+			if transport.viscosity.error(&all_same(&viscosity)) > 3e-6 {
+				println!("{:?}\n{:?}\n{:e}", transport.viscosity, all_same(&viscosity), transport.viscosity.error(&all_same(&viscosity)));
+			}
+			if transport.thermal_conductivity.error(&all_same(&thermal_conductivity)) > 3e-5 {
+				println!("{:?}\n{:?}\n{:e}", transport.thermal_conductivity, all_same(&thermal_conductivity), transport.thermal_conductivity.error(&all_same(&thermal_conductivity)));
+			}
+		}
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
 }
