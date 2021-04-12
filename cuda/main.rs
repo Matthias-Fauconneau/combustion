@@ -25,14 +25,16 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	let ref transport_polynomials = species.transport_polynomials();
 	let transport = benchmark!(transport::transport(&species.molar_mass, transport_polynomials, state), 1);
 
-	let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
+	/*let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
 	let _ : std::io::Result<_> = try { std::process::Command::new("nvidia-modprobe").spawn()?.wait()? };
-	if let Ok(modules) = std::fs::read("/proc/modules") { assert!(std::str::from_utf8(&modules).unwrap().lines().any(|line| line.starts_with("nvidia "))) };
-	use rustacuda::{prelude::*, launch};
+	if let Ok(modules) = std::fs::read("/proc/modules") { assert!(std::str::from_utf8(&modules).unwrap().lines().any(|line| line.starts_with("nvidia "))) };*/
+	use rustacuda::{prelude::*, launch, memory::DeviceSlice};
 	rustacuda::init(CudaFlags::empty()).expect("CUDA");
 	let device = Device::get_device(0).expect("device");
 	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device).expect("context");
+	dbg!();
 	let module = Module::load_from_string(&std::ffi::CString::new(include_str!(concat!(env!("OUT_DIR"), "/main.ptx"))).unwrap()).expect("module");
+	dbg!();
 	let stream = Stream::new(StreamFlags::NON_BLOCKING, None).expect("stream");
 
 	let stride = 1;//256;
@@ -49,11 +51,14 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 
 	for _ in 0..1/*0*/ {
 		let start = std::time::Instant::now();
+		dbg!();
 		unsafe {
 			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(len, *pressure,
 									 temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), d_temperature.as_device_ptr(), d_amounts.as_device_ptr(), viscosity.as_device_ptr(), thermal_conductivity.as_device_ptr(), mixture_averaged_thermal_diffusion_coefficients.as_device_ptr())).expect("launch");
 		}
+		dbg!();
 		stream.synchronize().expect("synchronize");
+		dbg!();
 		let end = std::time::Instant::now();
 		let time = (end-start).as_secs_f32();
 		/*let gpu_f: [_;1+S-1] = from_iter([{
@@ -65,26 +70,33 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			d_amounts.copy_to(&mut host).unwrap();
 			generate(move |n| host[n*len])
 		}));*/
-		let gpu_transport = Transport{
-			viscosity: {
-				let ref mut host = vec![0.; len];
-				viscosity.copy_to(host).unwrap();
-				host[0]
-			},
-			thermal_conductivity: {
-				let ref mut host = vec![0.; len];
-				thermal_conductivity.copy_to(host).unwrap();
-				host[0]
-			},
-			mixture_averaged_thermal_diffusion_coefficients: {
-				let mut host = vec![0.; mixture_averaged_thermal_diffusion_coefficients.len()];
-				mixture_averaged_thermal_diffusion_coefficients.copy_to(&mut host).unwrap();
-				(0..len).map(|n| host[n*len]).collect()
-			}
+		let all_same = |slice: &DeviceSlice<f64>| {
+			let ref mut host = vec![0.; slice.len()];
+			slice.copy_to(host).unwrap();
+			for &v in host.iter() { assert_eq!(v, host[0]); }
+			host[0]
 		};
-		use AbsError;
-		//if dbg!(transport.viscosity.error(&all_same(&gpu_transport.viscosity))) > 3e-6 { println!("{:?}\n{:?}", transport.viscosity, all_same(&viscosity)); }
-		if transport.error(&gpu_transport) > 3e-6 { println!("{:?}\n{:?}", transport, gpu_transport); }
-		println!("{:.1}ms\t{:.0}M/s", time*1e3, (len as f32)/time/1e6);
+		let gpu_transport = Transport{
+			viscosity: all_same(&viscosity),
+			thermal_conductivity: all_same(&thermal_conductivity),
+			mixture_averaged_thermal_diffusion_coefficients: //box_collect(mixture_averaged_thermal_diffusion_coefficients.iter().map(|buffer| all_same(buffer))),
+				{
+					let ref slice = mixture_averaged_thermal_diffusion_coefficients;
+					let ref mut host = vec![0.; slice.len()];
+					slice.copy_to(host).unwrap();
+					(0..len).map(|n| host[n*len]).collect()
+				},
+		};
+		use RelError;
+		if dbg!(transport.error(&gpu_transport)) > 3e-5 {
+			println!("{:?}\n{:?}\n{:e}", transport, gpu_transport, transport.error(&gpu_transport));
+			if transport.viscosity.error(&all_same(&viscosity)) > 3e-6 {
+				println!("{:?}\n{:?}\n{:e}", transport.viscosity, all_same(&viscosity), transport.viscosity.error(&all_same(&viscosity)));
+			}
+			if transport.thermal_conductivity.error(&all_same(&thermal_conductivity)) > 3e-5 {
+				println!("{:?}\n{:?}\n{:e}", transport.thermal_conductivity, all_same(&thermal_conductivity), transport.thermal_conductivity.error(&all_same(&thermal_conductivity)));
+			}
+		}
+		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
 }
