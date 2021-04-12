@@ -22,7 +22,9 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	let ref state = Simulation::new(&model)?.state;
 	//#[cfg(feature="transport")] {
 	let (_species_names, species) = Species::new(model.species);
+	//dbg!(species.len());
 	let ref transport_polynomials = species.transport_polynomials();
+	//transport_polynomials.binary_thermal_diffusion_coefficients_T32 // 5x53x53x8B/f64 = 109K (NV CUDA CC3 constant memory size: 64K)
 	let transport = benchmark!(transport::transport(&species.molar_mass, transport_polynomials, state), 1);
 
 	/*let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
