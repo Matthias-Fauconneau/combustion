@@ -8,10 +8,16 @@ edition= '2018'
 #[build-dependencies]
 #bindgen= ''
 
+[features]
+reaction= ['combustion/reaction','cvode']
+transport= ['combustion/transport']
+default= ['reaction']
+
 [dependencies]
 fehler= ''
 error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
+itertools= ''
 combustion= {path='..'}
 cvode= {path='../cvode', optional=true}

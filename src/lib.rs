@@ -1,4 +1,4 @@
-#![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at)]
+#![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at, associated_type_bounds)]
 #![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
 #![allow(unused_variables, dead_code)]
 
@@ -35,38 +35,36 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 	pub heat_capacity_ratio: Box<[f64]>,
 }
 impl Species {
-	pub fn new(species: Map<&'t str, model::Specie>) -> (Box<[&'t str]>, Self) {
-		let species: Box<[_]> = (species.into():Vec<_>).into();
-		use std::ops::Deref;
-		let species = species.deref();
-		pub fn eval<T, U>(v: impl IntoIterator<Item=T>, f: impl Fn(T)->U) -> Box<[U]> { v.into_iter().map(f).collect() }
+	pub fn new(species: &Map<&'t str, model::Specie>) -> (Box<[&'t str]>, Self) {
 		/*let species = eval(species, |(k,specie):&(_,model::Specie)| {
 			let mut specie = specie.clone();
 			for T in specie.thermodynamic.temperature_ranges.iter_mut() { *T *= K; } // K->J
 			for piece in specie.thermodynamic.pieces.iter_mut() { for (order, a) in piece[0..6].iter_mut().enumerate() { *a /= f64::powi(K, (1+order) as i32); } } // /K^n->/J^n
 			(k, specie)
-		});*/
-		let species = species.deref();
-		let molar_mass = eval(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
-		let thermodynamics = eval(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
+		});
+		use std::ops::Deref;
+		let species = species.deref();*/
+		use iter::map;
+		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
+		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_,Tsplit,_] if Tsplit == NASA7::T_split => NASA7(pieces[..].try_into().unwrap()),
 			[min, max] if min < NASA7::T_split && NASA7::T_split < max => NASA7([pieces[0]; 2]),
 			ref ranges => panic!("{:?}", ranges),
 		});
-		let diameter = eval(species, |(_,s)| s.transport.diameter_Å*1e-10);
-		let well_depth_J = eval(species, |(_,s)| s.transport.well_depth_K * K);
+		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);
+		let well_depth_J = map(species, |(_,s)| s.transport.well_depth_K * K);
 		use model::Geometry::*;
-		let polarizability = eval(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
-		let permanent_dipole_moment = eval(species, |(_,s)|
+		let polarizability = map(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
+		let permanent_dipole_moment = map(species, |(_,s)|
 			if let Nonlinear{permanent_dipole_moment_Debye,..} = s.transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
-		let rotational_relaxation = eval(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
-		let internal_degrees_of_freedom = eval(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
-		let heat_capacity_ratio = eval(species, |(_,s)| {
+		let rotational_relaxation = map(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
+		let internal_degrees_of_freedom = map(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
+		let heat_capacity_ratio = map(species, |(_,s)| {
 			let f = match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. };
 			1. + 2./f
 		});
-		let species_names = eval(species, |(name,_)| *name);
-		let species_composition = eval(species, |(_,s)| &s.composition);
+		let species_names = map(species, |(name,_)| *name);
+		let species_composition = map(species, |(_,s)| &s.composition);
 		(species_names,
 			Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom,
 										heat_capacity_ratio})
@@ -81,31 +79,19 @@ pub struct State {
     pub amounts: Box<[f64]>
 }
 
-pub struct Simulation<'t> {
-	pub species_names: Box<[&'t str]>,
-	pub state: State,
-	pub time_step: f64,
+pub fn initial_state(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> State {
+	let species_names = species.iter().map(|(name,_)| *name).collect():Box<_>;
+
+	let model::State{temperature, pressure, volume, amount_proportions} = state;
+	let pressure = pressure/NA;
+	let temperature = *temperature; //K*: K->J
+	let amount = pressure * volume / (K * temperature);
+	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
+	let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
+	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
+
+	State{temperature, pressure, volume: *volume, amounts}
 }
 
-impl Simulation<'t> {
-	pub fn new(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> ron::Result<Self> {
-		let species_names = species.iter().map(|(name,_)| *name).collect():Box<_>;
-
-		let model::State{temperature, pressure, volume, amount_proportions} = state;
-		let pressure = pressure/NA;
-		let temperature = *temperature; //K*: K->J
-		let amount = pressure * volume / (K * temperature);
-		for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
-		let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
-		let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
-
-		Ok(Self{
-			species_names,
-			time_step: *time_step,
-			state: State{temperature, pressure, volume: *volume, amounts}
-		})
-	}
-}
-
-#[cfg(feature = "transport")] pub mod transport;
-#[cfg(feature = "reaction")] pub mod reaction;
+#[cfg(feature= "transport")] pub mod transport;
+#[cfg(feature= "reaction")] pub mod reaction;

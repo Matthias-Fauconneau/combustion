@@ -13,6 +13,8 @@ impl From<&model::RateConstant> for RateConstant {
 	}
 }
 
+use model::Troe;
+
 pub enum ReactionModel {
 	Elementary,
 	Irreversible,
@@ -256,7 +258,7 @@ use std::f64::consts::LN_2;
 struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mrcp: Value, rcp2: Value }
 
 // A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
-fn arrhenius(RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: RateConstant, T: &T, C: &mut Constants, f: &mut FunctionBuilder) -> Value {
+fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: &T, C: &mut Constants, f: &mut FunctionBuilder) -> Value {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
 		let A = C.c(f, preexponential_factor);
 		if temperature_exponent == 0. { A }
@@ -325,11 +327,11 @@ fn efficiency(&self, f: &mut FunctionBuilder<'t>, C: &mut Constants, T: &T, conc
 		Elementary|Irreversible => C._1,
 		ThreeBody{efficiencies} => { dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap() },
 		PressureModification{efficiencies, k0} => {
-			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
+			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(k0, T, C, f), k_inf)])];
 			f![f fdiv(Pr, f![f fadd(C._1, Pr)])]
 		}
 		Falloff{efficiencies, k0, troe} => {
-			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(*k0, T, C, f), k_inf)])];
+			let Pr = f![f fmul(dot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None, C, f).unwrap(), f![f fdiv(arrhenius(k0, T, C, f), k_inf)])];
 			let model::Troe{A, T3, T1, T2} = *troe;
 			fn rcp(x: f64) -> f64 { 1./x }
 			let Fcent = fma![f (C.c(f, 1.-A), exp2(f![f fmul(T.m, C.c(f, rcp(LN_2*T3)))], C, f),
@@ -355,7 +357,7 @@ pub struct Trap {
 }
 
 pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
-pub fn rate<const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: impl Iterator<Item=Reaction>) -> (extern fn(f64, *const f64, *mut f64, *mut f64), impl Rate<CONSTANT>) {
+pub fn rate<'t, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: impl IntoIterator<Item/*:AsRef<Reaction>*/=&'t Reaction>) -> (extern fn(f64, *const f64, *mut f64, *mut f64), impl Rate<CONSTANT>) {
 	let mut module = cranelift_jit::JITModule::new({
 		//cranelift_jit::JITBuilder::new(cranelift_module::default_libcall_names()))
 		let mut flag_builder = settings::builder();
@@ -409,7 +411,8 @@ pub fn rate<const CONSTANT: Property>(species@Species{molar_mass, thermodynamics
 	//if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 	let mut dtω = (0..len-1).map(|_| None).collect(): Box<_>;
-	for (_reaction_index, Reaction{reactants, products, net, Σnet, rate_constant, model, ..}) in reactions.enumerate() {
+	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
+		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;//.as_ref();
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
 		let k_inf = arrhenius(rate_constant, T, C, f);
 		let c = f![f fmul(k_inf, model.efficiency(f, C, T, concentrations, k_inf))]; // todo: CSE
@@ -477,7 +480,7 @@ pub fn rate<const CONSTANT: Property>(species@Species{molar_mass, thermodynamics
 		for i in instructions.iter() { use std::io::Write; writeln!(file, "{}\t{}", i.mnemonic().unwrap(), i.op_str().unwrap()).unwrap(); }
 	}*/
   let id = module.declare_function(&"", Linkage::Export, &context.func.signature).unwrap();
-  module.define_function(id, &mut context, &mut binemit::NullTrapSink{}).unwrap();
+  module.define_function(id, &mut context, &mut binemit::NullTrapSink{}, &mut binemit::NullStackMapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
 	let function = unsafe{std::mem::transmute::<_,extern fn(f64, *const f64, *mut f64, *mut f64)>(function)};

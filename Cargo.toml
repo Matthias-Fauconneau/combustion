@@ -6,9 +6,11 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [features]
-transport= ['nalgebra']
 reaction= ['cranelift', 'cranelift-jit', 'cranelift-module', 'cranelift-codegen', 'cranelift-native']
-default= ['transport']
+transport= ['nalgebra']
+
+[build-dependencies]
+bindgen= ''
 
 [dependencies]
 derive_more= ''

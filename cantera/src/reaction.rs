@@ -9,12 +9,33 @@ fn explicit(total_amount: f64, pressure: f64, u: &[f64]) -> Box<[f64]> { // Reco
 	[temperature, volume].iter().chain(&u[1..]).copied().collect()
 }
 
-use super::{*, Property::*};
-use itertools::Itertools;
+use std::os::raw::c_char;
+#[link(name = "cantera")]
+extern "C" {
+fn thermo_newFromFile(file_name: *const c_char, phase_name: *const c_char) -> i32;
+fn thermo_nSpecies(n: i32) -> usize;
+fn thermo_setTemperature(n: i32, t: f64) -> i32;
+fn thermo_setMoleFractions(n: i32, len: usize, x: *const f64, norm: i32) -> i32;
+fn thermo_getSpeciesName(n: i32, m: usize, len: usize, buffer: *mut c_char) -> i32;
+fn thermo_setPressure(n: i32, p: f64) -> i32;
+fn kin_newFromFile(file_name: *const c_char, phase_name: *const c_char, reactingPhase: i32, neighbor0: i32, neighbor1: i32, neighbor2: i32, neighbor3: i32) -> i32;
+fn kin_getEquilibriumConstants(n: i32, len: usize, kc: *mut f64) -> i32;
+fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32;
+fn kin_getFwdRatesOfProgress(n: i32, len: usize, rate: *mut f64) -> i32;
+fn kin_getRevRatesOfProgress(n: i32, len: usize, rate: *mut f64) -> i32;
+fn kin_getNetRatesOfProgress(n: i32, len: usize, rate: *mut f64) -> i32;
+fn kin_getReactionString(n: i32, i: usize, len: usize, buffer: *mut c_char) -> i32;
+}
 
-#[throws] pub fn check(model: Model, Simulation{species_names, time_step, state, ..}: &Simulation) {
-	let len = model.len();
-	let equations = map(&model.reactions, |Reaction{reactants, products, model, ..}| {
+use {fehler::throws, error::Error};
+use itertools::Itertools;
+use combustion::{*, reaction::{*, Property::*}};
+
+#[throws] pub fn check(model: &model::Model, state: &State) {
+	let (ref species_names, ref species) = Species::new(&model.species);
+	let len = species.len();
+	let reactions = map(&model.reactions, |r| Reaction::new(species_names, r));
+	let equations = map(&reactions, |Reaction{reactants, products, model, ..}| {
 		format!("{}", [reactants, products].iter().format_with(if let ReactionModel::Irreversible = model { " => " } else { " <=> " }, |side, f| {
 			f(&side.iter().enumerate().filter(|(_,&ν)| ν > 0)
 				.sorted_by_key(|&(k,_)| species_names[k])
@@ -42,7 +63,7 @@ use itertools::Itertools;
 	}
 	let kinetics = unsafe{kin_newFromFile(file, name, phase, 0, 0, 0, 0)};
 	{
-		let cantera_equations= (0..model.reactions.len()).map(|i| {
+		let cantera_equations= (0..reactions.len()).map(|i| {
 			let mut reaction = [0; 64];
 			unsafe{kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr())};
 			unsafe{std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()}
@@ -64,34 +85,34 @@ use itertools::Itertools;
 		cell.set(value);
 		result
 	}
-	let (_, rate) = model.rate();
+	let (_, rate) = rate(species, &*reactions);
 	/*let ref derivative = move |u| get_mut(derivative, |derivative| {
 		let pressure = constant.0 as f64;
 		rate(constant, &StateVector(map(&explicit(total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut vec![f64::NAN; model.reactions.len()].into_boxed_slice());
 		Some(implicit(&promote(&derivative.0)))
 	});*/
 	// CVODE shim
-	struct Derivative<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> {
+	struct Derivative<Rate: self::Rate<CONSTANT>, const CONSTANT: Property> {
 		rate: Rate,
 		constant: Constant<CONSTANT>,
 		total_amount: f64,
 		derivative: std::cell::Cell<StateVector::<CONSTANT>>
 	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> FnOnce<(&[f64],)> for Derivative<Rate, CONSTANT> {
+	impl<Rate: self::Rate<CONSTANT>, const CONSTANT: Property> FnOnce<(&[f64],)> for Derivative<Rate, CONSTANT> {
 		type Output = Option<Box<[f64]>>;
 		extern "rust-call" fn call_once(mut self, args: (&[f64],)) -> Self::Output { self.call_mut(args) }
 	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> FnMut<(&[f64],)> for Derivative<Rate, CONSTANT> {
+	impl<Rate: self::Rate<CONSTANT>, const CONSTANT: Property> FnMut<(&[f64],)> for Derivative<Rate, CONSTANT> {
 		extern "rust-call" fn call_mut(&mut self, args: (&[f64],)) -> Self::Output { self.call(args) }
 	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> Fn<(&[f64],)> for Derivative<Rate, CONSTANT> {
+	impl<Rate: self::Rate<CONSTANT>, const CONSTANT: Property> Fn<(&[f64],)> for Derivative<Rate, CONSTANT> {
 		extern "rust-call" fn call(&self, (u,): (&[f64],)) -> Self::Output {
 			let Self{rate, constant, total_amount, derivative} = self;
 			get_mut(derivative, |mut derivative| {
 				let pressure = constant.0 as f64;
 				let mut debug = vec![f64::NAN; /*model.reactions.len()*/325*2].into_boxed_slice();
 				//rate(*constant, &StateVector(map(&explicit(*total_amount, pressure, u), |&v| v.max(0.))), &mut derivative, &mut debug);
-				rate(*constant, &StateVector(explicit(*total_amount, pressure, u)), &mut derivative);
+				rate(*constant, &StateVector(explicit(*total_amount, pressure, u)), &mut derivative, &mut debug);
 				Some(implicit(&derivative.0))
 			})
 		}
@@ -115,7 +136,7 @@ use itertools::Itertools;
 			let equilibrium_constants = {
 				let mut equilibrium_constants = vec![0.; model.reactions.len()];
 				unsafe{kin_getEquilibriumConstants(kinetics, model.reactions.len(), equilibrium_constants.as_mut_ptr())};
-				equilibrium_constants.iter().zip(model.reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet as f64)).collect::<Box<_>>() // kmol -> mol
+				equilibrium_constants.iter().zip(reactions.iter()).map(|(c,Reaction{Σnet, ..})| c*f64::powf(1e3, *Σnet as f64)).collect::<Box<_>>() // kmol -> mol
 			};
 			let forward = {
 				let mut rates = vec![0.; model.reactions.len()];
@@ -184,7 +205,7 @@ use itertools::Itertools;
 							(equation, f64::exp(log_equilibrium_constant), c*Rf, c*Rr)
 					}))
 			};*/
-			let a = model.species.thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
+			let a = species.thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
 			let T = state_vector[0];
 			let amounts = &state_vector[2..];
 			let [rcpT, logT, T2, T3, T4] = [1./T, f64::log2(T), T*T, T*T*T, T*T*T*T];
@@ -194,7 +215,7 @@ use itertools::Itertools;
 			let exp_G_RT = a[..len-1].iter().map(|a| f64::exp2(((a[0]-a[6])/LN_2)+dot(
 				IntoIter::new([(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)]),
 				))).collect():Box<_>;
-			for (((r, e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in model.reactions.iter().zip(equations.iter())
+			for (((r, e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
 			.zip(rcp_equilibrium_constants.iter().zip(equilibrium_constants.iter()))
 			.zip(cR.iter().zip(forward.iter().zip(reverse.iter()))) {
 				//if let ReactionModel::Irreversible = r.model { continue; }
@@ -336,7 +357,7 @@ use itertools::Itertools;
 		}
 		assert!(abs < 7e-3 && rel < 1e-3, "{:e} {:e}", abs, rel);*/
 
-		let next_time = time + time_step;
+		let next_time = time + model.time_step;
 		let mut steps = 0;
 		while time < next_time {
 			(time, state) = {

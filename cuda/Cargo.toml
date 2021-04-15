@@ -21,6 +21,4 @@ name= 'cuda'
 path= 'main.rs'
 
 [patch.crates-io]
-rustacuda_core= {path='../../RustaCUDA/rustacuda_core'}
-[patch.'https://github.com/Matthias-Fauconneau/iter']
-iter= {path='../../Code/iter'}
+rustacuda_core= {git='https://github.com/Matthias-Fauconneau/RustaCUDA'}
