@@ -1,55 +1,54 @@
 #version 460
-double sq(double x) { return x*x; }
-double log(double x) { return double(log(float(x))); }
-double pow(double x, double y) { return double(pow(float(x), float(y))); }
+float sq(float x) { return x*x; }
+float log(float x) { return float(log(float(x))); }
+float pow(float x, float y) { return float(pow(float(x), float(y))); }
 
-double dot(double[5] a, double[5] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-double eval_poly(double[5] P, double x) {
-	double[5] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
+float dot(float[5] a, float[5] b) { float sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
+float eval_poly(float[5] P, float x) {
+	float[5] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
 	return dot(P, generate_k);
 }
 
 const uint S = SPECIES;
 
-double dot(double[S] a, double[S] b) { double sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
+float dot(float[S] a, float[S] b) { float sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
 
 struct TransportPolynomials {
-	double[S][5] sqrt_viscosity_T14;
-	double[S][5] thermal_conductivity_T12;
-	double[S][S][5] binary_thermal_diffusion_coefficients_T32;
+	float[S][5] sqrt_viscosity_T14;
+	float[S][5] thermal_conductivity_T12;
+	float[S][S][5] binary_thermal_diffusion_coefficients_T32;
 };
 
 struct Species {
-	double[S] molar_mass;
-	double[S][2][7] thermodynamics;
+	float[S] molar_mass;
 	TransportPolynomials transport_polynomials;
 };
 const Species species =
 #include "species.h"
 ;
-const double volume = 1.;
+const float volume = 1.;
 
-double sqrt_viscosity(uint a, double T) { return sqrt(sqrt(T)) * eval_poly(species.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
-double thermal_conductivity(uint a, double T) { return sqrt(T) * eval_poly(species.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
-double binary_thermal_diffusion_coefficient(uint a, uint b, double T) { return pow(T,3./2.) * eval_poly(species.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a>b?a:b][a>b?b:a], log(T)); }
+float sqrt_viscosity(uint a, float T) { return sqrt(sqrt(T)) * eval_poly(species.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
+float thermal_conductivity(uint a, float T) { return sqrt(T) * eval_poly(species.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
+float binary_thermal_diffusion_coefficient(uint a, uint b, float T) { return pow(T,3./2.) * eval_poly(species.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a>b?a:b][a>b?b:a], log(T)); }
 
 layout(push_constant) uniform Constants {
-double pressure_R;
+float pressure_R;
 } constants;
-layout(set = 0, binding = 0) buffer Temperature { double data[]; } temperature;
-layout(set = 0, binding = 1) buffer Amount { double data[]; } _amounts[S/*-1*/];
-layout(set = 0, binding = 2) buffer d_Temperature { double data[]; } d_temperature;
-layout(set = 0, binding = 3) buffer d_Amount { double data[]; } d_amounts[S-1];
-layout(set = 0, binding = 4) buffer Viscosity { double data[]; } viscosity;
-layout(set = 0, binding = 5) buffer ThermalConductivity { double data[]; } _thermal_conductivity;
-layout(set = 0, binding = 6) buffer MixtureAveragedThermalDiffusionCoeffficent { double data[]; } mixture_averaged_thermal_diffusion_coefficients[S];
+layout(set = 0, binding = 0) buffer Temperature { float data[]; } temperature;
+layout(set = 0, binding = 1) buffer Amount { float data[]; } _amounts[S/*-1*/];
+layout(set = 0, binding = 2) buffer d_Temperature { float data[]; } d_temperature;
+layout(set = 0, binding = 3) buffer d_Amount { float data[]; } d_amounts[S-1];
+layout(set = 0, binding = 4) buffer Viscosity { float data[]; } viscosity;
+layout(set = 0, binding = 5) buffer ThermalConductivity { float data[]; } _thermal_conductivity;
+layout(set = 0, binding = 6) buffer MixtureAveragedThermalDiffusionCoeffficent { float data[]; } mixture_averaged_thermal_diffusion_coefficients[S];
 
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	double T = temperature.data[i];
-	double[S] amounts; for(int k=0;k<amounts.length();k++) amounts[k] = _amounts[k].data[i];
-	double[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
-		double[S] generate_j;
+	float T = temperature.data[i];
+	float[S] amounts; for(int k=0;k<amounts.length();k++) amounts[k] = _amounts[k].data[i];
+	float[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
+		float[S] generate_j;
 		for(uint j=0;j<generate_j.length();j++) {
 			generate_j[j] = sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(species.molar_mass[j]/species.molar_mass[k]))) /
 				(sqrt(8.) * sqrt(1. + species.molar_mass[k]/species.molar_mass[j]));
@@ -57,12 +56,12 @@ void main() {
 		generate_k[k] = sq(sqrt_viscosity(k, T)) / dot(amounts, generate_j);
 	}
 	viscosity.data[i] = dot(amounts, generate_k);
-	double amount = constants.pressure_R * volume / T; // pressure/NA * volume / (K * T)
-	double[S] thermal_conductivities; for(uint k=0;k<thermal_conductivities.length();k++) { thermal_conductivities[k] = thermal_conductivity(k, T); }
-	double[S] rcp_thermal_conductivities; for(uint k=0;k<rcp_thermal_conductivities.length();k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(k, T); }
+	float amount = constants.pressure_R * volume / T; // pressure/NA * volume / (K * T)
+	float[S] thermal_conductivities; for(uint k=0;k<thermal_conductivities.length();k++) { thermal_conductivities[k] = thermal_conductivity(k, T); }
+	float[S] rcp_thermal_conductivities; for(uint k=0;k<rcp_thermal_conductivities.length();k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(k, T); }
 	_thermal_conductivity.data[i] = 1./2. * (dot(amounts, thermal_conductivities) / amount + amount / dot(amounts, rcp_thermal_conductivities));
 	for(uint k=0;k<mixture_averaged_thermal_diffusion_coefficients.length();k++) {
-		double[S] generate_j;
+		float[S] generate_j;
 		for(uint j=0;j<generate_j.length();j++) {
 			if (j != k) {
 				generate_j[j] = 1. / binary_thermal_diffusion_coefficient(k, j, T);

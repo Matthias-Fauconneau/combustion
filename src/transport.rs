@@ -123,7 +123,7 @@ impl TransportPolynomials {
 	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], log(T)) }
 }
 
-#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_averaged_thermal_diffusion_coefficients: Box<[f64]> }
+#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_molar_averaged_thermal_diffusion_coefficients: Box<[f64]> }
 pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure, volume, amounts}: &State) -> Transport {
 	let T = *temperature;
 	let viscosity = dot(zip(amounts.copied(), |k|
@@ -139,75 +139,11 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 		dot(zip(amounts.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +
 		amount / dot(zip(amounts.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
 	);
-	let mixture_averaged_thermal_diffusion_coefficients = eval(amounts.len(), |k|
+	let mixture_molar_averaged_thermal_diffusion_coefficients = eval(amounts.len(), |k|
 		(1. - amounts[k]/amount) /
 		dot(zip(amounts.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
 	);
-	Transport{viscosity, thermal_conductivity, mixture_averaged_thermal_diffusion_coefficients}
+	Transport{viscosity, thermal_conductivity, mixture_molar_averaged_thermal_diffusion_coefficients}
 }
 
 #[cfg(test)] mod test;
-
-/*pub trait AbsError {
-	fn error(&self, o: &Self) -> f64;
-}
-
-impl AbsError for f64 {
-	fn error(&self, o: &Self) -> f64 {
-		f64::abs(self-o)
-	}
-}
-
-impl<const N: usize> AbsError for [f64; N] {
-	fn error(&self, o: &Self) -> f64 {
-		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
-	}
-}
-
-impl AbsError for Box<[f64]> {
-	fn error(&self, o: &Self) -> f64 {
-		self.iter().zip(o.iter()).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
-	}
-}
-
-impl AbsError for Transport {
-	fn error(&self, o: &Self) -> f64 {
-		[
-			self.viscosity.error(&o.viscosity),
-			self.thermal_conductivity.error(&o.thermal_conductivity),
-			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
-		].iter().copied().reduce(f64::max).unwrap()
-	}
-}*/
-
-pub trait RelError {
-	fn error(&self, o: &Self) -> f64;
-}
-
-impl RelError for f64 {
-	fn error(&self, o: &Self) -> f64 {
-		num::relative_error(*self, *o)
-	}
-}
-
-impl<const N: usize> RelError for [f64; N] {
-	fn error(&self, o: &Self) -> f64 {
-		self.iter().zip(o).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
-	}
-}
-
-impl RelError for Box<[f64]> {
-	fn error(&self, o: &Self) -> f64 {
-		self.iter().zip(o.iter()).map(|(s,o)| s.error(o)).reduce(f64::max).unwrap()
-	}
-}
-
-impl RelError for Transport {
-	fn error(&self, o: &Self) -> f64 {
-		[
-			self.viscosity.error(&o.viscosity),
-			self.thermal_conductivity.error(&o.thermal_conductivity),
-			self.mixture_averaged_thermal_diffusion_coefficients.error(&o.mixture_averaged_thermal_diffusion_coefficients)
-		].iter().copied().reduce(f64::max).unwrap()
-	}
-}

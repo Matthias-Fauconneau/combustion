@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		fn r#type(&self) -> String { std::any::type_name::<Self>().rsplit("::").next().unwrap().to_string() }
 		fn glsl(&self) -> String;
 	}
-	impl GLSL for f64 { fn r#type(&self) -> String { "double".to_string() } fn glsl(&self) -> String { format!("{}", self) } }
+	impl GLSL for f64 { fn r#type(&self) -> String { "float".to_string() } fn glsl(&self) -> String { format!("{}", self) } }
 	impl<T: GLSL> GLSL for &[T] {
 		fn r#type(&self) -> String { format!("{}[]", self.first().unwrap().r#type()) }
 		fn glsl(&self) -> String { use itertools::Itertools; format!("{}({})\n", self.r#type(), self.iter().format_with(", ", |e, f| f(&e.glsl()))) }

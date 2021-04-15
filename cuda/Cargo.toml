@@ -1,21 +1,26 @@
 [package]
 name= 'cuda'
 version= '0.0.0'
+resolver = '2'
 edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
+fehler= ''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
 combustion= {path='..'}
 rustacuda= ''
-iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-itertools= ''
-fehler= ''
 
 [build-dependencies]
-combustion= {path='..'}
-itertools= ''
 fehler= ''
+combustion= {path='..'}
 
 [[bin]]
 name= 'cuda'
 path= 'main.rs'
+
+[patch.crates-io]
+rustacuda_core= {path='../../RustaCUDA/rustacuda_core'}
+[patch.'https://github.com/Matthias-Fauconneau/iter']
+iter= {path='../../Code/iter'}
