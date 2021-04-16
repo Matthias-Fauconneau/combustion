@@ -21,3 +21,4 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 itertools= ''
 combustion= {path='..'}
 cvode= {path='../cvode', optional=true}
+trace= {git='https://github.com/Matthias-Fauconneau/trace'}

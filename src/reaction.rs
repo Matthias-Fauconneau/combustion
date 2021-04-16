@@ -112,7 +112,7 @@ impl std::fmt::Display for State {
 	}
 }
 
-use {cranelift::prelude::{*, types::{/*I32,*/ F64}, codegen::{ir, binemit}}, cranelift_module::{Linkage, Module}};
+use {cranelift::prelude::{*, types::{I32, F64}, codegen::{ir, binemit}}, cranelift_module::{Linkage, Module}};
 
 macro_rules! f {
 	[$f:ident $function:ident($arg0:expr)] => {{
@@ -152,7 +152,7 @@ macro_rules! fma {
 trait Load { fn load(&self, f: &mut FunctionBuilder) -> Value; }
 impl Load for f64 { fn load(&self, f: &mut FunctionBuilder<'_>) -> Value { f![f f64const(*self)] } }
 impl Load for f32 { fn load(&self, f: &mut FunctionBuilder<'_>) -> Value { f![f f32const(*self)] } }
-impl Load for u32 { fn load(&self, f: &mut FunctionBuilder<'_>) -> Value { f![f iconst(types::I32, *self as i64)] } }
+impl Load for u32 { fn load(&self, f: &mut FunctionBuilder<'_>) -> Value { f![f iconst(I32, *self as i64)] } }
 
 struct Constants {
 	constants: std::collections::HashMap<u64, Value>,
@@ -201,19 +201,10 @@ impl Constants {
 		f![f iconst(types::I64, _exp2 as *const fn(f64)->f64 as i64)],
 		&[x])];
 	f.func.dfg.first_result(call)
-}
-
-fn log2(x: Value, _: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
-	extern fn _log2(x: f64) -> f64 { f64::log2(x) }
-	let call = f![f call_indirect(
-		f.import_signature(cranelift_codegen::ir::Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], /*calling_convention*/call_conv: cranelift_codegen::isa::CallConv::SystemV}),
-		f![f iconst(types::I64, _log2 as *const fn(f64)->f64 as i64)],
-		&[x])];
-	f.func.dfg.first_result(call)
 }*/
 
 fn exp2(x: Value, Constants{_m126_99999, _1_2, _127, exp, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
-	use types::{F32, I32};
+	use types::F32;
 	let x = f![f fdemote(F32, x)];
 	let x = f![f fmax(x, *_m126_99999)];
 	let ipart = f![f fcvt_to_sint(I32, f![f fsub(x, *_1_2)])];
@@ -224,16 +215,26 @@ fn exp2(x: Value, Constants{_m126_99999, _1_2, _127, exp, ..}: &Constants, f: &m
 	f![f fpromote(F64, f![f fmul(expipart, expfpart)])]
 }
 
-fn log2(x: Value, Constants{_1_f32: _1, exponent, _127, mantissa, log, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
-	use types::{F32, I32};
+/*fn log2(x: Value, Constants{_1_f32: _1, exponent, _127, mantissa, log, ..}: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	use types::F32;
 	let x = f![f fdemote(F32, x)];
 	let i = f![f bitcast(I32, x)];
 	let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, *exponent)], 23)], *_127)])];
-	let m = f![f bor(f![f bitcast(F32, f![f band(i, *mantissa)])], *_1)];
+	let m = f![f bor(f![f bitcast(F32, f![f band(i, *mantissa)])], *_1)]; // isa/x64/inst/mod.rs:679
 	let p = fma![f (fma![f (fma![f (fma![f (fma![f (log[5], m, log[4])], m, log[3])], m, log[2])], m, log[1])], m, log[0])];
 	let p = f![f fmul(p, f![f fsub(m, *_1)])]; //?
-	f![f fpromote(F64, f![f fadd(p, e)])]
+	f![f fpromote(F64, f![f fadd(m, e)])]
+}*/
+
+fn log2(x: Value, _: &Constants, f: &mut FunctionBuilder<'t>) -> Value {
+	extern fn _log2(x: f64) -> f64 { f64::log2(x) }
+	let call = f![f call_indirect(
+		f.import_signature(cranelift_codegen::ir::Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], /*calling_convention*/call_conv: cranelift_codegen::isa::CallConv::SystemV}),
+		f![f iconst(types::I64, _log2 as *const fn(f64)->f64 as i64)],
+		&[x])];
+	f.func.dfg.first_result(call)
 }
+
 
 use std::f64::consts::LN_2;
 
@@ -370,7 +371,7 @@ pub fn rate<'t, const CONSTANT: Property>(species@Species{molar_mass, thermodyna
 	let total_concentration = f![f fdiv(pressure_R, T)]; // n/V = P/RT
 	let amounts = eval(len-1, |i| f![f load(F64, flags, state, ((2+i)*size_of::<f64>()) as i32)]);
 	let rcpV = f![f fdiv(C._1, volume)];
-	let amounts = map(&*amounts, |&n| f![f fmax(C._0, rcpV)]);
+	let amounts = map(&*amounts, |&n| f![f fmax(C._0, n)]);
 	let concentrations = map(&*amounts, |&n| f![f fmul(n, rcpV)]);
 	let Ca = f![f fsub(total_concentration, dot(std::iter::repeat(1.).zip(concentrations.iter().copied()), None, C, f).unwrap())];
 	//if Ca < 0. { dbg!(T, C, concentrations, Ca); throw!(); }
@@ -449,6 +450,7 @@ pub fn rate<'t, const CONSTANT: Property>(species@Species{molar_mass, thermodyna
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
 	let function = unsafe{std::mem::transmute::<_,extern fn(f64, *const f64, *mut f64, *mut f64)>(function)};
+	dbg!();
 	(function, move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, debug: &mut [f64]| {
 		let constant = constant.0;
 		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr(), debug.as_mut_ptr());

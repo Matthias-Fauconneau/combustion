@@ -128,8 +128,7 @@ use combustion::{*, reaction::{*, Property::*}};
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(/*demote(&*/explicit(total_amount, constant.0 as f64, &state)/*)*/);
 		let (ref equilibrium_constants, ref forward, ref reverse)/*(cantera_creation, cantera_destruction)*/ = {
-			let state = State::new(total_amount, constant, state_vector);
-			assert!(state.amounts.len() == len && !state.amounts.iter().any(|&n| n<0.));
+			let state = State::new(total_amount, constant, &StateVector(map(state_vector, |v| f64::max(0., *v))));
 			unsafe{thermo_setMoleFractions(phase, state.amounts.len(), cantera_order(&state.amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 			unsafe{thermo_setTemperature(phase, state.temperature)};
 			unsafe{thermo_setPressure(phase, state.pressure_R * (K*NA))}; // /!\ Needs to be set after mole fractions
@@ -284,7 +283,8 @@ use combustion::{*, reaction::{*, Property::*}};
 				let volume = constant.0;
 				let rcpV = 1./volume;
 				let total_concentration = pressure_R/T;
-				let concentrations = amounts.iter().map(|&n| n*rcpV).collect(): Box<_>;
+				let amounts = map(amounts, |n| f64::max(0., *n));
+				let concentrations = map(&amounts, |&n| n*rcpV);
 				let Ca = total_concentration - dot(std::iter::repeat(1.).zip(concentrations.iter().copied()));
 				let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 				let c = k_inf * efficiency(&r.model, T, concentrations, k_inf);
@@ -303,8 +303,8 @@ use combustion::{*, reaction::{*, Property::*}};
 					if num::relative_error(a,b) != 0. { println!("{:32} K {:15.3e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
-					assert!(num::relative_error(1./rcp_equilibrium_constant, 1./rcpK) < 1e-6, "{:e} {:e} {:e}", num::relative_error(1./rcpK, 1./rcp_equilibrium_constant), num::relative_error(1./rcpK, cK), num::relative_error(1./rcp_equilibrium_constant, cK));
-					assert!(num::relative_error(a, b) < 1e-5, "{:.3e} {:e}", num::relative_error(a, b), num::relative_error(1./rcp_equilibrium_constant, cK));
+					assert!(num::relative_error(1./rcp_equilibrium_constant, 1./rcpK) < 1e-3, "{:e} {:e} {:e}", num::relative_error(1./rcpK, 1./rcp_equilibrium_constant), num::relative_error(1./rcpK, cK), num::relative_error(1./rcp_equilibrium_constant, cK));
+					assert!(num::relative_error(a, b) < 1e-3, "{:.3e} {:e}", num::relative_error(a, b), num::relative_error(1./rcp_equilibrium_constant, cK));
 					/*assert!(num::relative_error(a, b) < 1e-3, "{:?} {:.3e} {:.3e} {:.3e} {:.3e}", net.iter().zip(exp_G_RT.iter()).filter(|(&c,_)| c != 0).map(|(c,&v)| (c, to_string(v as f64))).format(" "),
 					1./rcp_equilibrium_constant, b, num::relative_error(b, 1./rcp_equilibrium_constant), num::relative_error(cR, ccR));*/
 				}
