@@ -23,14 +23,11 @@ pub fn check(model: model::Model, Simulation{state, ..}: &Simulation) {
 	let file = std::ffi::CStr::from_bytes_with_nul(b"gri30.yaml\0").unwrap().as_ptr();
 	let name = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
 	let phase = unsafe{thermo_newFromFile(file, name)};
-	//{
-		let cantera_species_names = (0..len).map(|k| {
-			let mut specie = [0; 8];
-			unsafe{thermo_getSpeciesName(phase, k, specie.len(), specie.as_mut_ptr())};
-			unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
-		}).collect::<Box<_>>();
-		/*assert_eq!(cantera_species_name.iter().map(String::as_str).collect::<Box<_>>(), species_names);
-	}*/
+	let cantera_species_names = (0..len).map(|k| {
+		let mut specie = [0; 8];
+		unsafe{thermo_getSpeciesName(phase, k, specie.len(), specie.as_mut_ptr())};
+		unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
+	}).collect::<Box<_>>();
 	assert!(unsafe{thermo_nSpecies(phase)} == len);
 	assert!(state.amounts.len() == len && !state.amounts.iter().any(|&n| n<0.));
 	let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();

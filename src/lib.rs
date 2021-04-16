@@ -74,7 +74,7 @@ impl Species {
 
 pub struct State {
     pub temperature: f64,
-    pub pressure: f64, // /Na
+    pub pressure_R: f64,
     pub volume: f64,
     pub amounts: Box<[f64]>
 }
@@ -83,14 +83,14 @@ pub fn initial_state(model::Model{species, state, time_step, ..}: &model::Model<
 	let species_names = species.iter().map(|(name,_)| *name).collect():Box<_>;
 
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
-	let pressure = pressure/NA;
+	let pressure_R = pressure/(K*NA);
 	let temperature = *temperature; //K*: K->J
-	let amount = pressure * volume / (K * temperature);
+	let amount = pressure_R * volume / temperature;
 	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
 	let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
 	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
 
-	State{temperature, pressure, volume: *volume, amounts}
+	State{temperature, pressure_R, volume: *volume, amounts}
 }
 
 #[cfg(feature= "transport")] pub mod transport;

@@ -17,13 +17,13 @@ impl std::fmt::Display for Pretty<&u8> {
 
 use {fehler::throws, anyhow::Error};
 
-use combustion::ron::*;
-#[throws(std::fmt::Error)] fn to_string(system: &System) -> String {
+use combustion::model::*;
+#[throws(std::fmt::Error)] fn to_string(model: &Model) -> String {
 	let mut o = String::new();
 	use std::fmt::Write;
 	writeln!(o, "#![enable(unwrap_newtypes)]")?;
 	writeln!(o, "(")?;
-	writeln!(o, "time_step: {},", Pretty(&system.time_step))?;
+	writeln!(o, "time_step: {},", Pretty(&model.time_step))?;
 	use itertools::Itertools;
 	impl std::fmt::Display for Pretty<&Map<&str, f64>> {
 		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
@@ -31,9 +31,10 @@ use combustion::ron::*;
 	impl std::fmt::Display for Pretty<&Map<&str, u8>> {
 		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
 	}
-	writeln!(o, "state: (temperature: {}, pressure: {}, mole_proportions: {}),", system.state.temperature, system.state.pressure, Pretty(&system.state.mole_proportions))?;
+	writeln!(o, "state: (temperature: {}, pressure: {}, volume: {}, amount_proportions: {}),",
+		model.state.temperature, model.state.pressure, model.state.volume, Pretty(&model.state.amount_proportions))?;
 	writeln!(o, "species: {{")?;
-	for (name, Specie{composition, thermodynamic:NASA7{temperature_ranges, pieces}, transport}) in &system.species {
+	for (name, Specie{composition, thermodynamic:NASA7{temperature_ranges, pieces}, transport}) in &model.species {
 		writeln!(o, "\"{}\": (", name)?;
 		writeln!(o, "\tcomposition: {:?},", composition)?;
 		writeln!(o, "\tthermodynamic: (")?;
@@ -65,14 +66,15 @@ use combustion::ron::*;
 	}
 	writeln!(o, "}},")?;
 	writeln!(o, "reactions: [")?;
-	for Reaction{equation, rate_constant, model} in system.reactions.iter() {
+	for Reaction{equation, rate_constant, model} in model.reactions.iter() {
 		impl std::fmt::Display for Pretty<&RateConstant> {
 			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "(A: {}, beta: {}, Ea: {})", Pretty(&self.0.preexponential_factor), Pretty(&self.0.temperature_exponent), Pretty(&self.0.activation_energy)) }
 		}
 		write!(o, "(equation: {}, rate_constant: {}, model: ", Pretty(equation), Pretty(rate_constant))?;
-		if let Model::Falloff{..} = model { write!(o, "\n\t ")?; }
-		use Model::*; match model {
+		if let ReactionModel::Falloff{..} = model { write!(o, "\n\t ")?; }
+		use ReactionModel::*; match model {
 			Elementary => write!(o, "Elementary"),
+			Irreversible => write!(o, "Irreversible"),
 			ThreeBody{efficiencies} =>
 				write!(o, "ThreeBody(efficiencies: {})", Pretty(efficiencies)),
 			PressureModification{k0, efficiencies} =>
@@ -120,12 +122,12 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 }
 
 #[throws] fn main() {
-	let system = std::fs::read("CH4+O2.ron")?;
-	let System{time_step, state, ..}  = ::ron::de::from_bytes(&system)?;
+	let model = std::fs::read("CH4+O2.ron")?;
+	let Model{time_step, state, ..}  = ::ron::de::from_bytes(&model)?;
 	use {std::convert::TryInto, std::str::FromStr, yaml_rust::Yaml};
 	let yaml = yaml_rust::YamlLoader::load_from_str(std::str::from_utf8(&std::fs::read("/usr/share/cantera/data/gri30.yaml")?)?).unwrap();
 	let data = &yaml[0];
-	let system = System{
+	let model = Model{
 		time_step,
 		state,
 		species: data["species"].as_vec().unwrap().iter().map(|specie| (specie["name"].as_str().unwrap(), Specie{
@@ -167,9 +169,13 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 				rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"]), reactants-1),
 				model: {
 					let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
-					use Model::*;
+					use ReactionModel::*;
 					match reaction["type"].as_str() {
-						None|Some("elementary") => 	Elementary,
+						None|Some("elementary") => {
+							if reaction["equation"].as_str().unwrap().contains(" <=> ") { Elementary }
+							else if reaction["equation"].as_str().unwrap().contains(" => ") { Irreversible }
+							else { unimplemented!() }
+						},
 						Some("three-body") => ThreeBody{efficiencies},
 						// Pr = c x k0 / k∞ [1 = mol/m³ x [k0] / [k∞]] => [k0] = [k∞]/(mol/m³) = ((mol/m³)^(-r))/s => k0[m] = k0[cm] / (1e-2³)^(-r)
 						Some("falloff") if reaction["Troe"].is_badvalue() => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants)},
@@ -185,20 +191,20 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 			}
 		}).collect()
 	};
-	let system = {
-		let mut system = system;
-		let inert = system.species.remove("AR").unwrap();
-		system.species.insert("AR", inert);
-		system
+	let model = {
+		let mut model = model;
+		let inert = model.species.remove("AR").unwrap();
+		model.species.insert("AR", inert);
+		model
 	};
-	let system = {
-		let mut system = system;
-		for (_, specie) in system.species.iter_mut() {
+	/*let model = {
+		let mut model = model;
+		for (_, specie) in model.species.iter_mut() {
 			let mid = &mut specie.thermodynamic.temperature_ranges[1];
 			assert!(*mid >= 1000. && *mid <= 1478., "{}", *mid);
 			*mid = 1000.
 		}
-		system
-	};
-	println!("{}", to_string(&system)?);
+		model
+	};*/
+	println!("{}", to_string(&model)?);
 }
