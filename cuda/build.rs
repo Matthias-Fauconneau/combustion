@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = &std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
 	let model = model::Model::new(&model)?;
-	let (_species_names, species) = combustion::Species::new(model.species);
+	let (_species_names, species) = combustion::Species::new(&model.species);
 	/*let transport_polynomials = species.transport_polynomials();
 	let combustion::Species{molar_mass, thermodynamics, ..} = species;
 	trait CUDA {

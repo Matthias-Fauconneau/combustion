@@ -9,12 +9,12 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 fehler= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-combustion= {path='..'}
+combustion= {path='..', features=['transport']}
 rustacuda= ''
 
 [build-dependencies]
 fehler= ''
-combustion= {path='..'}
+combustion= {path='..', features=['transport']}
 
 [[bin]]
 name= 'cuda'

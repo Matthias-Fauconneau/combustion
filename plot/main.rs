@@ -1,6 +1,6 @@
 #![allow(incomplete_features, non_snake_case)]
 #![feature(const_generics, const_evaluatable_checked, destructuring_assignment, array_map, unboxed_closures, fn_traits, type_ascription)]
-use {fehler::throws, error::Error, combustion::{*, Property::*}};
+use {fehler::throws, error::Error, combustion::{*, reaction::{*, Property::*}}};
 
 struct Row<W, const N: usize>([W; N]);
 use {xy::xy, ui::widget::{size, Target, Widget, Event, EventContext}};
@@ -17,13 +17,20 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	}
 }
 
+fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
+fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Reconstructs P|V using ideal gas law
+	let temperature = u[0];
+	let volume = total_amount / pressure_R * temperature;
+	[temperature, volume].iter().chain(&u[1..]).copied().collect()
+}
+
 #[throws] fn main() {
 	let model = &std::fs::read("CH4+O2.ron")?;
 	let model = model::Model::new(&model)?;
-	let Simulation{ref species_names, time_step, state} = Simulation::new(&model)?;
-	let model = Model::new(model);
-	let len = model.len();
-	let (_traps, (_function, _size), rate) = model.rate();
+	let (ref species_names, ref species) = Species::new(&model.species);
+	let len = species.len();
+	let (_, rate) = rate(species, iter::map(&model.reactions, |r| Reaction::new(species_names, r)));
+	let ref state = combustion::initial_state(model);
 	fn from(State{/*temperature, pressure, volume,*/ amounts, ..}: &State) -> Box<[Box<[f64]>]> {
 		//eprintln!("{} {} {}", temperature, *pressure*NA, *volume);
 		Box::new( [/*Box::new([*temperature, *pressure*NA, *volume]) as Box<[_]>,*/ amounts.clone()] ) as Box<[_]>
@@ -34,56 +41,25 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	let plot = || ui::plot::Plot::new(Box::new( [species_names] ), vec![(time, from(&state))]);
 	let app = ui::app::App::new(Row([plot()/*, plot()*/]))?;
 	let constant = state.constant();
-	//let mut state: StateVector<{Pressure}> = (&state).into();
-	let mut state = ideal(&promote(&((&state).into():StateVector<{Pressure}>)));
+	let mut state = implicit(&(state.into():StateVector<{Volume}>));
 	let mut cvode = cvode::CVODE::new(&state);
-	/*struct Derivative<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> {
-		rate: Rate,
-		constant: Constant<CONSTANT>,
-		total_amount: f64,
-		derivative: std::cell::Cell<StateVector::<CONSTANT>>
-	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> FnOnce<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		type Output = Option<Box<[f64]>>;
-		extern "rust-call" fn call_once(mut self, args: (&[f64],)) -> Self::Output { self.call_mut(args) }
-	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> FnMut<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		extern "rust-call" fn call_mut(&mut self, args: (&[f64],)) -> Self::Output { self.call(args) }
-	}
-	impl<Rate: crate::Rate<CONSTANT>, const CONSTANT: Property> Fn<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		extern "rust-call" fn call(&self, (u,): (&[f64],)) -> Self::Output {
-			let mut derivative = self.derivative.take();
-			let pressure = self.constant.0 as f64;
-			(self.rate)(self.constant, &StateVector(map(&real(self.total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative);
-			let result = Some(ideal(&promote(&derivative.0)));
-			self.derivative.set(derivative);
-			//eprintln!("{:e}", result.as_ref().unwrap()[0]);
-			result
-		}
-	}
 	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
-	let derivative = Derivative{
-		rate,
-		constant,
-		total_amount,
-		derivative
-	};*/
 	let derivative = std::cell::Cell::new(derivative);
 	let derivative = move |u| {
-		let mut derivative = self.derivative.take();
-		let pressure = self.constant.0 as f64;
-		(self.rate)(self.constant, &StateVector(map(&real(self.total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative);
-		let result = Some(ideal(&promote(&derivative.0)));
-		self.derivative.set(derivative);
+		let mut derivative = derivative.take();
+		let pressure = constant.0 as f64;
+		rate(constant, &StateVector(iter::map(&explicit(total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut derivative);
+		let result = Some(implicit(&derivative.0));
+		derivative.set(derivative);
 		//eprintln!("{:e}", result.as_ref().unwrap()[0]);
 		result
 	};
 	app.run(move |plots| { //: &mut Row<[ui::plot::Plot; 2]>
 		for _ in 0..100 { (time, state) = {
-			let (time, state) = cvode.step(&derivative, time+time_step, &state);
+			let (time, state) = cvode.step(&derivative, time+model.time_step, &state);
 			(time, state.to_vec().into_boxed_slice())
 		}}
-		plots.0[0].values.push((time*1e3/*ms*/, from(&State::new(total_amount, constant, &StateVector(demote(&real(total_amount, constant.0 as f64, &state)))))));
+		plots.0[0].values.push((time*1e3/*ms*/, from(&State::new(total_amount, constant, &StateVector(explicit(total_amount, constant.0 as f64, &state))))));
 		//plots.0[1].values.push((time*1e9/*ns*/, from(&reaction(simulation, time)?)));
 		Ok(true)
 		//Err(error::anyhow!(""))

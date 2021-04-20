@@ -124,7 +124,7 @@ impl TransportPolynomials {
 }
 
 #[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_molar_averaged_thermal_diffusion_coefficients: Box<[f64]> }
-pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure, volume, amounts}: &State) -> Transport {
+pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure_R, volume, amounts}: &State) -> Transport {
 	let T = *temperature;
 	let viscosity = dot(zip(amounts.copied(), |k|
 		sq(transport_polynomials.sqrt_viscosity(k, T)) /
@@ -133,7 +133,7 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 			(sqrt(8.) * sqrt(1. + molar_mass[k]/molar_mass[j]))
 		))
 	));
-	let amount = pressure * volume / (K * T);
+	let amount = pressure_R * volume / T;
 	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{} {} {:e}", amounts.iter().sum::<f64>(), amount, e);}
 	let thermal_conductivity = 1./2. * (
 		dot(zip(amounts.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +

@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-pub fn map<T, U, F: Fn(&T)->U>(v: &[T], f: F) -> Box<[U]> { v.iter().map(f).collect() }
 //pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
 //pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
 fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
@@ -74,7 +73,7 @@ use combustion::{*, reaction::{*, Property::*}};
 	let total_amount = state.amounts.iter().sum();
 	//let volume = state.volume;
 	let constant = state.constant();
-	let mut state = implicit(/*&promote(*/&(state.into():StateVector<{Volume}>)/*)*/);
+	let mut state = implicit(&(state.into():StateVector<{Volume}>));
 	let mut cvode = cvode::CVODE::new(&state);
 	let mut time = 0.;
 	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
@@ -226,7 +225,7 @@ use combustion::{*, reaction::{*, Property::*}};
 			let exp_G_RT = a[..len-1].iter().map(|a| f64::exp(((a[0]-a[6]))+dot(
 				IntoIter::new([(a[5], rcpT), (-a[0], f64::ln(T)), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4], T4)]),
 				))).collect():Box<_>;
-			for (((r, e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
+			for (((r, _e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
 			.zip(rcp_equilibrium_constants.iter().zip(equilibrium_constants.iter()))
 			.zip(cR.iter().zip(forward.iter().zip(reverse.iter()))) {
 				//if let ReactionModel::Irreversible = r.model { continue; }
@@ -291,7 +290,7 @@ use combustion::{*, reaction::{*, Property::*}};
 				let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()));
 				{
 					let (a, b) = (c*Rf, forward);
-					/*if num::relative_error(a,b) != 0.*/ { println!("{:32} fwd {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
+					///*if num::relative_error(a,b) != 0.*/ { println!("{:32} fwd {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(a, b) < 1e-3, "{:.3e}", num::relative_error(a, b));
@@ -300,7 +299,7 @@ use combustion::{*, reaction::{*, Property::*}};
 				}
 				if let ReactionModel::Irreversible = r.model {} else {
 					let (a, b) = (1./rcpK, cK);
-					if num::relative_error(a,b) != 0. { println!("{:32} K {:15.3e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
+					//if num::relative_error(a,b) != 0. { println!("{:32} K {:15.3e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(1./rcp_equilibrium_constant, 1./rcpK) < 1e-3, "{:e} {:e} {:e}", num::relative_error(1./rcpK, 1./rcp_equilibrium_constant), num::relative_error(1./rcpK, cK), num::relative_error(1./rcp_equilibrium_constant, cK));
@@ -312,7 +311,7 @@ use combustion::{*, reaction::{*, Property::*}};
 					let Rr = if let ReactionModel::Irreversible = r.model { 0. } else {
 						rcp_equilibrium_constant * product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied())) };
 					let (a, b) = (c*Rr, reverse);
-					if num::relative_error(a,b) != 0. { println!("{:32} rev {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
+					//if num::relative_error(a,b) != 0. { println!("{:32} rev {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(a, b) < 1e-5, "{:.3e}", num::relative_error(a, b));

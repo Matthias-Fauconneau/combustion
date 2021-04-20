@@ -21,9 +21,9 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	let model = &std::fs::read("CH4+O2.ron")?;
 	use combustion::{*, transport::*};
 	let model = model::Model::new(&model)?;
-	let ref state = Simulation::new(&model)?.state;
+	let ref state = initial_state(&model);
 	//#[cfg(feature="transport")] {
-	let (_species_names, species) = combustion::Species::new(model.species);
+	let (_species_names, species) = combustion::Species::new(&model.species);
 	//dbg!(species.len());
 	let transport_polynomials = species.transport_polynomials();
 	assert_eq!(state.volume, 1.);
@@ -54,8 +54,8 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 
 	let stride = 32;
 	let len = ((512*32)/stride)*stride;
-	let State{temperature, pressure, amounts, ..} = state;
-	let mut temperature = DeviceBuffer::from_slice(&vec![*temperature as f32; len]).unwrap();
+	let State{temperature, pressure_R, amounts, ..} = state;
+	let mut temperature = DeviceBuffer::from_slice(&vec![(*temperature) as f32; len]).unwrap();
 	let mut amounts_buffer = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n as f32).take(len)).flatten())).unwrap();
 	let mut viscosity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
 	let mut thermal_conductivity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
@@ -66,7 +66,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 		let start = std::time::Instant::now();
 		unsafe {
 			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(
-				len, (*pressure/K) as f32,
+				len, (*pressure_R) as f32,
 				temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), viscosity.as_device_ptr(),
 				thermal_conductivity.as_device_ptr(), mixture_molar_averaged_thermal_diffusion_coefficients.as_device_ptr())).expect("launch");
 		}

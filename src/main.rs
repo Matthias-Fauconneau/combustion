@@ -4,7 +4,7 @@ use {fehler::throws, error::Error, combustion::*};
 #[throws] fn main() {
 	let model = &std::fs::read("CH4+O2.ron")?;
 	let model = model::Model::new(&model)?;
-	let ref state = Simulation::new(&model)?.state;
+	let ref state = combustion::initial_state(model);
 	let (ref species_names, ref species) = Species::new(model.species);
 	#[cfg(feature="transport")] {
 		let ref transport_polynomials = species.transport_polynomials();
