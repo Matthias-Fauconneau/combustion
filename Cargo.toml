@@ -34,5 +34,5 @@ cranelift-native= {optional= true, version=''}
 capstone= {optional= true, version=''}
 cranelift-reader= {optional= true, version=''}
 
-[patch.'https://github.com/Matthias-Fauconneau/iter`]
+[patch.'https://github.com/Matthias-Fauconneau/iter']
 iter= {path='../iter'}

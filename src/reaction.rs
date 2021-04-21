@@ -90,7 +90,7 @@ impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
 impl State {
 	#[track_caller] pub fn new<const CONSTANT: Property>(total_amount: f64, Constant(thermodynamic_state_constant): Constant<CONSTANT>, u: &StateVector<CONSTANT>) -> Self {
 		let u = &u.0;
-		assert!(!u.iter().any(|&n| n<0.));
+		//assert!(!u.iter().any(|&n| n<0.));
 		let amounts = &u[2..];
 		let (pressure_R, volume) = {use Property::*; match CONSTANT {
 			Pressure => (thermodynamic_state_constant, u[1]),
@@ -278,7 +278,7 @@ where T: num::IsZero + num::IsOne + num::IsMinusOne + Into<f64> {
 }
 
 fn product_of_exponentiations<T: Into<i16>>(iter: impl IntoIterator<Item=(T, Value)>, C: &mut Constants, f: &mut FunctionBuilder<'t>) -> Option<Value> {
-	let (num, div) = iter.into_iter().map(|(c,v)| (c.into(), v)).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0):(Vec::<_>,Vec::<_>);
+	let (num, div) : (Vec::<_>,Vec::<_>) = iter.into_iter().map(|(c,v)| (c.into(), v)).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0);
 	let num = num.into_iter().fold(None, |mut a, (c,v)|{ for _ in 0..c { a = Some(match a { Some(a) => f![f fmul(a, v)], None => v }); } a });
 	let div = div.into_iter().fold(None, |mut a, (c,v)|{ for _ in 0..-c { a = Some(match a { Some(a) => f![f fmul(a, v)], None => v }); } a });
 	match (num, div) {

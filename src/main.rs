@@ -3,9 +3,9 @@ use {fehler::throws, error::Error, combustion::*};
 
 #[throws] fn main() {
 	let model = &std::fs::read("CH4+O2.ron")?;
-	let model = model::Model::new(&model)?;
+	let ref model = model::Model::new(&model)?;
 	let ref state = combustion::initial_state(model);
-	let (ref species_names, ref species) = Species::new(model.species);
+	let (ref species_names, ref species) = Species::new(&model.species);
 	#[cfg(feature="transport")] {
 		let ref transport_polynomials = species.transport_polynomials();
 		/*use itertools::Itertools;
@@ -47,7 +47,8 @@ use {fehler::throws, error::Error, combustion::*};
 	}
 	#[cfg(feature="reaction")] {
 		use reaction::*;
-		let (_, rate) = rate(species, model.reactions.iter().map(|r| Reaction::new(species_names, r)));
+		let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
+		let (_, rate) = rate(species, &*reactions);
 		let mut derivative = /*Derivative*/StateVector::<{Property::Volume}>(std::iter::repeat(0.).take(2+species.len()-1).collect());
 
 		{

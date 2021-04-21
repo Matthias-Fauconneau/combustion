@@ -80,14 +80,14 @@ pub struct State {
 }
 
 pub fn initial_state(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> State {
-	let species_names = species.iter().map(|(name,_)| *name).collect():Box<_>;
+	let species_names = iter::map(species, |(name,_)| *name);
 
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
 	let pressure_R = pressure/(K*NA);
 	let temperature = *temperature; //K*: K->J
 	let amount = pressure_R * volume / temperature;
 	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
-	let amount_proportions = species_names.iter().map(|specie| *amount_proportions.get(specie).unwrap_or(&0.)).collect():Box<_>;
+	let amount_proportions = iter::map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
 	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
 
 	State{temperature, pressure_R, volume: *volume, amounts}

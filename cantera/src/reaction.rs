@@ -1,4 +1,10 @@
-#![allow(dead_code)]
+//#![allow(dead_code)]
+fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U) -> U {
+	let mut value = cell.take();
+	let result = f(&mut value);
+	cell.set(value);
+	result
+}
 //pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
 //pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
 fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
@@ -73,17 +79,12 @@ use combustion::{*, reaction::{*, Property::*}};
 	let total_amount = state.amounts.iter().sum();
 	//let volume = state.volume;
 	let constant = state.constant();
-	let mut state = implicit(&(state.into():StateVector<{Volume}>));
+	let state : StateVector<{Volume}> = state.into();
+	let mut state = implicit(&state);
 	let mut cvode = cvode::CVODE::new(&state);
 	let mut time = 0.;
 	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
 	let derivative = std::cell::Cell::new(derivative);
-	fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U) -> U {
-		let mut value = cell.take();
-		let result = f(&mut value);
-		cell.set(value);
-		result
-	}
 	let (_, rate) = rate(species, &*reactions);
 	/*let ref derivative = move |u| get_mut(derivative, |derivative| {
 		let pressure = constant.0 as f64;
@@ -206,7 +207,7 @@ use combustion::{*, reaction::{*, Property::*}};
 			};*/
 			let T = state_vector[0];
 			//assert!(T >= NASA7::T_split, "{} {}", T, NASA7::T_split);
-			let a = species.thermodynamics.iter().map(|s| s.0[1]).collect(): Box<_>;
+			let a = iter::map(species.thermodynamics, |s| s.0[1]);
 			let pressure_R = state_vector[1];
 			//assert_eq!(pressure_R, 101325./(K*NA));
 			let amounts = &state_vector[2..];
@@ -222,9 +223,9 @@ use combustion::{*, reaction::{*, Property::*}};
 			//let ref cantera_standard_chemical_potentials = RT() * log(xx);
 			//dbg!(chemical_potentials);
 			//for (&a,&b) in cantera_chemical_potentials.iter().zip(chemical_potentials.iter()) { assert!(num::relative_error(a,b) < 1e-100, "{:e}", num::relative_error(a,b)); }*/
-			let exp_G_RT = a[..len-1].iter().map(|a| f64::exp(((a[0]-a[6]))+dot(
+			let exp_G_RT = map(a[..len-1], |a| f64::exp(((a[0]-a[6]))+dot(
 				IntoIter::new([(a[5], rcpT), (-a[0], f64::ln(T)), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4], T4)]),
-				))).collect():Box<_>;
+				)));
 			for (((r, _e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
 			.zip(rcp_equilibrium_constants.iter().zip(equilibrium_constants.iter()))
 			.zip(cR.iter().zip(forward.iter().zip(reverse.iter()))) {

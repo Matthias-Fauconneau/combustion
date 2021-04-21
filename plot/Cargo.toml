@@ -8,7 +8,7 @@ edition= "2018"
 fehler= ''
 error= {package='anyhow', version=''}
 combustion= {path='..', features=['reaction']}
-cvode= {path='../cvode'}
+cvode= {path='../cvode', features=['build_libraries']}
 ui= {git='https://github.com/Matthias-Fauconneau/ui', features=['plot']}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools= ''
@@ -17,3 +17,6 @@ xy= {git='https://github.com/Matthias-Fauconneau/xy'}
 [[bin]]
 name= 'plot'
 path= 'main.rs'
+
+[patch.'https://github.com/Matthias-Fauconneau/ui']
+ui= {path='../../ui'}
