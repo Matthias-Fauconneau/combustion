@@ -1,0 +1,20 @@
+[package]
+name= 'reaction'
+version= '0.0.0'
+resolver = '2'
+edition= '2018'
+authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+
+[dependencies]
+fehler= ''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+combustion= {path='..', features=['reaction']}
+rustacuda= ''
+
+[[bin]]
+name= 'reaction'
+path= 'main.rs'
+
+[patch.crates-io]
+rustacuda_core= {git='https://github.com/Matthias-Fauconneau/RustaCUDA'}

@@ -286,9 +286,9 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 }
 }
 
-use std::io::Write;
+use std::fmt::Write;
 //pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
-#[fehler::throws(std::io::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, W: Write, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, w: &mut W) {
+#[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> String {
 	let mut function = Function::new();
 	function.signature.params = vec![AbiParam::new(F64), AbiParam::new(I64), AbiParam::new(I64)];
 	let mut function_builder_context = FunctionBuilderContext::new();
@@ -299,7 +299,7 @@ use std::io::Write;
 	f.seal_block(entry_block);
 	let [constant, state, rate]: [Value; 3] = f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
-	let T = f.load(state, 0);
+	let T = f.load(state, 0*stride);
 	let logT = f.log2(T);
 	let rcpT = f.rcp(T);
 	let T2 = f.mul(T, T);
@@ -318,10 +318,10 @@ use std::io::Write;
 		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
 	);
 	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f);
-	let variable = f.load(state, 1);
+	let variable = f.load(state, 1*stride);
 	let (pressure_R, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
 	let total_concentration = f.div(pressure_R, T); // n/V = P/RT
-	let amounts = eval(len-1, |i| f.load(state, 2+i));
+	let amounts = eval(len-1, |i| f.load(state, (2+i)*stride));
 	let rcpV = f.rcp(volume);
 	let amounts = map(&*amounts, |&n| max(f.c._0, n, f));
 	let concentrations = map(&*amounts, |&n| f.mul(n, rcpV));
@@ -363,10 +363,11 @@ use std::io::Write;
 	store(f.mul(dtS_S, variable), rate, 1, f);
 	for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rate, 2+i, f); }
 	let f = function.dfg;
+	let mut w = String::new();
 	for instruction in function.layout.block_insts(entry_block) {
 		match f.inst_results(instruction) {
 		 [] => (),
-		 [result] => write!(w, "f64 {} = ", result)?,
+		 [result] => write!(w, "float {} = ", result)?,
 		 _ => unimplemented!(),
 		};
 		use cranelift::codegen::ir::InstructionData::*;
