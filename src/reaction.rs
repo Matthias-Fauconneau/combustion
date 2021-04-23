@@ -167,7 +167,7 @@ fn fma(x: Value, y: Value, z: Value, f: &mut FunctionBuilder<'_>) -> Value { f.f
 
 impl FunctionBuilder<'_> {
 	fn c(&mut self, value: f64) -> Value { self.f64(value) }
-	fn dot<'t>(&mut self, iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut FunctionBuilder)->Value)>) -> Value {
+	fn dot(&mut self, iter: impl IntoIterator<Item=(Value, impl FnOnce(&mut FunctionBuilder)->Value)>) -> Value {
 		let mut iter = iter.into_iter();
 		let mut sum = { let (a,b) = iter.next().unwrap(); let b = b(self); self.mul(a, b) };
 		for (a,b) in iter { let b = b(self); sum = self.fma(a, b, sum); }
@@ -187,12 +187,12 @@ impl FunctionBuilder<'_> {
 }
 
 struct Constants {
-	_0: Value,
+	//_0: Value,
 	_1: Value,
 }
 impl Constants {
 	fn new(f: &mut FunctionBuilder<'_>) -> Self { Self {
-		_0: f.c(0.),
+		//_0: f.c(0.),
 		_1: f.c(1.),
 	} }
 }
@@ -290,14 +290,14 @@ use std::fmt::Write;
 //pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
 #[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> String {
 	let mut function = Function::new();
-	function.signature.params = vec![AbiParam::new(F64), AbiParam::new(I64), AbiParam::new(I64)];
+	function.signature.params = vec![/*AbiParam::new(F64),*/ AbiParam::new(I64), AbiParam::new(I64)];
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [constant, state, rate]: [Value; 3] = f.block_params(entry_block).try_into().unwrap();
+	let [/*constant,*/ state, rates]: [Value; 2] = f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
 	let T = f.load(state, 0*stride);
 	let logT = f.log2(T);
@@ -318,7 +318,7 @@ use std::fmt::Write;
 		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
 	);
 	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f);
-	let variable = f.load(state, 1*stride);
+	/*let variable = f.load(state, 1*stride);
 	let (pressure_R, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
 	let total_concentration = f.div(pressure_R, T); // n/V = P/RT
 	let amounts = eval(len-1, |i| f.load(state, (2+i)*stride));
@@ -326,13 +326,14 @@ use std::fmt::Write;
 	let amounts = map(&*amounts, |&n| max(f.c._0, n, f));
 	let concentrations = map(&*amounts, |&n| f.mul(n, rcpV));
 	let Ca = sub(total_concentration, f.cdot(std::iter::repeat(1.).zip(concentrations.iter().copied()), None).unwrap(), f);
-	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
+	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();*/
+	let concentrations = eval(len-1, |i| f.load(state, (1+i)*stride));
 	let mut dtω = vec![None; len-1].into_boxed_slice();
 	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
 		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
 		let k_inf = arrhenius(rate_constant, T, f);
-		let c = mul(k_inf, model.efficiency(T, concentrations, k_inf, f), f); // todo: CSE
+		let c = mul(k_inf, model.efficiency(T, &concentrations, k_inf, f), f); // todo: CSE
 		let Rf = f.product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied())).unwrap();
 		let R = if let ReactionModel::Irreversible = model { Rf } else {
 			let rcp_equilibrium_constant = f.product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied())).unwrap();
@@ -352,16 +353,24 @@ use std::fmt::Write;
 	}
 
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
-	let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
-	let m_rcp_ΣCCc = div(f.c(-1.), f.dot(concentrations.iter().copied().zip(Cc)), f);
 	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
 	let dtω = map(&*dtω, |dtω| dtω.unwrap());
-	let dtT_T = mul(m_rcp_ΣCCc, f.dot(dtω.iter().copied().zip(E_RT)), f);
-	store(mul(dtT_T, T, f), rate, 0, f);
-	let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..len-1].iter().map(|w| 1. - w/molar_mass[len-1]).zip(dtω.iter().copied()), None).unwrap(), f);
-	let dtS_S = f.add(R_S_Tdtn, dtT_T);
-	store(f.mul(dtS_S, variable), rate, 1, f);
-	for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rate, 2+i, f); }
+	//for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rates, (/*2*/+i)*stride, f); }
+	let E_RT = dtω.into_iter().enumerate().zip(E_RT).map(|((i, &dtω), E_RT)| move |f: &mut FunctionBuilder<'_>| {
+		store(dtω, rates, (/*2*/1+i)*stride, f); // Store dtω when loading dtω for dtω.E_RT
+		E_RT(f)
+	});
+	//fn dot(array: &[Value], iter: impl Iterator<Item=FnOnce(&mut FunctionBuilder)->Value>, f: &mut FunctionBuilder) -> Value { f.dot(a.iter().copied().zip(b)) }
+	macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.dot($a.iter().copied().zip($b))) }
+	let heat_release_rate = dot!(dtω, E_RT,f);
+	store(heat_release_rate, rates, 0*stride, f);
+	/*let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
+	let m_rcp_ΣCCc = div(f.c(-1.), f.dot(concentrations.iter().copied().zip(Cc)), f);
+	let dtT_T = mul(m_rcp_ΣCCc, heat_release_rate, f);
+	store(mul(dtT_T, T, f), rates, 0*stride, f);*/
+	//let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..len-1].iter().map(|w| 1. - w/molar_mass[len-1]).zip(dtω.iter().copied()), None).unwrap(), f);
+	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
+	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
 	let f = function.dfg;
 	let mut w = String::new();
 	for instruction in function.layout.block_insts(entry_block) {
