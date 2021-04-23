@@ -48,7 +48,7 @@ use {fehler::throws, error::Error, combustion::*};
 	#[cfg(feature="reaction")] {
 		use reaction::*;
 		let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
-		println!("{}", rate::<_,{Property::Volume}>(species, &*reactions)?);
+		rate::<_,_,{Property::Volume}>(species, &*reactions, &mut std::io::stdout())?
 		/*let (_, rate) = rate(species, &*reactions);
 		let mut derivative = /*Derivative*/StateVector::<{Property::Volume}>(std::iter::repeat(0.).take(2+species.len()-1).collect());
 

@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, convert::TryFrom};
 use super::*;
 
 #[derive(Clone, Copy)] pub struct RateConstant {
@@ -113,59 +113,31 @@ impl std::fmt::Display for State {
 	}
 }
 
-/*use cranelift_entity::PrimaryMap;
-use cranelift_codegen::ir::entities::{Inst as Instruction,Value};
-use cranelift_codegen::ir::instructions::{InstructionData, ValueList, ValueListPool};
-struct ValueData;
-
-trait ToString { fn to_string(&self) -> String; }
-
-impl ToString for Instruction {
-	fn to_string(&self) -> String {
-		use InstructionData::*; match self {
-			Load{arg, offset} => format("{}[{}]", arg, offset)
-		}
-	}
-}
-
-struct DataFlowGraph {
-		pub value_lists: ValueListPool,
-    instructions: PrimaryMap<Instruction, InstructionData>,
-    results: SecondaryMap<Instruction, ValueList>,
-    values: PrimaryMap<Value, ValueData>,
-}
-
-type Function = DataFlowGraph;
-type FunctionBuilder = Function;*/
-
 use cranelift::{
 	frontend::{self as frontend, /*FunctionBuilder,*/ FunctionBuilderContext},
 	codegen::{
-		ir::{function::Function, Signature, InstBuilder, types::{I64, F64}, MemFlags, entities::{Value, FuncRef}, AbiParam, ExternalName, ExtFuncData},
+		ir::{function::Function, Signature, InstBuilder, types::{I64, F64}, MemFlags, entities::{Value, SigRef, FuncRef}, AbiParam, ExternalName, ExtFuncData},
 		isa::CallConv,
-		write::write_function
+		//write::write_function
 	},
 };
+
+fn import(function: &mut Function, index: u32, signature: SigRef) {
+	assert!(function.import_function(ExtFuncData{name: ExternalName::User{namespace: 0, index}, signature, colocated: default()}).as_u32() == index)
+}
+
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct FunctionBuilder<'t> {
 	#[deref]#[deref_mut] builder: frontend::FunctionBuilder<'t>,
 	constants: std::collections::HashMap<u64, Value>,
-	exp2: FuncRef,
-	log2: FuncRef,
 }
 
-enum Intrinsic { Exp2, Log2 }
+#[derive(Debug, num_enum::TryFromPrimitive)] #[allow(non_camel_case_types)] #[repr(u32)] enum Intrinsic { exp2, log2 }
 
 impl FunctionBuilder<'t> {
-	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self {
-		let signature = function.import_signature(Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], call_conv: CallConv::Fast});
-		let exp2 = function.import_function(ExtFuncData{name: ExternalName::User{namespace: 0, index: Intrinsic::Exp2 as u32}, signature, colocated: default()});
-		let log2 = function.import_function(ExtFuncData{name: ExternalName::User{namespace: 0, index: Intrinsic::Log2 as u32}, signature, colocated: default()});
-		Self{
+	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self { Self{
 			builder: frontend::FunctionBuilder::new(function, function_builder_context),
 			constants: default(),
-			exp2, log2,
-		}
-	}
+	} }
 	fn f64(&mut self, value: f64) -> Value {
 		match self.constants.entry(value.to_bits()) {
 			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
@@ -182,14 +154,6 @@ impl FunctionBuilder<'t> {
 	fn mul(&mut self, x: Value, y: Value) -> Value { self.ins().fmul(x, y) }
 	fn div(&mut self, x: Value, y: Value) -> Value { self.ins().fdiv(x, y) }
 	fn fma(&mut self, x: Value, y: Value, z: Value) -> Value { let mul = self.mul(x, y); self.add(mul, z) }
-	fn exp2(&mut self, x: Value) -> Value {
-		let call = self.builder.ins().call(self.exp2, &[x]);
-		self.func.dfg.first_result(call)
-	}
-	fn log2(&mut self, x: Value) -> Value {
-		let call = self.builder.ins().call(self.log2, &[x]);
-		self.func.dfg.first_result(call)
-	}
 }
 
 // Evaluate arguments before borrowing builder for main instruction
@@ -200,7 +164,6 @@ fn sub(x: Value, y: Value, f: &mut FunctionBuilder<'_>) -> Value { f.sub(x, y) }
 fn mul(x: Value, y: Value, f: &mut FunctionBuilder<'_>) -> Value { f.mul(x, y) }
 fn div(x: Value, y: Value, f: &mut FunctionBuilder<'_>) -> Value { f.div(x, y) }
 fn fma(x: Value, y: Value, z: Value, f: &mut FunctionBuilder<'_>) -> Value { f.fma(x, y, z) }
-fn exp2(x: Value, f: &mut FunctionBuilder<'_>) -> Value { f.exp2(x) }
 
 impl FunctionBuilder<'_> {
 	fn c(&mut self, value: f64) -> Value { self.f64(value) }
@@ -234,13 +197,16 @@ impl Constants {
 	} }
 }
 
-#[derive(derive_more::Deref,derive_more::DerefMut)] struct Builder<'t> { // with static constants
+#[derive(derive_more::Deref,derive_more::DerefMut)] struct Builder<'t> { // with intrinsics and static constants
 	#[deref]#[deref_mut] builder: FunctionBuilder<'t>,
 	c: Constants,
 }
 
 impl Builder<'t> {
 	fn new(mut builder: FunctionBuilder<'t>) -> Self {
+		let signature = builder.func.import_signature(Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], call_conv: CallConv::Fast});
+		import(builder.func, Intrinsic::exp2 as u32, signature);
+		import(builder.func, Intrinsic::log2 as u32, signature);
 		let constants = Constants::new(&mut builder);
 		Self{builder, c: constants}
 	}
@@ -257,14 +223,24 @@ impl Builder<'t> {
 			(Some(num), Some(div)) => Some(f.div(num, div)) // Perf: mul rcp would be faster (12bit)
 		}
 	}
+	fn exp2(&mut self, x: Value) -> Value {
+		let call = self.builder.ins().call(FuncRef::from_u32(Intrinsic::exp2 as u32), &[x]);
+		self.func.dfg.first_result(call)
+	}
+	fn log2(&mut self, x: Value) -> Value {
+		let call = self.builder.ins().call(FuncRef::from_u32(Intrinsic::log2 as u32), &[x]);
+		self.func.dfg.first_result(call)
+	}
 }
+
+fn exp2(x: Value, f: &mut Builder<'_>) -> Value { f.exp2(x) }
 
 use std::f64::consts::LN_2;
 
 struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mrcp: Value, rcp2: Value }
 
 // A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
-fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: &T, f: &mut FunctionBuilder) -> Value {
+fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: &T, f: &mut Builder) -> Value {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
 		let A = f.c(preexponential_factor);
 		if temperature_exponent == 0. { A }
@@ -310,8 +286,9 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 }
 }
 
-pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
-#[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions) -> String {
+use std::io::Write;
+//pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
+#[fehler::throws(std::io::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, W: Write, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, w: &mut W) {
 	let mut function = Function::new();
 	function.signature.params = vec![AbiParam::new(F64), AbiParam::new(I64), AbiParam::new(I64)];
 	let mut function_builder_context = FunctionBuilderContext::new();
@@ -385,7 +362,25 @@ pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<C
 	let dtS_S = f.add(R_S_Tdtn, dtT_T);
 	store(f.mul(dtS_S, variable), rate, 1, f);
 	for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rate, 2+i, f); }
-	let mut buffer = String::new();
-	write_function(&mut buffer, &function, &default())?;
-	buffer
+	let f = function.dfg;
+	for instruction in function.layout.block_insts(entry_block) {
+		match f.inst_results(instruction) {
+		 [] => (),
+		 [result] => write!(w, "f64 {} = ", result)?,
+		 _ => unimplemented!(),
+		};
+		use cranelift::codegen::ir::InstructionData::*;
+		fn i32_from(offset: impl Into<i32>) -> i32 { offset.into() } // Workaround impl Into !From
+		match &f[instruction] {
+			UnaryIeee64{imm, ..} => write!(w, "{}", imm)?,
+			Unary{opcode, arg} => write!(w, "{}({})", opcode, arg)?,
+			Load{arg, offset, ..} => write!(w, "{}[{}]", arg, i32_from(*offset)/(std::mem::size_of::<f64>() as i32))?,
+			Store{args, offset, ..} => write!(w, "{}[{}] = {}", args[1], i32_from(*offset)/(std::mem::size_of::<f64>() as i32), args[0])?,
+			Call{func_ref, args, ..} => write!(w, "{:?}({})", Intrinsic::try_from(func_ref.as_u32()).unwrap(), args.first(&f.value_lists).unwrap())?,
+			Binary{opcode, args} => write!(w, "{}({}, {})", opcode, args[0], args[1])?,
+			_ => unimplemented!("{:?}", f[instruction])
+		};
+		write!(w, ";\n")?;
+	}
+	w
 }
