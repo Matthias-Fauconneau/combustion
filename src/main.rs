@@ -1,4 +1,4 @@
-#![feature(type_ascription)]#![feature(non_ascii_idents)]#![allow(confusable_idents,non_snake_case,unused_variables,unused_mut,uncommon_codepoints)]
+#![feature(type_ascription)]#![allow(confusable_idents,non_snake_case,unused_variables,unused_mut,uncommon_codepoints)]
 use {fehler::throws, error::Error, combustion::*};
 
 #[throws] fn main() {
@@ -48,7 +48,8 @@ use {fehler::throws, error::Error, combustion::*};
 	#[cfg(feature="reaction")] {
 		use reaction::*;
 		let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
-		let (_, rate) = rate(species, &*reactions);
+		println!("{}", rate::<_,{Property::Volume}>(species, &*reactions)?);
+		/*let (_, rate) = rate(species, &*reactions);
 		let mut derivative = /*Derivative*/StateVector::<{Property::Volume}>(std::iter::repeat(0.).take(2+species.len()-1).collect());
 
 		{
@@ -67,6 +68,6 @@ use {fehler::throws, error::Error, combustion::*};
 		for _ in 0..len { rate(constant, &state, &mut derivative) }
 		let end = std::time::Instant::now();
 		let time = (end-start).as_secs_f32();
-		println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);*/
+		println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);*/*/
 	}
 }

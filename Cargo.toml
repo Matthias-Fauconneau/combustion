@@ -6,8 +6,10 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [features]
-reaction= ['cranelift', 'cranelift-jit', 'cranelift-module', 'cranelift-codegen', 'cranelift-native']
+reaction=['cranelift']
+#reaction= ['cranelift', 'cranelift-jit', 'cranelift-module', 'cranelift-codegen', 'cranelift-native']
 transport= ['nalgebra']
+default=['reaction']
 
 [build-dependencies]
 bindgen= ''
@@ -26,13 +28,11 @@ linear-map= {features= ['serde_impl'], version=''}
 target-lexicon= ''
 nalgebra= {optional= true, version=''}
 itertools= ''
+#cranelift-entity= {optional= true, version=''}
+#cranelift-codegen= {optional= true, version=''} # features= ['enable-peepmatic']
 cranelift= {optional= true, version=''}
-cranelift-jit= {optional= true, version=''}
-cranelift-module= {optional= true, version=''}
-cranelift-codegen= {optional= true, version=''} # features= ['enable-peepmatic']
-cranelift-native= {optional= true, version=''}
-capstone= {optional= true, version=''}
-cranelift-reader= {optional= true, version=''}
-
-[patch.'https://github.com/Matthias-Fauconneau/iter']
-iter= {path='../iter'}
+#cranelift-jit= {optional= true, version=''}
+#cranelift-module= {optional= true, version=''}
+#cranelift-native= {optional= true, version=''}
+#capstone= {optional= true, version=''}
+#cranelift-reader= {optional= true, version=''}

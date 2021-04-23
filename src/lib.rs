@@ -1,4 +1,4 @@
-#![feature(const_generics, const_evaluatable_checked, non_ascii_idents, type_ascription, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at, associated_type_bounds)]
+#![feature(nll, const_generics, const_evaluatable_checked, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at, associated_type_bounds, default_free_fn)]
 #![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
 #![allow(unused_variables, dead_code)]
 
