@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]#![feature(bool_to_option)]
+mod kernel;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = &std::fs::read("CH4+O2.ron")?;
@@ -39,36 +40,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let ref state = [&[state.temperature / reference_state.temperature] as &[_], &*mass_fractions].concat();
 
 	rustacuda::init(CudaFlags::empty()).unwrap();
-	use rustacuda::{prelude::*, launch, memory::DeviceSlice};
+	use rustacuda::{prelude::*, launch};
 	let device = Device::get_device(0).unwrap();
 	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device).unwrap();
 	let module = Module::load_from_string(&std::ffi::CString::new(std::fs::read("/var/tmp/main.ptx").unwrap()).unwrap()).unwrap();
 	let stream = Stream::new(StreamFlags::NON_BLOCKING, None).unwrap();
 
-	let mut states = DeviceBuffer::from_slice(&iter::box_collect(state.iter().map(|&s| std::iter::repeat(s as f64).take(states_len)).flatten())).unwrap();
-	let mut rates = DeviceBuffer::from_slice(&vec![f64::NAN; (1/*2*/+species.len())*states_len]).unwrap();
+	let states = iter::box_collect(state.iter().map(|&s| std::iter::repeat(s as f64).take(states_len)).flatten());
+	let mut rates = vec![f64::NAN; (1/*2*/+species.len())*states_len];
 
 	for _ in 0..1 {
 		let start = std::time::Instant::now();
-		unsafe{launch!(module._Z6kerneldPdS_S_ddS_<<</*workgroupCount*/(states_len/width) as u32,/*workgroupSize*/width as u32, 0, stream>>>(
-			pressure_R,
-			states.as_device_ptr(),
-			states.as_device_ptr().add(states_len),
-			rates.as_device_ptr().add(states_len),
-			mass_production_rate_factor,
-			heat_release_rate_factor,
-			rates.as_device_ptr()
-		)).unwrap()}
-		stream.synchronize().unwrap();
+		if false {
+			let mut device_states = DeviceBuffer::from_slice(&states).unwrap();
+			let mut device_rates = DeviceBuffer::from_slice(&rates).unwrap();
+			unsafe{launch!(module._Z6kerneldPdS_S_ddS_<<</*workgroupCount*/(states_len/width) as u32,/*workgroupSize*/width as u32, 0, stream>>>(
+				pressure_R,
+				device_states.as_device_ptr(),
+				device_states.as_device_ptr().add(states_len),
+				device_rates.as_device_ptr().add(states_len),
+				mass_production_rate_factor,
+				heat_release_rate_factor,
+				device_rates.as_device_ptr()
+			)).unwrap()}
+			device_rates.copy_to(&mut rates).unwrap();
+			stream.synchronize().unwrap();
+		} else {
+			let (temperature, mass_fractions) = states.split_at(states_len);
+			let (heat_release_rate, mass_production_rates) = rates.split_at_mut(states_len);
+			kernel::kernel(
+				pressure_R,
+				temperature,
+				mass_fractions,
+				mass_production_rates,
+				mass_production_rate_factor,
+				heat_release_rate_factor,
+				heat_release_rate
+			);
+		}
 		let end = std::time::Instant::now();
-		#[track_caller] fn all_same(slice: &DeviceSlice<f64>, stride: usize) -> Box<[f64]> {
+		#[track_caller] fn all_same(slice: &[f64], stride: usize) -> Box<[f64]> {
       assert_eq!(slice.len()%stride, 0);
-      let ref mut host = vec![0.; slice.len()];
-      slice.copy_to(host).unwrap();
       iter::eval(slice.len()/stride, |i| {
-        let host = &host[i*stride..(i+1)*stride];
-        for &v in host.iter() { assert_eq!(v, host[0]); }
-        host[0]
+        let slice = &slice[i*stride..(i+1)*stride];
+        for &v in slice.iter() { assert_eq!(v, slice[0]); }
+        slice[0]
       })
     }
 		for ((mass_production_rate, name), molar_mass) in all_same(&rates, states_len).iter().skip(1).zip(species_names.iter()).zip(species.molar_mass.iter()) {
