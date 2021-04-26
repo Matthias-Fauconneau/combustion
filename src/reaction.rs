@@ -394,8 +394,8 @@ use std::fmt::Write;
 	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
 	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
 	let f = function.dfg;
-	let mut w = String::from(r#"
-__device__ double neg(double x) { return -x; }
+	let mut w = String::from(
+r#"__device__ double neg(double x) { return -x; }
 __device__ double add(double x, double y) { return x*y; }
 __device__ double sub(double x, double y) { return x-y; }
 __device__ double mul(double x, double y) { return x*y; }
