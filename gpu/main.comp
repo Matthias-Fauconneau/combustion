@@ -1,76 +1,20 @@
 #version 460
-float sq(float x) { return x*x; }
-float log(float x) { return float(log(float(x))); }
-float pow(float x, float y) { return float(pow(float(x), float(y))); }
+double fneg(double x) { return -x; }
+double fadd(double x, double y) { return x*y; }
+double fsub(double x, double y) { return x-y; }
+double fmul(double x, double y) { return x*y; }
+double fdiv(double x, double y) { return x/y; }
 
-float dot(float[5] a, float[5] b) { float sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-float eval_poly(float[5] P, float x) {
-	float[5] generate_k; for(uint k=0;k<generate_k.length();k++) generate_k[k] = pow(x, k);
-	return dot(P, generate_k);
-}
-
-const uint S = SPECIES;
-
-float dot(float[S] a, float[S] b) { float sum = 0.; for(uint k=0;k<a.length();k++) { sum += a[k]*b[k]; } return sum; }
-
-struct TransportPolynomials {
-	float[S][5] sqrt_viscosity_T14;
-	float[S][5] thermal_conductivity_T12;
-	float[S][S][5] binary_thermal_diffusion_coefficients_T32;
-};
-
-struct Species {
-	float[S] molar_mass;
-	TransportPolynomials transport_polynomials;
-};
-const Species species =
-#include "species.h"
-;
-const float volume = 1.;
-
-float sqrt_viscosity(uint a, float T) { return sqrt(sqrt(T)) * eval_poly(species.transport_polynomials.sqrt_viscosity_T14[a], log(T)); }
-float thermal_conductivity(uint a, float T) { return sqrt(T) * eval_poly(species.transport_polynomials.thermal_conductivity_T12[a], log(T)); }
-float binary_thermal_diffusion_coefficient(uint a, uint b, float T) { return pow(T,3./2.) * eval_poly(species.transport_polynomials.binary_thermal_diffusion_coefficients_T32[a>b?a:b][a>b?b:a], log(T)); }
-
-layout(push_constant) uniform Constants {
-float pressure_R;
-} constants;
-layout(set = 0, binding = 0) buffer Temperature { float data[]; } temperature;
-layout(set = 0, binding = 1) buffer Amount { float data[]; } _amounts[S/*-1*/];
-layout(set = 0, binding = 2) buffer d_Temperature { float data[]; } d_temperature;
-layout(set = 0, binding = 3) buffer d_Amount { float data[]; } d_amounts[S-1];
-layout(set = 0, binding = 4) buffer Viscosity { float data[]; } viscosity;
-layout(set = 0, binding = 5) buffer ThermalConductivity { float data[]; } _thermal_conductivity;
-layout(set = 0, binding = 6) buffer MixtureAveragedThermalDiffusionCoeffficent { float data[]; } mixture_averaged_thermal_diffusion_coefficients[S];
+layout(set = 0, binding = 0) readonly restrict buffer State { double state[]; } state;
+layout(set = 0, binding = 1) restrict buffer Rate { double rate[]; } rate;
 
 void main() {
 	uint i = gl_GlobalInvocationID.x;
-	float T = temperature.data[i];
-	float[S] amounts; for(int k=0;k<amounts.length();k++) amounts[k] = _amounts[k].data[i];
-	float[S] generate_k; for(uint k=0;k<generate_k.length();k++) {
-		float[S] generate_j;
-		for(uint j=0;j<generate_j.length();j++) {
-			generate_j[j] = sq(1. + (sqrt_viscosity(k, T)/sqrt_viscosity(j, T)) * sqrt(sqrt(species.molar_mass[j]/species.molar_mass[k]))) /
-				(sqrt(8.) * sqrt(1. + species.molar_mass[k]/species.molar_mass[j]));
-		}
-		generate_k[k] = sq(sqrt_viscosity(k, T)) / dot(amounts, generate_j);
-	}
-	viscosity.data[i] = dot(amounts, generate_k);
-	float amount = constants.pressure_R * volume / T; // pressure/NA * volume / (K * T)
-	float[S] thermal_conductivities; for(uint k=0;k<thermal_conductivities.length();k++) { thermal_conductivities[k] = thermal_conductivity(k, T); }
-	float[S] rcp_thermal_conductivities; for(uint k=0;k<rcp_thermal_conductivities.length();k++) { rcp_thermal_conductivities[k] = 1. / thermal_conductivity(k, T); }
-	_thermal_conductivity.data[i] = 1./2. * (dot(amounts, thermal_conductivities) / amount + amount / dot(amounts, rcp_thermal_conductivities));
-	for(uint k=0;k<mixture_averaged_thermal_diffusion_coefficients.length();k++) {
-		float[S] generate_j;
-		for(uint j=0;j<generate_j.length();j++) {
-			if (j != k) {
-				generate_j[j] = 1. / binary_thermal_diffusion_coefficient(k, j, T);
-			} else {
-				generate_j[j] = 0.;
-			}
-		}
-		mixture_averaged_thermal_diffusion_coefficients[k].data[i]  = (1. - amounts[k]/amount) / dot(amounts, generate_j);
-	}
+	//double[] v0 = state.state/*+i*/;
+	#define v0 state.state
+	//double[] v1 = state.rate/*+i*/;
+	#define v1 rate.rate
+	#include "instructions"
 }
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

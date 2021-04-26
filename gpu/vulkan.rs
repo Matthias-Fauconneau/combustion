@@ -1,4 +1,3 @@
-#[macro_use] mod include_bytes_align_as;
 use {std::{default::default, mem::size_of, ffi::CStr}, ash::{*, vk::*, version::*, extensions::ext::DebugUtils}};
 
 pub struct Device {
@@ -106,14 +105,12 @@ pub struct Pipeline {
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn pipeline/*<T>*/(&self, constants: &[/*T*/f64], buffers: &[&[&Buffer]]) -> Pipeline {
+	#[fehler::throws(Result)] pub fn pipeline/*<T>*/(&self, code: &[u32], constants: &[/*T*/f64], buffers: &[&[&Buffer]]) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{device, ..} = self;
 		unsafe {
-			let spv = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/main.spv"));
-			let code = {let (h, code, t) = spv.align_to(); assert!(h.is_empty() && t.is_empty(), "{} {} {}", h.len(), code.len(), t.len()); code};
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
 			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
@@ -121,7 +118,9 @@ impl Device {
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: (constants.len() * std::mem::size_of::<f64/*T*/>()) as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			dbg!();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
+			dbg!();
 			std::fs::write("/var/tmp/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}

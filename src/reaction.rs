@@ -70,7 +70,7 @@ impl Reaction {
 
 #[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
 #[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
-#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,P|V,[S-1]*/]>);
+#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,/*P|V,*/[S-1]*/]>);
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
 
 impl State {
@@ -84,7 +84,7 @@ use std::array::IntoIter;
 
 impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
 	fn from(State{temperature, pressure_R, volume, amounts}: &State) -> Self {
-		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
+		Self([*temperature/*, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}*/].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
 	}
 }
 
@@ -327,7 +327,7 @@ use std::fmt::Write;
 	let concentrations = map(&*amounts, |&n| f.mul(n, rcpV));
 	let Ca = sub(total_concentration, f.cdot(std::iter::repeat(1.).zip(concentrations.iter().copied()), None).unwrap(), f);
 	let ref concentrations = [&concentrations as &[_],&[Ca]].concat();*/
-	let concentrations = eval(len-1, |i| f.load(state, (1+i)*stride));
+	let concentrations = eval(len/*-1*/, |i| f.load(state, (1+i)*stride)); // TODO: opt-pass: defer load
 	let mut dtω = vec![None; len-1].into_boxed_slice();
 	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
 		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;
@@ -382,7 +382,7 @@ use std::fmt::Write;
 		use cranelift::codegen::ir::InstructionData::*;
 		fn i32_from(offset: impl Into<i32>) -> i32 { offset.into() } // Workaround impl Into !From
 		match &f[instruction] {
-			UnaryIeee64{imm, ..} => write!(w, "{}", imm)?,
+			UnaryIeee64{imm, ..} => write!(w, "{}", {let s = f64::from_bits(imm.bits()).to_string(); if s.contains('.') { s } else { s+"." }})?,
 			Unary{opcode, arg} => write!(w, "{}({})", opcode, arg)?,
 			Load{arg, offset, ..} => write!(w, "{}[{}]", arg, i32_from(*offset)/(std::mem::size_of::<f64>() as i32))?,
 			Store{args, offset, ..} => write!(w, "{}[{}] = {}", args[1], i32_from(*offset)/(std::mem::size_of::<f64>() as i32), args[0])?,
