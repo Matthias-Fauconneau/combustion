@@ -26,9 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(&species_names, r));
 	//let width = 32;
 	let states_len = 1; //((512*32)/width)*width;
-	let instructions = rate::<_,{Property::Volume}>(&species, &*reactions, states_len)?;
+	let instructions = rate::<_,{Property::Pressure}>(&species, &*reactions, states_len)?;
 
-	std::fs::write("/var/tmp/reaction.cu", std::str::from_utf8(&std::fs::read("reaction.cu")?)?.replace("#include \"instructions\"", &instructions).replace("float", "f64"))?;
+	std::fs::write("/var/tmp/reaction.cu", std::str::from_utf8(&std::fs::read("reaction.cu")?)?.replace("#include \"instructions\"", &instructions).replace("float", "double")
+	.replace("fneg", "neg").replace("fadd", "add").replace("fsub", "sub").replace("fmul", "mul").replace("fdiv", "div"))?;
 	std::process::Command::new("nvcc").args(&["-I/var/tmp", "main.cu","--ptx", "-o","/var/tmp/main.ptx"]).spawn()?.wait()?.success().then_some(()).unwrap();
 
 	/*let ref state = initial_state(&model);
