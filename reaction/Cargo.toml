@@ -6,11 +6,11 @@ edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
-fehler= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 combustion= {path='..', features=['reaction']}
 rustacuda= ''
+itertools= ''
 
 [[bin]]
 name= 'reaction'

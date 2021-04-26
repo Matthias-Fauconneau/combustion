@@ -113,13 +113,10 @@ impl std::fmt::Display for State {
 	}
 }
 
+pub use cranelift::codegen::ir::types::{I32, I64, F64};
 use cranelift::{
 	frontend::{self as frontend, /*FunctionBuilder,*/ FunctionBuilderContext},
-	codegen::{
-		ir::{function::Function, Signature, InstBuilder, types::{I64, F64}, MemFlags, entities::{Value, SigRef, FuncRef}, AbiParam, ExternalName, ExtFuncData},
-		isa::CallConv,
-		//write::write_function
-	},
+	codegen::{ir::{types::Type, function::Function, Signature, InstBuilder, MemFlags, entities::{Value, SigRef, FuncRef}, AbiParam, ExternalName, ExtFuncData}, isa::CallConv},
 };
 
 fn import(function: &mut Function, index: u32, signature: SigRef) {
@@ -299,14 +296,19 @@ use std::fmt::Write;
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
-	f.func.signature.params = vec![AbiParam::new(F64), AbiParam::new(F64), AbiParam::new(I64), AbiParam::new(I64), AbiParam::new(F64), AbiParam::new(F64), AbiParam::new(I64)];
+	const parameters: [Type; 8] = [I32, F64, I64, I64, I64, F64, F64, I64];
+	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [constant, T, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 7] =
+	let [_id, constant, T, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 8] =
 		f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
-	//let T = f.load(state, 0*stride);
+	/*let T = f.add(T, id);
+	let mass_fractions = f.add(mass_fractions, id);
+	let mass_production_rates = f.add(mass_production_rates, id);
+	let heat_release_rates = f.add(heat_release_rates, id);*/
+	let T = f.load(/*state*/T, 0*stride);
 	let rcpT = f.rcp(T);
 	//let variable = f.load(state, 1*stride);
 	let (pressure_R, _volume) = {use Property::*; match CONSTANT {Pressure => (constant, /*variable*/()), Volume => (/*variable*/panic!()/*, constant*/)}};
@@ -383,7 +385,7 @@ use std::fmt::Write;
 	macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
 	let heat_release_rate = dot!(dtω, E_RT,f);
 	// enthalpy/RT * RT * rcp_molar_mass
-	store(heat_release_rate, heat_release_rates/*rates*/, 0*stride, f);
+	store(f.mul(heat_release_rate_factor, heat_release_rate), heat_release_rates/*rates*/, 0*stride, f);
 	/*let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
 	let m_rcp_ΣCCc = div(f.c(-1.), f.dot(concentrations.iter().copied().zip(Cc)), f);
 	let dtT_T = mul(m_rcp_ΣCCc, heat_release_rate, f);
@@ -392,11 +394,35 @@ use std::fmt::Write;
 	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
 	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
 	let f = function.dfg;
-	let mut w = String::new();
+	let mut w = String::from(r#"
+__device__ double neg(double x) { return -x; }
+__device__ double add(double x, double y) { return x*y; }
+__device__ double sub(double x, double y) { return x-y; }
+__device__ double mul(double x, double y) { return x*y; }
+__device__ double div(double x, double y) { return x/y; }
+"#);
+	for (i, p) in parameters.iter().enumerate().skip(1) {
+		match *p {
+			F64 => write!(w, "__constant__ double p{i} = 0.;\n", i=i)?,
+			I64 => write!(w, "__constant__ double* p{i} = 0;\n", i=i)?,
+			_ => unimplemented!(),
+		};
+	}
+	w.push_str(r#"
+__global__ void kernel() {
+	const uint v0 = blockIdx.x * /*SIMD width*/blockDim.x + /*SIMD lane*/threadIdx.x;
+"#);
+	for (i, p) in parameters.iter().enumerate().skip(1) {
+		match *p {
+			F64 => write!(w, "double v{i} = p{i};\n", i=i)?,
+			I64 => write!(w, "double* v{i} = p{i}+v0;\n", i=i)?,
+			_ => unimplemented!(),
+		};
+	}
 	for instruction in function.layout.block_insts(entry_block) {
 		match f.inst_results(instruction) {
 		 [] => (),
-		 [result] => write!(w, "float {} = ", result)?,
+		 [result] => write!(w, "double {} = ", result)?,
 		 _ => unimplemented!(),
 		};
 		use cranelift::codegen::ir::InstructionData::*;
@@ -412,5 +438,6 @@ use std::fmt::Write;
 		};
 		write!(w, ";\n")?;
 	}
-	w
+	write!(w, "}}")?;
+	w.replace("fneg", "neg").replace("fadd", "add").replace("fsub", "sub").replace("fmul", "mul").replace("fdiv", "div")
 }

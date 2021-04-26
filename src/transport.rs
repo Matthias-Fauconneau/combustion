@@ -102,7 +102,7 @@ impl Species {
 		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz(298.*K / well_depth_J[a]) / fz(T⃰) + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
 		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[a]/(3./2.));
 		let f_rotation = f_internal * (1. + c1);
-		let Cv_internal = thermodynamics[a].specific_heat_capacity(T) - 5./2. - internal_degrees_of_freedom[a];
+		let Cv_internal = thermodynamics[a].specific_heat_capacity/*at_constant_pressure_R*/(T) - 5./2. - internal_degrees_of_freedom[a];
 		(self.viscosity(a, T)/(molar_mass[a]/NA))*K*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 	}
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
