@@ -400,16 +400,17 @@ __device__ double add(double x, double y) { return x*y; }
 __device__ double sub(double x, double y) { return x-y; }
 __device__ double mul(double x, double y) { return x*y; }
 __device__ double div(double x, double y) { return x/y; }
+__global__ void kernel(
 "#);
-	for (i, p) in parameters.iter().enumerate().skip(1) {
+	use itertools::Itertools;
+	write!(w, "{}", parameters.iter().enumerate().skip(1).map(|(i, p)|
 		match *p {
-			F64 => write!(w, "__constant__ double p{i} = 0.;\n", i=i)?,
-			I64 => write!(w, "__constant__ double* p{i} = 0;\n", i=i)?,
+			F64 => "double",
+			I64 => "double*",
 			_ => unimplemented!(),
-		};
-	}
-	w.push_str(r#"
-__global__ void kernel() {
+		}.to_owned() + &format!(" p{}", i)
+	).format(", "))?;
+	w.push_str(r#") {
 	const uint v0 = blockIdx.x * /*SIMD width*/blockDim.x + /*SIMD lane*/threadIdx.x;
 "#);
 	for (i, p) in parameters.iter().enumerate().skip(1) {
