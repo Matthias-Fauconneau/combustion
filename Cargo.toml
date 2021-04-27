@@ -11,9 +11,6 @@ reaction=['cranelift-entity','cranelift']
 transport= ['nalgebra']
 default=['reaction']
 
-[build-dependencies]
-bindgen= ''
-
 [dependencies]
 derive_more= ''
 strum= ''

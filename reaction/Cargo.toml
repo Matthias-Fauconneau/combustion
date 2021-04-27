@@ -16,7 +16,7 @@ rustacuda= ''
 itertools= ''
 cranelift-codegen= {optional= true, version=''}
 cranelift-interpreter= {optional= true, version=''}
-smallvec= '1.6.1'
+pretty_env_logger= ''
 
 [[bin]]
 name= 'reaction'

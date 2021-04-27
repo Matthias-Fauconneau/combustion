@@ -7,8 +7,8 @@ use cranelift_codegen::{ir::{function::Function, immediates::Ieee64}, data_value
 
 enum Argument<'t> { Value(DataValue), Ref(&'t [u8]), Mut(&'t mut[u8]) }
 
-fn interpret(function: &Function, arguments: &mut [Argument]) {
-	use cranelift_interpreter::interpreter::{InterpreterState, Interpreter};
+use cranelift_interpreter::{interpreter::{InterpreterState, Interpreter}, step::Extension};
+fn interpret(function: &Function, arguments: &mut [Argument], extension: Extension<DataValue>) {
 	use Argument::*;
 	let mut state = InterpreterState::default();
 	let arguments_values = iter::map(arguments.iter(), |v| {
@@ -18,7 +18,7 @@ fn interpret(function: &Function, arguments: &mut [Argument]) {
 			Mut(v) => { let base = state.heap.len(); state.heap.extend(v.iter()); DataValue::I32(base as i32) }
 		}
 	});
-	let mut interpreter = Interpreter::new(state);
+	let mut interpreter = Interpreter::with_extension(state, extension);
 	assert!(interpreter.call(function, &arguments_values).unwrap().unwrap_return() == &[]);
 	let mut base = 0;
 	let state = interpreter.state;
@@ -31,15 +31,33 @@ fn interpret(function: &Function, arguments: &mut [Argument]) {
 	}
 }
 
+use cranelift_interpreter::value::ValueResult;
+use combustion::reaction::Intrinsic;
+pub fn extension(id: u32, arguments: &[DataValue]) -> ValueResult<DataValue> {
+	let x = if let [DataValue::F64(x)] = arguments { x } else { unreachable!() };
+	let x = f64::from_bits(x.bits());
+	assert!(x.is_finite(), "{}", x);
+	use std::convert::TryFrom;
+	use Intrinsic::*;
+	let op = Intrinsic::try_from(id).unwrap();
+	let y = match op {
+		exp2 => f64::exp2(x),
+		log2 => f64::log2(x),
+	};
+	assert!(y.is_finite(), "{:?} {} = {}", op, x, y);
+	Ok(DataValue::F64(Ieee64::/*from*/with_float(y)))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+	pretty_env_logger::init();
 	let model = &std::fs::read("CH4+O2.ron")?;
 	use combustion::*;
 	let model = model::Model::new(&model)?;
 	let (species_names, species) = combustion::Species::new(&model.species);
 	use reaction::*;
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(&species_names, r));
-	let width = 32;
-	let states_len = ((1*32)/width)*width;
+	let width = 1;
+	let states_len = ((1)/width)*width;
 	let function = rate::<_,{Property::Pressure}>(&species, &*reactions, states_len)?;
 
 	//std::fs::write("/var/tmp/main.cu", &function)?;
@@ -102,14 +120,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			use DataValue::*;
 			interpret(&function, &mut [
 				Value(I32(0)),
-				Value(F64(Ieee64::with_float(pressure_R))),
+				Value(F64(Ieee64::with_float(pressure_R * reference_state.pressure_R))),
 				Ref(as_bytes(temperature)),
 				Ref(as_bytes(mass_fractions)),
+				Value(F64(Ieee64::with_float(reference_state.temperature))),
 				Mut(as_bytes_mut(mass_production_rates)),
 				Value(F64(Ieee64::with_float(mass_production_rate_factor))),
 				Value(F64(Ieee64::with_float(heat_release_rate_factor))),
 				Mut(as_bytes_mut(heat_release_rate)),
-			]);
+			], extension);
 		}
 		let end = std::time::Instant::now();
 		#[track_caller] fn all_same(slice: &[f64], stride: usize) -> Box<[f64]> {

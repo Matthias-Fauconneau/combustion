@@ -128,7 +128,7 @@ fn import(function: &mut Function, index: u32, signature: SigRef) {
 	constants: std::collections::HashMap<u64, Value>,
 }
 
-#[derive(Debug, num_enum::TryFromPrimitive)] #[allow(non_camel_case_types)] #[repr(u32)] enum Intrinsic { exp2, log2 }
+#[derive(Debug, num_enum::TryFromPrimitive)] #[allow(non_camel_case_types)] #[repr(u32)] pub enum Intrinsic { exp2, log2 }
 
 impl FunctionBuilder<'t> {
 	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self { Self{
@@ -294,12 +294,12 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
-	const parameters: [Type; 8] = [I32, F64, I32, I32, I32, F64, F64, I32];
+	const parameters: [Type; 9] = [I32, F64, I32, I32, F64, I32, F64, F64, I32];
 	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [index, constant, T, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 8] =
+	let [index, constant, T, /*state*/mass_fractions, reference_temperature, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 9] =
 		f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
 	let offset = f.ins().ishl_imm(index, 3);
@@ -308,6 +308,7 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	let mass_production_rates = f.ins().iadd(mass_production_rates, offset);
 	let heat_release_rates = f.ins().iadd(heat_release_rates, offset);
 	let T = f.load(/*state*/T, 0*stride);
+	let T = f.mul(reference_temperature, T);
 	let rcpT = f.rcp(T);
 	//let variable = f.load(state, 1*stride);
 	let (pressure_R, _volume) = {use Property::*; match CONSTANT {Pressure => (constant, /*variable*/()), Volume => (/*variable*/panic!()/*, constant*/)}};
@@ -392,6 +393,7 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	//let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..species-1].iter().map(|w| 1. - w/molar_mass[species-1]).zip(dtω.iter().copied()), None).unwrap(), f);
 	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
 	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
+	f.ins().return_(&[]);
 	function
 }
 
