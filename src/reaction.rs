@@ -299,7 +299,7 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [index, constant, T, /*state*/mass_fractions, reference_temperature, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 9] =
+	let [index, constant, T, reference_temperature, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 9] =
 		f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
 	let offset = f.ins().ishl_imm(index, 3);

@@ -1,5 +1,5 @@
 [package]
-name= 'reaction'
+name= 'cuda'
 version= '0.0.0'
 edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
@@ -7,9 +7,13 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 [dependencies]
 fehler= ''
 anyhow= ''
-combustion= {path='..', features=['reaction']}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+reaction= {path='../reaction'}
 cranelift-codegen= ''
+combustion= {path='..'}
+rustacuda= ''
+itertools= ''
 
-[lib]
-path = 'lib.rs'
+[[bin]]
+name= 'cuda'
+path= 'main.rs'
