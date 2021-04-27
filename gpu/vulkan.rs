@@ -1,4 +1,6 @@
-use {std::{default::default, mem::size_of, ffi::CStr}, ash::{*, vk::*, version::*, extensions::ext::DebugUtils}};
+use {std::default::default, fehler::throws, anyhow::Error};
+use std::{mem::size_of, ffi::CStr};
+use ash::{*, vk::*, version::*, extensions::ext::DebugUtils};
 
 pub struct Device {
 	_entry: Entry,
@@ -15,7 +17,7 @@ pub struct Device {
 impl std::ops::Deref for Device { type Target = ash::Device; fn deref(&self) -> &Self::Target { &self.device } }
 
 impl Device {
-	#[fehler::throws(Box<dyn std::error::Error>)] pub fn new() -> Self {
+	#[throws] pub fn new() -> Self {
 		let ref main = CStr::from_bytes_with_nul(b"main\0")?;
 		unsafe {
 			let entry = Entry::new()?;
@@ -71,15 +73,15 @@ impl<T> core::ops::Deref for MapMut<'t, T> { type Target = &'t mut [T]; fn deref
 impl<T> core::ops::DerefMut for MapMut<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.map } }
 
 impl Buffer {
-	#[fehler::throws(Result)] pub fn map<T>(&'t self, device: &'t Device) -> Map<T> {
+	#[throws] pub fn map<T>(&'t self, device: &'t Device) -> Map<T> {
 		Map{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts(device.map_memory(self.memory, 0, (self.len * size_of::<T>()) as u64, default())? as *const T, self.len)} }
 	}
 
-	#[fehler::throws(Result)] pub fn map_mut<T>(&'t mut self, device: &'t Device) -> MapMut<T> {
+	#[throws] pub fn map_mut<T>(&'t mut self, device: &'t Device) -> MapMut<T> {
 		MapMut{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts_mut(device.map_memory(self.memory, 0, (self.len * size_of::<T>())as u64, default())? as *mut T, self.len)} }
 	}
 
-	#[fehler::throws(Result)] pub fn new<I: ExactSizeIterator+Iterator<Item=f64/*Prevent &f64 by mistake*/>>(device: &Device, iter: I) -> Self {
+	#[throws] pub fn new<I: ExactSizeIterator+Iterator<Item=f64/*Prevent &f64 by mistake*/>>(device: &Device, iter: I) -> Self {
 		let len = iter.len();
 		let mut buffer = unsafe {
 			let buffer = device.create_buffer(&BufferCreateInfo{size: (len * size_of::<I::Item>()) as u64,
@@ -105,7 +107,7 @@ pub struct Pipeline {
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn pipeline/*<T>*/(&self, code: &[u32], constants: &[/*T*/f64], buffers: &[&[&Buffer]]) -> Pipeline {
+	#[fehler::throws(Result)] pub fn pipeline/*<T>*/(&self, code: &[u32], constants: &[u8], buffers: &[&[&Buffer]]) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
@@ -115,7 +117,7 @@ impl Device {
 			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts)
-																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: (constants.len() * std::mem::size_of::<f64/*T*/>()) as u32}]), None)?;
+																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
 			dbg!();
@@ -137,7 +139,7 @@ impl Device {
 			}
 		}
 	}
-	#[fehler::throws(Result)] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[/*T*/f64], stride: usize, len: usize) -> CommandBuffer {
+	#[fehler::throws(Result)] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[u8], stride: usize, len: usize) -> CommandBuffer {
 		let Self{device, command_pool, query_pool, ..} = self;
 		let Pipeline{descriptor_set, layout, pipeline, ..} = pipeline;
 		unsafe {
@@ -145,7 +147,7 @@ impl Device {
 			device.begin_command_buffer(command_buffer, &default())?;
 			device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::COMPUTE, *pipeline);
 			device.cmd_bind_descriptor_sets(command_buffer, PipelineBindPoint::COMPUTE, *layout, 0, &[*descriptor_set], &[]);
-			device.cmd_push_constants(command_buffer, *layout, ShaderStageFlags::COMPUTE, 0, std::slice::from_raw_parts(constants.as_ptr() as *const u8, constants.len() * std::mem::size_of::</*T*/f64>()));
+			device.cmd_push_constants(command_buffer, *layout, ShaderStageFlags::COMPUTE, 0, constants);
 			device.cmd_reset_query_pool(command_buffer, *query_pool, 0, 2);
 			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, *query_pool, 0);
 			device.cmd_dispatch(command_buffer, (len/stride) as u32, 1, 1);

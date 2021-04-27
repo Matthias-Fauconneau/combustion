@@ -13,6 +13,17 @@ pub struct Simulation<'t> {
 	pub heat_release_rate_factor: f64
 }
 
+pub struct Constants {
+	pub pressure_Pa_R: f64,
+	pub temperature: u32,
+	pub mass_fractions: u32,
+	pub mass_production_rates: u32,
+	pub heat_release_rate: u32,
+	pub reference_temperature: f64,
+	pub mass_production_rate_factor: f64,
+	pub heat_release_rate_factor: f64,
+}
+
 impl<'t> Simulation<'t> {
 #[throws] pub fn new(model: &'t [u8]) -> Self {
 	use combustion::*;
@@ -22,7 +33,7 @@ impl<'t> Simulation<'t> {
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(&species_names, r));
 	let width = 1;
 	let states_len = ((1)/width)*width;
-	let function = rate::<_,{Property::Pressure}>(&species, &*reactions, states_len)?;
+	let function = rate::<_,{Property::Pressure}>(&species, &*reactions, states_len);
 
 	let ref reference_state = initial_state(&model);
 	let length = 1f64;
@@ -61,7 +72,7 @@ pub fn report(species_names: &[&str], rates: &[f64]) {
 		assert_eq!(slice.len()%stride, 0);
 		iter::eval(slice.len()/stride, |i| {
 			let slice = &slice[i*stride..(i+1)*stride];
-			for &v in slice.iter() { assert_eq!(v, slice[0]); }
+			for &v in slice.iter() { assert_eq!(v.to_bits(), slice[0].to_bits()); }
 			slice[0]
 		})
 	}

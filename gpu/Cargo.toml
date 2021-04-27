@@ -5,17 +5,17 @@ edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
+fehler= ''
+anyhow= ''
+reaction= {path='../reaction'}
+cranelift-codegen= ''
 combustion= {path='..', features=['reaction']}
 shaderc= ''
 ash= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools= ''
-fehler= ''
 num= {git='https://github.com/Matthias-Fauconneau/num'} #debug
 
 [[bin]]
 name= 'gpu'
 path= 'main.rs'
-
-[patch.'https://github.com/Matthias-Fauconneau/iter']
-iter= {path='../../iter'}

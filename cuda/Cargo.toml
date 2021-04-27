@@ -13,6 +13,7 @@ cranelift-codegen= ''
 combustion= {path='..'}
 rustacuda= ''
 itertools= ''
+cranelift-frontend= ''
 
 [[bin]]
 name= 'cuda'

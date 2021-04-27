@@ -289,7 +289,7 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 }
 }
 
-#[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
+pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
@@ -325,7 +325,6 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	let active_mass_fractions = eval(species-1, |i| max(f.c._0, f.load(/*state*/mass_fractions, (/*1+*/i)*stride), f)); // TODO: opt-pass: defer load in sum/dot
 	let inert_mass_fraction = sub(f.c._1, f.cdot(std::iter::repeat(1.).zip(active_mass_fractions.iter().copied()), None).unwrap(), f);
 	let ref mass_fractions = [&active_mass_fractions as &[_],&[inert_mass_fraction]].concat();
-	use iter::map;
 	let rcp_molar_mass = map(&**molar_mass, |m| f.c(1./m));
 	let mean_rcp_molar_mass = f.dot(rcp_molar_mass.iter().copied().zip(mass_fractions.iter().map(|y| *y)));
 	let pressure_R = constant;
