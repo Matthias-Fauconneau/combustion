@@ -2,7 +2,7 @@
 use {fehler::throws, anyhow::Error};
 use cranelift_codegen::ir::{Function, AbiParam, types::{F64, I32}};
 
-fn test() -> Function {
+#[allow(dead_code)] fn test() -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = cranelift_frontend::FunctionBuilderContext::new();
 	let mut f = cranelift_frontend::FunctionBuilder::new(&mut function, &mut function_builder_context);
@@ -53,6 +53,7 @@ fn test() -> Function {
 		}
 	};
 	write!(w, "{}", function.signature.params.iter().enumerate().skip(1).map(|(i, AbiParam{value_type, ..})| format!("{} v{}", to_string(*value_type), i)).format(", "))?;
+	w.push_str(", double* trace");
 	w.push_str(r#") {
 	const unsigned int v0 = blockIdx.x * /*SIMD width*/blockDim.x + /*SIMD lane*/threadIdx.x;
 "#);
@@ -79,6 +80,10 @@ fn test() -> Function {
 			instruction => unimplemented!("{:?}", instruction)
 		};
 		write!(w, ";\n")?;
+		if let [result ] = f.inst_results(instruction) { if f.value_type(*result) == F64 {
+			assert!(result.as_u32() < f.values().count() as u32);
+			write!(w, "trace[{}] = {};", result.as_u32(), result)?
+		} }
 	}
 	write!(w, "}}")?;
 	w.replace("fneg", "neg").replace("fadd", "add").replace("fsub", "sub").replace("fmul", "mul").replace("fdiv", "div")
@@ -90,9 +95,16 @@ use reaction::Simulation;
 	let simulation = Simulation::new(&model)?;
 	let states_len = simulation.states_len();
 	let Simulation{species_names, function, states, rates, pressure_Pa_R, reference_temperature, mass_production_rate_factor, heat_release_rate_factor} = simulation;
-	std::fs::write("/var/tmp/main.cu", &cu(function)?)?;
+	let values_count = function.dfg.values().count();
 	//std::fs::write("/var/tmp/main.cu", &cu(test())?)?;
-	std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn()?.wait()?.success().then_some(()).unwrap();
+	let function = cu(function)?;
+	if std::fs::read("/var/tmp/main.ptx.cu")? != function {
+		std::fs::write("/var/tmp/main.cu", &function)?;
+		dbg!();
+		std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn()?.wait()?.success().then_some(()).unwrap();
+		dbg!();
+		std::fs::rename("/var/tmp/main.cu", "/var/tmp/main.ptx.cu")?;
+	}
 	rustacuda::init(CudaFlags::empty()).unwrap();
 	use rustacuda::{prelude::*, launch};
 	let device = Device::get_device(0).unwrap();
@@ -101,9 +113,12 @@ use reaction::Simulation;
 	let stream = Stream::new(/*irrelevant*/StreamFlags::NON_BLOCKING, None).unwrap();
 	let mut device_states = DeviceBuffer::from_slice(&states).unwrap();
 	let mut device_rates = DeviceBuffer::from_slice(&rates).unwrap();
+	let trace = vec![f64::NAN; values_count];
+	let mut device_trace = DeviceBuffer::from_slice(&trace).unwrap();
 	let width = 1;
 	let start = std::time::Instant::now();
-	unsafe{launch!(module._Z6kerneldmmmmddd<<</*workgroupCount*/(states_len/width) as u32,/*workgroupSize*/width as u32, 0, stream>>>(
+	//_Z6kerneldmmmmddd
+	unsafe{launch!(module._Z6kerneldmmmmdddPd<<</*workgroupCount*/(states_len/width) as u32,/*workgroupSize*/width as u32, 0, stream>>>(
 		pressure_Pa_R,
 		device_states.as_device_ptr(),
 		device_states.as_device_ptr().add(states_len),
@@ -111,10 +126,16 @@ use reaction::Simulation;
 		device_rates.as_device_ptr(),
 		reference_temperature,
 		mass_production_rate_factor,
-		heat_release_rate_factor
+		heat_release_rate_factor,
+		device_trace.as_device_ptr()
 	)).unwrap()}
 	stream.synchronize().unwrap();
 	let end = std::time::Instant::now();
+	let mut trace = trace;
+	device_trace.copy_to(&mut trace).unwrap();
+	pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+	std::fs::write("/var/tmp/trace", as_bytes(&trace))?;
+	println!("{:?}", trace);
 	let time = (end-start).as_secs_f64();
 	println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f64/1e3, time*1e3, time/(states_len as f64)*1e3, (states_len as f64)/1e3/time);
 	let mut rates = rates;
