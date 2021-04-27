@@ -1,7 +1,9 @@
-#![allow(non_snake_case)]#![feature(bool_to_option,assert_matches)]
+#![allow(non_snake_case)]#![feature(bool_to_option,assert_matches,default_free_fn)]
+use std::default::default;
 
 pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
 pub fn as_bytes_mut<T>(slice: &mut [T]) -> &mut [u8] { unsafe{std::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut u8, slice.len() * std::mem::size_of::<T>())} }
+pub fn from_bytes<T>(slice: &[u8]) -> &[T] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const T, slice.len() / std::mem::size_of::<T>())} }
 
 use cranelift_codegen::{ir::{function::Function, immediates::Ieee64}, data_value::DataValue};
 
@@ -10,16 +12,18 @@ enum Argument<'t> { Value(DataValue), Ref(&'t [u8]), Mut(&'t mut[u8]) }
 use cranelift_interpreter::{interpreter::{InterpreterState, Interpreter}, step::Extension};
 fn interpret(function: &Function, arguments: &mut [Argument], extension: Extension<DataValue>) {
 	use Argument::*;
-	let mut state = InterpreterState::default();
+	let mut heap = vec![];
 	let arguments_values = iter::map(arguments.iter(), |v| {
 		match v {
 			Value(v) => v.clone(),
-			Ref(v) => { let base = state.heap.len(); state.heap.extend(v.iter()); DataValue::I32(base as i32) }
-			Mut(v) => { let base = state.heap.len(); state.heap.extend(v.iter()); DataValue::I32(base as i32) }
+			Ref(v) => { let base = heap.len(); heap.extend(v.iter()); DataValue::I32(base as i32) }
+			Mut(v) => { let base = heap.len(); heap.extend(v.iter()); DataValue::I32(base as i32) }
 		}
 	});
-	let mut interpreter = Interpreter::with_extension(state, extension);
+	let mut interpreter = Interpreter::with_extension(InterpreterState{heap, ..default()}, extension);
+	eprintln!("{:?}", &from_bytes::<f64>(&interpreter.state.heap));
 	assert!(interpreter.call(function, &arguments_values).unwrap().unwrap_return() == &[]);
+	eprintln!("{:?}", &from_bytes::<f64>(&interpreter.state.heap));
 	let mut base = 0;
 	let state = interpreter.state;
 	for v in arguments.iter_mut() {
@@ -95,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let stream = Stream::new(StreamFlags::NON_BLOCKING, None).unwrap();*/
 
 	let states = iter::box_collect(state.iter().map(|&s| std::iter::repeat(s as f64).take(states_len)).flatten());
-	let mut rates = vec![f64::NAN; (1/*2*/+species.len())*states_len];
+	let mut rates = vec![f64::NAN; (1/*2*/+species.len()-1)*states_len];
 
 	for _ in 0..1 {
 		let start = std::time::Instant::now();
@@ -139,10 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         slice[0]
       })
     }
-		for ((mass_production_rate, name), molar_mass) in all_same(&rates, states_len).iter().skip(1).zip(species_names.iter()).zip(species.molar_mass.iter()) {
+    let rates = all_same(&rates, states_len);
+		for ((mass_production_rate, name), molar_mass) in rates[1..].iter().zip(species_names.iter()).zip(species.molar_mass.iter()) {
 			let mass_production_rate = mass_production_rate * time/density * 1e8 / molar_mass;
-			println!("{:5} {:e}", name, mass_production_rate)
+			if mass_production_rate != 0. { println!("{:5} {:e}", name, mass_production_rate); }
 		}
+		println!("{:5} {:e}", "HRR", rates[0]);
 		let time = (end-start).as_secs_f64();
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f64/1e3, time*1e3, time/(states_len as f64)*1e3, (states_len as f64)/1e3/time);
 	}
