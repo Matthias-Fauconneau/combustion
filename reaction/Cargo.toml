@@ -5,12 +5,18 @@ resolver = '2'
 edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
+[features]
+default= ['cranelift-interpreter', 'cranelift-codegen']
+
 [dependencies]
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 combustion= {path='..', features=['reaction']}
 rustacuda= ''
 itertools= ''
+cranelift-codegen= {optional= true, version=''}
+cranelift-interpreter= {optional= true, version=''}
+smallvec= '1.6.1'
 
 [[bin]]
 name= 'reaction'
@@ -18,3 +24,7 @@ path= 'main.rs'
 
 [patch.crates-io]
 rustacuda_core= {git='https://github.com/Matthias-Fauconneau/RustaCUDA'}
+cranelift-interpreter= {path='../../wasmtime/cranelift/interpreter'}
+cranelift-codegen= {path='../../wasmtime/cranelift/codegen'}
+cranelift-entity= {path='../../wasmtime/cranelift/entity'}
+cranelift= {path='../../wasmtime/cranelift/umbrella'}

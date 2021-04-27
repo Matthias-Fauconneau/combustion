@@ -1,4 +1,4 @@
-use std::{default::default, convert::TryFrom};
+use std::default::default;
 use super::*;
 
 #[derive(Clone, Copy)] pub struct RateConstant {
@@ -113,7 +113,7 @@ impl std::fmt::Display for State {
 	}
 }
 
-pub use cranelift::codegen::ir::types::{I32, I64, F64};
+pub use cranelift::codegen::ir::types::{I32, F64};
 use cranelift::{
 	frontend::{self as frontend, /*FunctionBuilder,*/ FunctionBuilderContext},
 	codegen::{ir::{types::Type, function::Function, Signature, InstBuilder, MemFlags, entities::{Value, SigRef, FuncRef}, AbiParam, ExternalName, ExtFuncData}, isa::CallConv},
@@ -289,25 +289,24 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 }
 }
 
-use std::fmt::Write;
-//pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
-#[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> String {
+#[fehler::throws(std::fmt::Error)] pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
-	const parameters: [Type; 8] = [I32, F64, I64, I64, I64, F64, F64, I64];
+	const parameters: [Type; 8] = [I32, F64, I32, I32, I32, F64, F64, I32];
 	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [_id, constant, T, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 8] =
+	let [index, constant, T, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 8] =
 		f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
-	/*let T = f.add(T, id);
-	let mass_fractions = f.add(mass_fractions, id);
-	let mass_production_rates = f.add(mass_production_rates, id);
-	let heat_release_rates = f.add(heat_release_rates, id);*/
+	let offset = f.ins().ishl_imm(index, 3);
+	let T = f.ins().iadd(T, offset);
+	let mass_fractions = f.ins().iadd(mass_fractions, offset);
+	let mass_production_rates = f.ins().iadd(mass_production_rates, offset);
+	let heat_release_rates = f.ins().iadd(heat_release_rates, offset);
 	let T = f.load(/*state*/T, 0*stride);
 	let rcpT = f.rcp(T);
 	//let variable = f.load(state, 1*stride);
@@ -393,7 +392,46 @@ use std::fmt::Write;
 	//let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..species-1].iter().map(|w| 1. - w/molar_mass[species-1]).zip(dtω.iter().copied()), None).unwrap(), f);
 	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
 	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
+	function
+}
+
+/*impl Value<'t> {
+	fn f64(&self) -> f64 { if let Value::VAL(value) = self { *value } else { panic!() } }
+	fn r#ref(&'t self) -> &'t [f64] { if let Value::REF(value) = self { *value } else { panic!() } }
+	fn r#mut(&'t mut self) -> &'t mut [f64] { if let Value::MUT(value) = self { *value } else { panic!() } }
+}
+
+fn interpret(function: &Function, mut values: Vec<Value>) {
 	let f = function.dfg;
+	use iter::Single;
+	for instruction in function.layout.blocks().single().unwrap().instructions() {
+		use cranelift::codegen::ir::InstructionData::*;
+		fn i32_from(offset: impl Into<i32>) -> i32 { offset.into() } // Workaround impl Into !From
+		if let [result] = f.inst_results(instruction) {
+			let value = match &f[instruction] {
+				UnaryIeee64{imm, ..} => f64::from_bits(imm.bits()),
+				Unary{Neg, arg} => -values[arg].f64(),
+				Load{arg, offset, ..} => values[arg].r#ref()[i32_from(*offset)/(std::mem::size_of::<f64>() as i32)],
+				Call{func_ref, args, ..} => match (Intrinsic::try_from(func_ref.as_u32()).unwrap(), args.first(&f.value_lists).unwrap()) {
+					(Log2, x) => f64::log2(x),
+					(Exp2, x) => f64::exp2(x),
+				},
+				Binary{Add, args} => args[0].f64() + args[1].f64(),
+				_ => unimplemented!("{:?}", f[instruction])
+			};
+			assert!(values.len() == result);
+			values.push(Value::VAL(value));
+		} else {
+			match &f[instruction] {
+				Store{args, offset, ..} => args[1].r#mut(i32_from(*offset)/(std::mem::size_of::<f64>() as i32)) = args[0].f64(),
+				_ => unimplemented!("{:?}", f[instruction])
+			}
+		}
+	}
+}
+}*/
+
+/*use std::convert::TryFrom;
 	let mut w = String::from(
 r#"__device__ double neg(double x) { return -x; }
 __device__ double add(double x, double y) { return x*y; }
@@ -442,3 +480,4 @@ __global__ void kernel(
 	write!(w, "}}")?;
 	w.replace("fneg", "neg").replace("fadd", "add").replace("fsub", "sub").replace("fmul", "mul").replace("fdiv", "div")
 }
+*/
