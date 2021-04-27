@@ -144,8 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       })
     }
     let rates = all_same(&rates, states_len);
-		for ((mass_production_rate, name), molar_mass) in rates[1..].iter().zip(species_names.iter()).zip(species.molar_mass.iter()) {
-			let mass_production_rate = mass_production_rate * time/density * 1e8 / molar_mass;
+		for ((&mass_production_rate, name), _molar_mass) in rates[1..].iter().zip(species_names.iter()).zip(species.molar_mass.iter()) {
 			if mass_production_rate != 0. { println!("{:5} {:e}", name, mass_production_rate); }
 		}
 		println!("{:5} {:e}", "HRR", rates[0]);

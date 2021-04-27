@@ -3,3 +3,4 @@ main
 combustion
 Cargo.lock
 **/target
+wasmtime
