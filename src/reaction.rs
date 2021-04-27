@@ -294,13 +294,13 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 	let mut function_builder_context = FunctionBuilderContext::new();
 	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
-	const parameters: [Type; 9] = [I32, F64, I32, I32, F64, I32, F64, F64, I32];
+	const parameters: [Type; 9] = [I32, F64, I32, I32, I32, I32, F64, F64, F64];
 	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [index, constant, T, reference_temperature, /*state*/mass_fractions, /*rates*/mass_production_rates, mass_production_rates_factor, heat_release_rate_factor, heat_release_rates]: [Value; 9] =
-		f.block_params(entry_block).try_into().unwrap();
+	let [index, constant, /*state*/T, mass_fractions, /*rates*/mass_production_rates, heat_release_rates,
+				reference_temperature, mass_production_rates_factor, heat_release_rate_factor]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
 	let offset = f.ins().ishl_imm(index, 3);
 	let T = f.ins().iadd(T, offset);

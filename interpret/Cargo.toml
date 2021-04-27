@@ -5,9 +5,13 @@ edition= '2018'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
+fehler= ''
+anyhow= ''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 reaction= {path='../reaction'}
-cranelift-codegen= {optional= true, version=''}
-cranelift-interpreter= {optional= true, version=''}
+cranelift-codegen= ''
+cranelift-interpreter= ''
+combustion= {path='..'}
 pretty_env_logger= ''
 
 [[bin]]
