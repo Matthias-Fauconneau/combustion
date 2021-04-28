@@ -1,5 +1,5 @@
 [package]
-name= 'cuda'
+name= 'transport'
 version= '0.0.0'
 resolver = '2'
 edition= '2018'
@@ -17,7 +17,7 @@ fehler= ''
 combustion= {path='..', features=['transport']}
 
 [[bin]]
-name= 'cuda'
+name= 'transport'
 path= 'main.rs'
 
 [patch.crates-io]

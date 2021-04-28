@@ -12,5 +12,5 @@ cuda= {path='../cuda'}
 rustacuda= ''
 
 [[bin]]
-name= 'cuda'
+name= 'reaction-cuda'
 path= 'main.rs'
