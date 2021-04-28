@@ -6,15 +6,10 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 
 [dependencies]
 fehler= ''
-anyhow= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-reaction= {path='../reaction'}
 cranelift-codegen= ''
 combustion= {path='..'}
-rustacuda= ''
 itertools= ''
-cranelift-frontend= ''
 
-[[bin]]
-name= 'cuda'
-path= 'main.rs'
+[lib]
+path= 'lib.rs'

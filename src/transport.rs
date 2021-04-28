@@ -23,7 +23,7 @@ use iter::into::IntoMap;
 fn polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_polynomial_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(t.map(x), t.map(y)) }
 
-use {std::{convert::TryInto, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log, pow}};
+use {std::{convert::TryInto, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}};
 use {iter::{from_iter, eval, zip, dot, into::IntoCopied, vec::{self, Dot, generate}}};
 const light_speed : f64 = 299_792_458.;
 const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
@@ -72,14 +72,14 @@ impl Species {
 		(diameter[a] + diameter[b])/2. * pow(self.χ(a, b), -1./6.)
 	}
 	fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
-		let log_T⃰ = log(self.T⃰ (a, a, T));
+		let ln_T⃰ = ln(self.T⃰ (a, a, T));
 		let δ⃰ = self.reduced_dipole_moment(a, b);
-		/*const*/let header_log_T⃰ = vec::eval(header_T⃰.copied(), log);
-		let interpolation_start_index = min((1+header_log_T⃰ [1..header_log_T⃰.len()].iter().position(|&header_log_T⃰ | log_T⃰ < header_log_T⃰ ).unwrap())-1, header_log_T⃰.len()-3);
-		let header_log_T⃰ : &[_; 3] = header_log_T⃰[interpolation_start_index..][..3].try_into().unwrap();
+		/*const*/let header_ln_T⃰ = vec::eval(header_T⃰.copied(), ln);
+		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, header_ln_T⃰.len()-3);
+		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		let polynomials: &[_; 3] = &table[interpolation_start_index..][..3].try_into().unwrap();
-		let image = quadratic_interpolation(header_log_T⃰, &from_iter(polynomials.map(|P| eval_poly(P, δ⃰ ))), log_T⃰);
-		assert!(*header_log_T⃰ .first().unwrap() <= log_T⃰  && log_T⃰  <= *header_log_T⃰ .last().unwrap());
+		let image = quadratic_interpolation(header_ln_T⃰, &from_iter(polynomials.map(|P| eval_poly(P, δ⃰ ))), ln_T⃰);
+		assert!(*header_ln_T⃰ .first().unwrap() <= ln_T⃰  && ln_T⃰  <= *header_ln_T⃰ .last().unwrap());
 		assert!(*header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *header_δ⃰ .last().unwrap());
 		assert!(image > 0.);
 		image
@@ -102,7 +102,7 @@ impl Species {
 		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz(298.*K / well_depth_J[a]) / fz(T⃰) + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
 		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[a]/(3./2.));
 		let f_rotation = f_internal * (1. + c1);
-		let Cv_internal = thermodynamics[a].specific_heat_capacity/*at_constant_pressure_R*/(T) - 5./2. - internal_degrees_of_freedom[a];
+		let Cv_internal = thermodynamics[a].molar_heat_capacity_at_constant_pressure_R(T) - 5./2. - internal_degrees_of_freedom[a];
 		(self.viscosity(a, T)/(molar_mass[a]/NA))*K*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 	}
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
@@ -110,17 +110,17 @@ impl Species {
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T : [_; N] = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 		TransportPolynomials{
-			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, log, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))),
-			thermal_conductivity_T12: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, log, |T| self.thermal_conductivity(a,T)/sqrt(T))),
-			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, log, |T| self.binary_thermal_diffusion_coefficient(a,b,T)/pow(T,3./2.))))
+			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))),
+			thermal_conductivity_T12: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.thermal_conductivity(a,T)/sqrt(T))),
+			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.binary_thermal_diffusion_coefficient(a,b,T)/pow(T,3./2.))))
 		}
 	}
 }
 
 impl TransportPolynomials {
-	fn sqrt_viscosity(&self, a: usize, T: f64) -> f64 { sqrt(sqrt(T)) * eval_poly(&self.sqrt_viscosity_T14[a], log(T)) }
-	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {  sqrt(T) * eval_poly(&self.thermal_conductivity_T12[a], log(T)) }
-	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], log(T)) }
+	fn sqrt_viscosity(&self, a: usize, T: f64) -> f64 { sqrt(sqrt(T)) * eval_poly(&self.sqrt_viscosity_T14[a], ln(T)) }
+	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {  sqrt(T) * eval_poly(&self.thermal_conductivity_T12[a], ln(T)) }
+	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], ln(T)) }
 }
 
 #[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_molar_averaged_thermal_diffusion_coefficients: Box<[f64]> }

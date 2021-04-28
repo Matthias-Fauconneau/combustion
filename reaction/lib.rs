@@ -56,7 +56,8 @@ impl<'t> Simulation<'t> {
 	let mole_fractions = iter::map(&*state.amounts, |n| n / total_amount);
 	let molar_mass = dot(&*mole_fractions, &*species.molar_mass);
 	let mass_fractions = iter::map(mole_fractions.iter().zip(species.molar_mass.iter()), |(x,m)| x * m / molar_mass);
-	let state = [&[state.temperature / reference_state.temperature] as &[_], &*mass_fractions].concat();
+	for (&mass_fraction, name) in mass_fractions.iter().zip(species_names.iter()) { if mass_fraction != 0. { println!("{:3} {}",name, mass_fraction) } }
+	let state = [&[dbg!(state.temperature / reference_state.temperature)] as &[_], &*mass_fractions].concat();
 
 	let states = iter::box_collect(state.iter().map(|&s| std::iter::repeat(s as f64).take(states_len)).flatten());
 	let rates = vec![f64::NAN; (1/*2*/+species.len()-1)*states_len].into_boxed_slice();
