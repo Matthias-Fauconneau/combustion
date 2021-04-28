@@ -53,10 +53,11 @@ use cranelift_codegen::ir::{Function, AbiParam, types::{F64, I32}};
 		}
 	};
 	write!(w, "{}", function.signature.params.iter().enumerate().skip(1).map(|(i, AbiParam{value_type, ..})| format!("{} v{}", to_string(*value_type), i)).format(", "))?;
-	w.push_str(", double* trace");
+	w.push_str(", double* values");
 	w.push_str(r#") {
 	const unsigned int v0 = blockIdx.x * /*SIMD width*/blockDim.x + /*SIMD lane*/threadIdx.x;
 "#);
+	for (i, AbiParam{value_type, ..}) in function.signature.params.iter().enumerate().skip(1) { if value_type == F64 { write!(w, "values[{i}] = v{i};\n", i) } }
 	let f = function.dfg;
 	use iter::Single;
 	for instruction in function.layout.block_insts(function.layout.blocks().single().unwrap()) {
@@ -82,7 +83,7 @@ use cranelift_codegen::ir::{Function, AbiParam, types::{F64, I32}};
 		write!(w, ";\n")?;
 		if let [result ] = f.inst_results(instruction) { if f.value_type(*result) == F64 {
 			assert!(result.as_u32() < f.values().count() as u32);
-			write!(w, "trace[{}] = {};", result.as_u32(), result)?
+			write!(w, "values[{}] = {};", result.as_u32(), result)?
 		} }
 	}
 	write!(w, "}}")?;
@@ -97,13 +98,17 @@ use reaction::Simulation;
 	let Simulation{species_names, function, states, rates, pressure_Pa_R, reference_temperature, mass_production_rate_factor, heat_release_rate_factor} = simulation;
 	let values_count = function.dfg.values().count();
 	//std::fs::write("/var/tmp/main.cu", &cu(test())?)?;
+	dbg!();
 	let function = cu(function)?;
-	if std::fs::read("/var/tmp/main.ptx.cu")? != function {
+	dbg!();
+	if std::fs::metadata("/var/tmp/main.cu").map_or(true, |cu|
+		std::fs::read("/var/tmp/main.cu").unwrap() != function.as_bytes() ||
+		std::fs::metadata("/var/tmp/main.ptx").map_or(true, |ptx| ptx.modified().unwrap() < cu.modified().unwrap())
+	) {
 		std::fs::write("/var/tmp/main.cu", &function)?;
 		dbg!();
 		std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn()?.wait()?.success().then_some(()).unwrap();
 		dbg!();
-		std::fs::rename("/var/tmp/main.cu", "/var/tmp/main.ptx.cu")?;
 	}
 	rustacuda::init(CudaFlags::empty()).unwrap();
 	use rustacuda::{prelude::*, launch};
@@ -113,8 +118,8 @@ use reaction::Simulation;
 	let stream = Stream::new(/*irrelevant*/StreamFlags::NON_BLOCKING, None).unwrap();
 	let mut device_states = DeviceBuffer::from_slice(&states).unwrap();
 	let mut device_rates = DeviceBuffer::from_slice(&rates).unwrap();
-	let trace = vec![f64::NAN; values_count];
-	let mut device_trace = DeviceBuffer::from_slice(&trace).unwrap();
+	let values = vec![f64::NAN; values_count];
+	let mut device_values = DeviceBuffer::from_slice(&values).unwrap();
 	let width = 1;
 	let start = std::time::Instant::now();
 	//_Z6kerneldmmmmddd
@@ -127,15 +132,15 @@ use reaction::Simulation;
 		reference_temperature,
 		mass_production_rate_factor,
 		heat_release_rate_factor,
-		device_trace.as_device_ptr()
+		device_values.as_device_ptr()
 	)).unwrap()}
 	stream.synchronize().unwrap();
 	let end = std::time::Instant::now();
-	let mut trace = trace;
-	device_trace.copy_to(&mut trace).unwrap();
+	let mut values = values;
+	device_values.copy_to(&mut values).unwrap();
 	pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-	std::fs::write("/var/tmp/trace", as_bytes(&trace))?;
-	println!("{:?}", trace);
+	std::fs::write("/var/tmp/values", as_bytes(&values))?;
+	//println!("{:?}", values);
 	let time = (end-start).as_secs_f64();
 	println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f64/1e3, time*1e3, time/(states_len as f64)*1e3, (states_len as f64)/1e3/time);
 	let mut rates = rates;

@@ -5,5 +5,5 @@ num
 image
 ui
 iter
-x86emu
+wasmtime
 **/target
