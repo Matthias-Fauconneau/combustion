@@ -35,7 +35,7 @@ use cranelift_codegen::ir::{Function, AbiParam, types::{F64, I32}};
 	use std::convert::TryFrom;
 	let mut w = String::from(
 	r#"__device__ double neg(double x) { return -x; }
-	__device__ double add(double x, double y) { return x * y; }
+	__device__ double add(double x, double y) { return x + y; }
 	__device__ double sub(double x, double y) { return x - y; }
 	__device__ double mul(double x, double y) { return x * y; }
 	__device__ double div(double x, double y) { return x / y; }
