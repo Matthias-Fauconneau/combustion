@@ -25,14 +25,12 @@ pub struct Constants {
 }
 
 impl<'t> Simulation<'t> {
-#[throws] pub fn new(model: &'t [u8]) -> Self {
+#[throws] pub fn new(model: &'t [u8], states_len: usize) -> Self {
 	use combustion::*;
 	let model = model::Model::new(&model)?;
 	let (species_names, species) = combustion::Species::new(&model.species);
 	use reaction::*;
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(&species_names, r));
-	let width = 1;
-	let states_len = ((1)/width)*width;
 	let function = rate::<_,{Property::Pressure}>(&species, &*reactions, states_len);
 
 	let ref reference_state = initial_state(&model);
