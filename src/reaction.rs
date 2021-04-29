@@ -299,14 +299,14 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let [index, constant, /*state*/T, mass_fractions, /*rates*/mass_production_rates, heat_release_rates,
-				reference_temperature, mass_production_rates_factor, heat_release_rate_factor]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
+	let [index, constant, /*state*/T, mass_fractions, /*rates*/mass_rates_base, energy_rate_base,
+				reference_temperature, rcp_mass_rate, rcp_energy_rate_R]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
 	let ref mut f = Builder::new(f);
 	let offset = f.ins().ishl_imm(index, 3);
 	let T = f.ins().iadd(T, offset);
 	let mass_fractions = f.ins().iadd(mass_fractions, offset);
-	let mass_production_rates = f.ins().iadd(mass_production_rates, offset);
-	let heat_release_rates = f.ins().iadd(heat_release_rates, offset);
+	let mass_rates_ptr = f.ins().iadd(mass_rates_base, offset);
+	let energy_rate_ptr = f.ins().iadd(energy_rate_base, offset);
 	let T = f.load(/*state*/T, 0*stride);
 	let T = f.mul(reference_temperature, T);
 	let rcpT = f.rcp(T);
@@ -376,15 +376,15 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	let dtω = map(&*dtω, |dtω| dtω.unwrap());
 	//for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rates, (/*2*/+i)*stride, f); }
 	let E_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
-		let mass_production_rate = mul(mass_production_rates_factor, mul(f.c(*molar_mass), dtω, f), f);
-		store(mass_production_rate, /*rates*/mass_production_rates, (/*2+*/i)*stride, f); // Store dtω when loading dtω for dtω.E_RT
+		let mass_rate = mul(rcp_mass_rate, mul(f.c(*molar_mass), dtω, f), f);
+		store(mass_rate, /*rates*/mass_rates_ptr, (/*2+*/i)*stride, f); // Store dtω when loading dtω for dtω.E_RT
 		E_RT(f)
 	});
 	//fn dot(array: &[Value], iter: impl Iterator<Item=FnOnce(&mut FunctionBuilder)->Value>, f: &mut FunctionBuilder) -> Value { f.dot(a.iter().copied().zip(b)) }
 	macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
-	let heat_release_rate = dot!(dtω, E_RT,f);
-	// enthalpy/RT * RT * rcp_molar_mass
-	store(f.mul(heat_release_rate_factor, heat_release_rate), heat_release_rates/*rates*/, 0*stride, f);
+	let energy_rate_RT = dot!(dtω, E_RT, f);
+	let energy_rate_R = f.mul(T, energy_rate_RT);
+	store(f.mul(rcp_energy_rate_R, energy_rate_R), energy_rate_ptr/*rates*/, 0*stride, f);
 	/*let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
 	let m_rcp_ΣCCc = div(f.c(-1.), f.dot(concentrations.iter().copied().zip(Cc)), f);
 	let dtT_T = mul(m_rcp_ΣCCc, heat_release_rate, f);

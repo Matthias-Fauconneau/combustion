@@ -7,7 +7,7 @@ use reaction::Simulation;
 	let width = 32;
 	let simulation = Simulation::new(&model, 512*width)?;
 	let states_len = simulation.states_len();
-	let Simulation{species_names, function, states, rates, pressure_Pa_R, reference_temperature, mass_production_rate_factor, heat_release_rate_factor} = simulation;
+	let Simulation{species_names, function, states, rates, pressure_Pa_R, temperature, mass_rate, energy_rate_R} = simulation;
 	let values_count = function.dfg.values().count();
 	let store_values = false;
 	let function = cuda::cu(function, store_values)?;
@@ -36,9 +36,9 @@ use reaction::Simulation;
 			device_states.as_device_ptr().add(states_len),
 			device_rates.as_device_ptr().add(states_len),
 			device_rates.as_device_ptr(),
-			reference_temperature,
-			mass_production_rate_factor,
-			heat_release_rate_factor,
+			temperature,
+			1./mass_rate,
+			1./energy_rate_R,
 			device_values.as_device_ptr()
 		)).unwrap()}
 		stream.synchronize().unwrap();
@@ -48,14 +48,14 @@ use reaction::Simulation;
 		std::fs::write("/var/tmp/values", as_bytes(&values))?;
 	} else {
 		unsafe{launch!(module._Z6kerneldmmmmddd<<</*workgroupCount*/(states_len/width) as u32,/*workgroupSize*/width as u32, 0, stream>>>(
-			dbg!(pressure_Pa_R),
+			pressure_Pa_R,
 			device_states.as_device_ptr(),
 			device_states.as_device_ptr().add(states_len),
 			device_rates.as_device_ptr().add(states_len),
 			device_rates.as_device_ptr(),
-			reference_temperature,
-			mass_production_rate_factor,
-			heat_release_rate_factor
+			temperature,
+			1./mass_rate,
+			1./energy_rate_R
 		)).unwrap()}
 		stream.synchronize().unwrap();
 	}
@@ -65,4 +65,6 @@ use reaction::Simulation;
 	let mut rates = rates;
 	device_rates.copy_to(&mut rates).unwrap();
 	reaction::report(&species_names, &rates);
+	println!("{:8} {:e}", "HRR", rates[0]*energy_rate_R*8.31446261815324);
+	println!("{:8} {:e}", "HRR0", energy_rate_R*8.31446261815324);
 }
