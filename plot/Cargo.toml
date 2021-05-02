@@ -8,6 +8,10 @@ edition= "2018"
 fehler= ''
 error= {package='anyhow', version=''}
 combustion= {path='..', features=['reaction']}
+cranelift-codegen= ''
+cranelift-module= ''
+cranelift-native= ''
+cranelift-jit= ''
 cvode= {path='../cvode', features=['build_libraries']}
 ui= {git='https://github.com/Matthias-Fauconneau/ui', features=['plot']}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
@@ -18,5 +22,5 @@ xy= {git='https://github.com/Matthias-Fauconneau/xy'}
 name= 'plot'
 path= 'main.rs'
 
-[patch.'https://github.com/Matthias-Fauconneau/ui']
-ui= {path='../../ui'}
+#[patch.'https://github.com/Matthias-Fauconneau/ui']
+#ui= {path='../../ui'}

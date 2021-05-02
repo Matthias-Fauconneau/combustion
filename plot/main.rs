@@ -1,10 +1,35 @@
 #![allow(incomplete_features, non_snake_case)]
-#![feature(const_generics, const_evaluatable_checked, destructuring_assignment, array_map, unboxed_closures, fn_traits, type_ascription)]
+#![feature(const_generics, const_evaluatable_checked, destructuring_assignment, array_map, unboxed_closures, fn_traits, type_ascription, trait_alias)]
 fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U) -> U {
 	let mut value = cell.take();
 	let result = f(&mut value);
 	cell.set(value);
 	result
+}
+
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
+pub fn rate<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item/*:AsRef<Reaction>*/=&'t Reaction>) -> impl Rate<CONSTANT> {
+	let mut module = cranelift_jit::JITModule::new({
+		//let mut flag_builder = cranelift_codegen::settings::builder();
+		//use cranelift_codegen::settings::Configurable;
+		//flag_builder.enable("is_pic").unwrap();
+		//flag_builder.set("enable_probestack", "false").unwrap();
+		let isa_builder = cranelift_native::builder().unwrap();
+		let isa = isa_builder.finish(cranelift_codegen::settings::Flags::new(/*flag_builder*/cranelift_codegen::settings::builder()));
+		cranelift_jit::JITBuilder::with_isa(isa, cranelift_module::default_libcall_names())
+	});
+	use cranelift_module::Module;
+	let mut context = module.make_context();
+	context.func = combustion::reaction::rate::<_, CONSTANT>(species, reactions, 1);
+  let id = module.declare_function(&"", cranelift_module::Linkage::Export, &context.func.signature).unwrap();
+  module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
+	module.finalize_definitions();
+	let function = module.get_finalized_function(id);
+	let function = unsafe{std::mem::transmute::<_,extern fn(f64, *const f64, *mut f64, *mut f64)>(function)};
+	move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, debug: &mut [f64]| {
+		let constant = constant.0;
+		function(constant, state.0.as_ptr(), derivative.0.as_mut_ptr(), debug.as_mut_ptr());
+	}
 }
 
 use {fehler::throws, error::Error, combustion::{*, reaction::{*, Property::*}}};
@@ -37,7 +62,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let len = species.len();
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
-	let (_, rate) = rate(species, &*reactions);
+	let rate = rate(species, &*reactions);
 	let ref state = combustion::initial_state(&model);
 	let total_amount = state.amounts.iter().sum();
 
