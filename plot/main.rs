@@ -108,7 +108,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 	//let plot = || ui::plot::Plot::new(Box::new( [&["T","P","V"] as &[_], species_names] ), vec![(time, from(&state))]);
 	let plot = || ui::plot::Plot::new(Box::new( [species_names] ), vec![(time, from(&state))]);
 	let app = ui::app::App::new(Row([plot()/*, plot()*/]))?;
-	let state : StateVector<{Volume}> = state.into();
+	let state : StateVector<{Pressure}> = state.into();
 	let mut state = implicit(&state);
 	let mut cvode = cvode::CVODE::new(&state);
 	app.run(move |plots| { //: &mut Row<[ui::plot::Plot; 2]>
@@ -123,7 +123,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 		}
 		println!("{:.0} {:.0} {}", time*1e3, state[0], steps);
 		assert_eq!(time, next_time);
-		plots.0[0].values.push((time*1e3/*ms*/, from(&State::new(total_amount, constant, &StateVector::<{Volume}>(explicit(total_amount, constant.0 as f64, &state))))));
+		plots.0[0].values.push((time*1e3/*ms*/, from(&State::new(total_amount, constant, &StateVector::<{Pressure}>(explicit(total_amount, constant.0 as f64, &state))))));
 		//plots.0[1].values.push((time*1e9/*ns*/, from(&reaction(simulation, time)?)));
 		Ok(true)
 		//Err(error::anyhow!(""))

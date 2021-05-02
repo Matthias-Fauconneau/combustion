@@ -113,10 +113,10 @@ impl std::fmt::Display for State {
 	}
 }
 
-pub use cranelift::codegen::ir::types::{I32, F64};
+pub use cranelift::codegen::ir::types::{I32, F32, F64};
 use cranelift::{
 	frontend::{self as frontend, /*FunctionBuilder,*/ FunctionBuilderContext},
-	codegen::{ir::{types::Type, function::Function, Signature, InstBuilder, MemFlags, entities::{Value, SigRef, FuncRef}, AbiParam, ExternalName, ExtFuncData}, isa::CallConv},
+	codegen::{ir::{types::Type, function::Function, InstBuilder, MemFlags, entities::{Value, SigRef}, AbiParam, ExternalName, ExtFuncData}},
 };
 
 fn import(function: &mut Function, index: u32, signature: SigRef) {
@@ -135,6 +135,18 @@ impl FunctionBuilder<'t> {
 			builder: frontend::FunctionBuilder::new(function, function_builder_context),
 			constants: default(),
 	} }
+	fn u32(&mut self, value: u32) -> Value {
+		match self.constants.entry(value as u64) {
+			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.ins().iconst(I32, value as i64))
+		}
+	}
+	fn f32(&mut self, value: f32) -> Value {
+		match self.constants.entry(value.to_bits() as u64) {
+			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.ins().f32const(value))
+		}
+	}
 	fn f64(&mut self, value: f64) -> Value {
 		match self.constants.entry(value.to_bits()) {
 			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
@@ -205,11 +217,23 @@ impl Constants {
 	c: Constants,
 }
 
+macro_rules! f { // Evaluates args before borrowing self
+	[$f:ident $function:ident($arg0:expr)] => {{
+		let arg0 = $arg0;
+		$f.ins().$function(arg0)
+	}};
+	[$f:ident $function:ident($arg0:expr, $arg1:expr)] => {{
+		let arg0 = $arg0;
+		let arg1 = $arg1;
+		$f.ins().$function(arg0, arg1)
+	}};
+}
+
 impl Builder<'t> {
 	fn new(mut builder: FunctionBuilder<'t>) -> Self {
-		let signature = builder.func.import_signature(Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], call_conv: CallConv::Fast});
+		/*let signature = builder.func.import_signature(Signature{params: vec![AbiParam::new(F64)], returns: vec![AbiParam::new(F64)], call_conv: CallConv::Fast});
 		import(builder.func, Intrinsic::exp2 as u32, signature);
-		import(builder.func, Intrinsic::log2 as u32, signature);
+		import(builder.func, Intrinsic::log2 as u32, signature);*/
 		let constants = Constants::new(&mut builder);
 		Self{builder, c: constants}
 	}
@@ -226,13 +250,35 @@ impl Builder<'t> {
 			(Some(num), Some(div)) => Some(f.div(num, div)) // Perf: mul rcp would be faster (12bit)
 		}
 	}
-	fn exp2(&mut self, x: Value) -> Value {
+	/*fn exp2(&mut self, x: Value) -> Value {
 		let call = self.builder.ins().call(FuncRef::from_u32(Intrinsic::exp2 as u32), &[x]);
 		self.func.dfg.first_result(call)
 	}
 	fn log2(&mut self, x: Value) -> Value {
 		let call = self.builder.ins().call(FuncRef::from_u32(Intrinsic::log2 as u32), &[x]);
 		self.func.dfg.first_result(call)
+	}*/
+	fn exp2(&mut self, x: Value) -> Value {
+		let f = self;
+		let x = f.ins().fdemote(F32, x);
+		let x = max(x, f.c(-126.99999), f);
+		let ipart = f![f fcvt_to_sint(I32, sub(x, f.c(1./2.), f))];
+		let fpart = sub(x, f.ins().fcvt_from_sint(F32, ipart), f);
+		let expipart = f![f bitcast(F32, f![f ishl_imm(f![f iadd(ipart, f.u32(127))], 23)])];
+		let exp = [0.99999994f32, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| f.f32(c));
+		let expfpart = fma(fma(fma(fma(f.fma(exp[5], fpart, exp[4]), fpart, exp[3], f), fpart, exp[2], f), fpart, exp[1], f), fpart, exp[0], f);
+		f![f fpromote(F64, f.mul(expipart, expfpart))]
+	}
+	fn log2(&mut self, x: Value) -> Value {
+		let f = self;
+		let x = f.ins().fdemote(F32, x);
+		let i = f.ins().bitcast(I32, x);
+		let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, f.u32(0x7F800000))], 23)], f.u32(127))])];
+		let m = f![f bor(f![f bitcast(F32, f![f band(i, f.u32(0x007FFFFF))])], f.c._1)]; // isa/x64/inst/mod.rs:679
+		let log = [3.1157899f32, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f.f32(c));
+		let p = fma(fma(fma(fma(f.fma(log[5], m, log[4]), m, log[3], f), m, log[2], f), m, log[1], f), m, log[0], f);
+		let p = mul(p, sub(m, f.c._1, f), f); //?
+		f![f fpromote(F64, f.add(m, e))]
 	}
 }
 
