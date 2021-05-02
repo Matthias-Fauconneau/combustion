@@ -24,6 +24,7 @@ impl<F: Fn(&[f64])->Option<Box<[f64]>>> CVODE<F> {
 			for u in u { assert!(u.is_finite()); }
 			if let Some(f_u) = unsafe{(f as *const F).as_ref()}.unwrap()(u) {
 				for f_u in f_u.iter() { assert!(f_u.is_finite()); }
+				assert_eq!(r#mut(fu).len(), f_u.len());
 				r#mut(fu).copy_from_slice(&f_u);
 				0
 			} else { 1 }

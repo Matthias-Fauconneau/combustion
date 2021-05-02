@@ -35,7 +35,7 @@ pub struct Reaction {
 	pub model: ReactionModel,
 }
 
-use iter::{map, eval};
+use iter::map;
 
 impl Reaction {
 	pub fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}: &model::Reaction) -> Self {
@@ -74,7 +74,6 @@ impl Reaction {
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
 
 impl State {
-	//pub fn constant<const CONSTANT: Property>(&Self{pressure, volume, ..}: &Self) -> f64 { // arbitrary_self_types
 	pub fn constant<const CONSTANT: Property>(&self) -> Constant<CONSTANT> { let Self{pressure_R, volume, ..} = self;
 		Constant(*{use Property::*; match CONSTANT {Pressure => pressure_R, Volume => volume}})
 	}
@@ -84,14 +83,13 @@ use std::array::IntoIter;
 
 impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
 	fn from(State{temperature, pressure_R, volume, amounts}: &State) -> Self {
-		Self([*temperature/*, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}*/].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
+		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
 	}
 }
 
 impl State {
 	#[track_caller] pub fn new<const CONSTANT: Property>(total_amount: f64, Constant(thermodynamic_state_constant): Constant<CONSTANT>, u: &StateVector<CONSTANT>) -> Self {
 		let u = &u.0;
-		//assert!(!u.iter().any(|&n| n<0.));
 		let amounts = &u[2..];
 		let (pressure_R, volume) = {use Property::*; match CONSTANT {
 			Pressure => (thermodynamic_state_constant, u[1]),
@@ -115,7 +113,7 @@ impl std::fmt::Display for State {
 
 pub use cranelift::codegen::ir::types::{I32, F32, F64};
 use cranelift::{
-	frontend::{self as frontend, /*FunctionBuilder,*/ FunctionBuilderContext},
+	frontend::{self as frontend, FunctionBuilderContext},
 	codegen::{ir::{types::Type, function::Function, InstBuilder, MemFlags, entities::{Value, SigRef}, AbiParam, ExternalName, ExtFuncData}},
 };
 
@@ -128,7 +126,7 @@ fn import(function: &mut Function, index: u32, signature: SigRef) {
 	constants: std::collections::HashMap<u64, Value>,
 }
 
-#[derive(Debug, num_enum::TryFromPrimitive)] #[allow(non_camel_case_types)] #[repr(u32)] pub enum Intrinsic { exp2, log2 }
+//#[derive(Debug, num_enum::TryFromPrimitive)] #[allow(non_camel_case_types)] #[repr(u32)] pub enum Intrinsic { exp2, log2 }
 
 impl FunctionBuilder<'t> {
 	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self { Self{
@@ -319,9 +317,8 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 		Falloff{efficiencies, k0, troe} => {
 			let Pr = mul(f.cdot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None).unwrap(), div(arrhenius(k0, T, f), k_inf, f), f);
 			let model::Troe{A, T3, T1, T2} = *troe;
-			fn rcp(x: f64) -> f64 { 1./x }
-			let Fcent = fma(f.c(1.-A), exp2(mul(T.m, f.c(rcp(LN_2*T3)), f), f),
-												 fma(f.c(A), exp2(mul(T.m, f.c(rcp(LN_2*T1)), f), f),
+			let Fcent = fma(f.c(1.-A), exp2(mul(T.m, f.c(1./(LN_2*T3)), f), f),
+												 fma(f.c(A), exp2(mul(T.m, f.c(1./(LN_2*T1)), f), f),
 												                        exp2(mul(T.mrcp, f.c(T2/LN_2), f), f), f), f);
 			let logFcent = f.log2(Fcent);
 			let c =fma(f.c(-0.67), logFcent, f.c(-0.4*f64::log2(10.)), f);
@@ -375,9 +372,6 @@ fn reaction<'t, Reactions: IntoIterator<Item=&'t Reaction>>(Species{thermodynami
 	map(&*dtω, |dtω| dtω.unwrap())
 }
 
-//fn dot(array: &[Value], iter: impl Iterator<Item=FnOnce(&mut FunctionBuilder)->Value>, f: &mut FunctionBuilder) -> Value { f.dot(a.iter().copied().zip(b)) }
-macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
-
 pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = FunctionBuilderContext::new();
@@ -398,7 +392,7 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	let variable = f.load(state, 1*stride);
 	let (pressure_R, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
 	let total_concentration = f.mul(pressure_R, rcpT);
-	let active_amounts = eval(species.len()-1, |i| f.load(state, (2+i)*stride));
+	let active_amounts = iter::eval(species.len()-1, |i| f.load(state, (2+i)*stride));
 	let rcpV = f.rcp(volume);
 	let active_amounts = map(&*active_amounts, |&n| max(f.c._0, n, f));
 	let active_concentrations = map(&*active_amounts, |&n| f.mul(n, rcpV));
@@ -408,21 +402,22 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	let T3 = f.mul(T2, T);
 	let T4 = f.mul(T3, T);
 	let dtω = reaction(species, reactions, &*concentrations, f, T, rcpT, T2, T3, T4);
-	let a = map(&**thermodynamics, |s| s.0[1]);
+	/*let a = map(&**thermodynamics, |s| s.0[1]);
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
-	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
-	let E_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
+	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));*/
+	/*let E_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
 		store(dtω, rates, (2+i)*stride, f);
 		E_RT(f)
 	});
 	let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
 	let m_rcp_ΣCCc = div(f.c(-1.), f.fdot(concentrations.iter().copied().zip(Cc)), f);
-	let dtT_T = mul(m_rcp_ΣCCc, dot!(dtω, E_RT, f), f);
-	store(mul(dtT_T, T, f), rates, 0*stride, f);
+	macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
+	let dtT_T = mul(m_rcp_ΣCCc, dot!(dtω, E_RT, f), f);*/
+	/*store(mul(dtT_T, T, f), rates, 0*stride, f);
 	let len = species.len();
 	let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..len-1].iter().map(|w| 1. - w/molar_mass[len-1]).zip(dtω.iter().copied()), None).unwrap(), f);
 	let dtS_S = f.add(R_S_Tdtn, dtT_T);
-	store(f.mul(dtS_S, variable), rates, 1*stride, f);
+	store(f.mul(dtS_S, variable), rates, 1*stride, f);*/
 	f.ins().return_(&[]);
 	function
 }
