@@ -261,8 +261,8 @@ impl Builder<'t> {
 	fn exp2(&mut self, x: Value) -> Value {
 		let f = self;
 		let x = f.ins().fdemote(F32, x);
-		let x = max(x, f.c(-126.99999), f);
-		let ipart = f![f fcvt_to_sint(I32, sub(x, f.c(1./2.), f))];
+		let x = max(x, f.f32(-126.99999), f);
+		let ipart = f![f fcvt_to_sint(I32, sub(x, f.f32(1./2.), f))];
 		let fpart = sub(x, f.ins().fcvt_from_sint(F32, ipart), f);
 		let expipart = f![f bitcast(F32, f![f ishl_imm(f![f iadd(ipart, f.u32(127))], 23)])];
 		let exp = [0.99999994f32, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| f.f32(c));
@@ -274,10 +274,10 @@ impl Builder<'t> {
 		let x = f.ins().fdemote(F32, x);
 		let i = f.ins().bitcast(I32, x);
 		let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, f.u32(0x7F800000))], 23)], f.u32(127))])];
-		let m = f![f bor(f![f bitcast(F32, f![f band(i, f.u32(0x007FFFFF))])], f.c._1)]; // isa/x64/inst/mod.rs:679
+		let m = f![f bor(f![f bitcast(F32, f![f band(i, f.u32(0x007FFFFF))])], f.f32(1.))]; // isa/x64/inst/mod.rs:679
 		let log = [3.1157899f32, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f.f32(c));
 		let p = fma(fma(fma(fma(f.fma(log[5], m, log[4]), m, log[3], f), m, log[2], f), m, log[1], f), m, log[0], f);
-		let p = mul(p, sub(m, f.c._1, f), f); //?
+		let p = mul(p, sub(m, f.f32(1.), f), f); //?
 		f![f fpromote(F64, f.add(m, e))]
 	}
 }
@@ -335,65 +335,21 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Buil
 }
 }
 
-pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
-	let mut function = Function::new();
-	let mut function_builder_context = FunctionBuilderContext::new();
-	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
-	let entry_block = f.create_block();
-	const parameters: [Type; 9] = [I32, F64, I32, I32, I32, I32, F64, F64, F64];
-	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
-	f.append_block_params_for_function_params(entry_block);
-	f.switch_to_block(entry_block);
-	f.seal_block(entry_block);
-	let [index, constant, /*state*/T, mass_fractions, /*rates*/mass_rates_base, energy_rate_base,
-				reference_temperature, rcp_mass_rate, rcp_energy_rate_R]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
-	let ref mut f = Builder::new(f);
-	let offset = f.ins().ishl_imm(index, 3);
-	let T = f.ins().iadd(T, offset);
-	let mass_fractions = f.ins().iadd(mass_fractions, offset);
-	let mass_rates_ptr = f.ins().iadd(mass_rates_base, offset);
-	let energy_rate_ptr = f.ins().iadd(energy_rate_base, offset);
-	let T = f.load(/*state*/T, 0*stride);
-	let T = f.mul(reference_temperature, T);
-	let rcpT = f.rcp(T);
-	//let variable = f.load(state, 1*stride);
-	let (pressure_R, _volume) = {use Property::*; match CONSTANT {Pressure => (constant, /*variable*/()), Volume => (/*variable*/panic!()/*, constant*/)}};
-	let total_concentration = f.mul(pressure_R, rcpT); // n/V = P/RT
-	let species = species.len();
+fn dot<const N: usize>(constant: f64, iter: [(f64, Value); N]) -> impl /*FnOnce<(&'t mut FunctionBuilder<'t>,)>*/FnOnce(&mut FunctionBuilder<'_>)->Value {
+	move |f: &mut FunctionBuilder<'_>| { let c = f.c(constant); f.cdot(IntoIter::new(iter), Some(c)).unwrap() }
+}
 
-	/*let active_amounts = eval(len-1, |i| f.load(state, (2+i)*stride));
-	let rcpV = f.rcp(volume);
-	let active_amounts = map(&*active_amounts, |&n| max(f.c._0, n, f));
-	let active_concentrations = map(&*active_amounts, |&n| f.mul(n, rcpV));
-	let inert_concentration = sub(total_concentration, f.cdot(std::iter::repeat(1.).zip(active_concentrations.iter().copied()), None).unwrap(), f);
-	let ref concentrations = [&active_concentrations as &[_],&[inert_concentration]].concat();*/
-
-	let active_mass_fractions = eval(species-1, |i| max(f.c._0, f.load(/*state*/mass_fractions, (/*1+*/i)*stride), f)); // TODO: opt-pass: defer load in sum/dot
-	let inert_mass_fraction = sub(f.c._1, f.cdot(std::iter::repeat(1.).zip(active_mass_fractions.iter().copied()), None).unwrap(), f);
-	let ref mass_fractions = [&active_mass_fractions as &[_],&[inert_mass_fraction]].concat();
-	let rcp_molar_mass = map(&**molar_mass, |m| f.c(1./m));
-	let mean_rcp_molar_mass = f.dot(rcp_molar_mass.iter().copied().zip(mass_fractions.iter().map(|y| *y)));
-	let pressure_R = constant;
-	let density = f.div(total_concentration, mean_rcp_molar_mass);
-	let ref concentrations = map(mass_fractions.iter().copied().zip(&*rcp_molar_mass), |(y, rcp_molar_mass)| mul(density, f.mul(y, *rcp_molar_mass), f));
-
+fn reaction<'t, Reactions: IntoIterator<Item=&'t Reaction>>(Species{thermodynamics, ..}: &Species, reactions: Reactions, concentrations: &[Value], f: &mut Builder, T: Value, rcpT: Value, T2: Value, T3: Value, T4: Value) -> Box<[Value]> {
 	let logT = f.log2(T);
-	let T2 = f.mul(T, T);
-	let T3 = f.mul(T2, T);
-	let T4 = f.mul(T3, T);
 	let mT = f.neg(T);
 	let mrcpT = f.neg(rcpT);
 	let rcpT2 = f.mul(rcpT, rcpT);
 	let a = map(&**thermodynamics, |s| s.0[1]);
-
-	fn dot<const N: usize>(constant: f64, iter: [(f64, Value); N]) -> impl /*FnOnce<(&'t mut FunctionBuilder<'t>,)>*/FnOnce(&mut FunctionBuilder<'_>)->Value {
-		move |f: &mut FunctionBuilder<'_>| { let c = f.c(constant); f.cdot(IntoIter::new(iter), Some(c)).unwrap() }
-	}
-	let exp_G_RT = map(&a[..species-1], |a|
+	let exp_G_RT = map(&a[..a.len()-1], |a|
 		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
 	);
 	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f);
-	let mut dtω = vec![None; species-1].into_boxed_slice();
+	let mut dtω = vec![None; a.len()-1].into_boxed_slice();
 	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
 		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;
 		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
@@ -416,28 +372,103 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 			}
 		}
 	}
+	map(&*dtω, |dtω| dtω.unwrap())
+}
 
+//fn dot(array: &[Value], iter: impl Iterator<Item=FnOnce(&mut FunctionBuilder)->Value>, f: &mut FunctionBuilder) -> Value { f.dot(a.iter().copied().zip(b)) }
+macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
+
+pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Property>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
+	let mut function = Function::new();
+	let mut function_builder_context = FunctionBuilderContext::new();
+	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
+	let entry_block = f.create_block();
+	const parameters: [Type; 4] = [I32, I32, I32, F64];
+	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
+	f.append_block_params_for_function_params(entry_block);
+	f.switch_to_block(entry_block);
+	f.seal_block(entry_block);
+	let [index, states, rates, constant]: [Value; 4] = f.block_params(entry_block).try_into().unwrap();
+	let ref mut f = Builder::new(f);
+	let offset = f.ins().ishl_imm(index, 3);
+	let state = f.ins().iadd(states, offset);
+	let rates = f.ins().iadd(rates, offset);
+	let T = f.load(states, 0*stride);
+	let rcpT = f.rcp(T);
+	let variable = f.load(state, 1*stride);
+	let (pressure_R, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
+	let total_concentration = f.mul(pressure_R, rcpT);
+	let active_amounts = eval(species.len()-1, |i| f.load(state, (2+i)*stride));
+	let rcpV = f.rcp(volume);
+	let active_amounts = map(&*active_amounts, |&n| max(f.c._0, n, f));
+	let active_concentrations = map(&*active_amounts, |&n| f.mul(n, rcpV));
+	let inert_concentration = sub(total_concentration, f.cdot(std::iter::repeat(1.).zip(active_concentrations.iter().copied()), None).unwrap(), f);
+	let ref concentrations = [&active_concentrations as &[_],&[inert_concentration]].concat();
+	let T2 = f.mul(T, T);
+	let T3 = f.mul(T2, T);
+	let T4 = f.mul(T3, T);
+	let dtω = reaction(species, reactions, &*concentrations, f, T, rcpT, T2, T3, T4);
+	let a = map(&**thermodynamics, |s| s.0[1]);
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
 	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
-	let dtω = map(&*dtω, |dtω| dtω.unwrap());
-	//for (i, &dtω) in dtω.into_iter().enumerate() { store(f.mul(volume, dtω), rates, (/*2*/+i)*stride, f); }
 	let E_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
-		let mass_rate = mul(rcp_mass_rate, mul(f.c(*molar_mass), dtω, f), f);
-		store(mass_rate, /*rates*/mass_rates_ptr, (/*2+*/i)*stride, f); // Store dtω when loading dtω for dtω.E_RT
+		store(dtω, rates, (2+i)*stride, f);
 		E_RT(f)
 	});
-	//fn dot(array: &[Value], iter: impl Iterator<Item=FnOnce(&mut FunctionBuilder)->Value>, f: &mut FunctionBuilder) -> Value { f.dot(a.iter().copied().zip(b)) }
-	macro_rules! dot { ($a:ident, $b:ident, $f:ident) => ($f.fdot($a.iter().copied().zip($b))) }
-	let energy_rate_RT = dot!(dtω, E_RT, f);
-	let energy_rate_R = f.mul(T, energy_rate_RT);
-	store(f.mul(rcp_energy_rate_R, energy_rate_R), energy_rate_ptr/*rates*/, 0*stride, f);
-	/*let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
-	let m_rcp_ΣCCc = div(f.c(-1.), f.dot(concentrations.iter().copied().zip(Cc)), f);
-	let dtT_T = mul(m_rcp_ΣCCc, heat_release_rate, f);
-	store(mul(dtT_T, T, f), rates, 0*stride, f);*/
-	//let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..species-1].iter().map(|w| 1. - w/molar_mass[species-1]).zip(dtω.iter().copied()), None).unwrap(), f);
-	//let dtS_S = f.add(R_S_Tdtn, dtT_T);
-	//store(f.mul(dtS_S, variable), rates, 1*stride, f);
+	let Cc/*Cp|Cv*/ = a.iter().map(|a| dot(a[0], [(a[1], T), (a[2], T2), (a[3], T3), (a[4], T4)]));
+	let m_rcp_ΣCCc = div(f.c(-1.), f.fdot(concentrations.iter().copied().zip(Cc)), f);
+	let dtT_T = mul(m_rcp_ΣCCc, dot!(dtω, E_RT, f), f);
+	store(mul(dtT_T, T, f), rates, 0*stride, f);
+	let len = species.len();
+	let R_S_Tdtn = mul(f.rcp(total_concentration), f.cdot(molar_mass[0..len-1].iter().map(|w| 1. - w/molar_mass[len-1]).zip(dtω.iter().copied()), None).unwrap(), f);
+	let dtS_S = f.add(R_S_Tdtn, dtT_T);
+	store(f.mul(dtS_S, variable), rates, 1*stride, f);
 	f.ins().return_(&[]);
 	function
 }
+
+/*pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
+	let mut function = Function::new();
+	let mut function_builder_context = FunctionBuilderContext::new();
+	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
+	let entry_block = f.create_block();
+	const parameters: [Type; 9] = [I32, F64, I32, I32, I32, I32, F64, F64, F64];
+	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
+	f.append_block_params_for_function_params(entry_block);
+	f.switch_to_block(entry_block);
+	f.seal_block(entry_block);
+	let [index, pressure_R, T, mass_fractions, mass_rates_base, energy_rate_base,
+				reference_temperature, rcp_mass_rate, rcp_energy_rate_R]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
+	let ref mut f = Builder::new(f);
+	let offset = f.ins().ishl_imm(index, 3);
+	let T = f.ins().iadd(T, offset);
+	let mass_fractions = f.ins().iadd(mass_fractions, offset);
+	let mass_rates_ptr = f.ins().iadd(mass_rates_base, offset);
+	let energy_rate_ptr = f.ins().iadd(energy_rate_base, offset);
+	let T = f.load(T, 0*stride);
+	let T = f.mul(reference_temperature, T);
+	let rcpT = f.rcp(T);
+	let total_concentration = f.mul(pressure_R, rcpT);
+	let species = species.len();
+	let active_mass_fractions = eval(species-1, |i| max(f.c._0, f.load(mass_fractions, i*stride), f));
+	let inert_mass_fraction = sub(f.c._1, f.cdot(std::iter::repeat(1.).zip(active_mass_fractions.iter().copied()), None).unwrap(), f);
+	let ref mass_fractions = [&active_mass_fractions as &[_],&[inert_mass_fraction]].concat();
+	let rcp_molar_mass = map(&**molar_mass, |m| f.c(1./m));
+	let mean_rcp_molar_mass = f.dot(rcp_molar_mass.iter().copied().zip(mass_fractions.iter().map(|y| *y)));
+	let pressure_R = constant;
+	let density = f.div(total_concentration, mean_rcp_molar_mass);
+	let ref concentrations = map(mass_fractions.iter().copied().zip(&*rcp_molar_mass), |(y, rcp_molar_mass)| mul(density, f.mul(y, *rcp_molar_mass), f));
+	let dtω = reaction(species, reactions, &*concentrations, f);
+	let a = map(&**thermodynamics, |s| s.0[1]);
+	let H_RT = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
+	let H_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
+		let mass_rate = mul(rcp_mass_rate, mul(f.c(*molar_mass), dtω, f), f);
+		store(mass_rate, mass_rates_ptr, i*stride, f);
+		E_RT(f)
+	});
+	let energy_rate_RT = dot!(dtω, E_RT, f);
+	let energy_rate_R = f.mul(T, energy_rate_RT);
+	store(f.mul(rcp_energy_rate_R, energy_rate_R), energy_rate_ptr/*rates*/, 0*stride, f);
+	f.ins().return_(&[]);
+	function
+}*/
