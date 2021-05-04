@@ -19,11 +19,11 @@ name= 'interpret'
 path= 'main.rs'
 
 [patch.crates-io]
-#cranelift-interpreter= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
-#cranelift-codegen= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
-#cranelift-entity= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
-#cranelift= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
-cranelift-interpreter= {path='../../wasmtime/cranelift/interpreter'}
-cranelift-codegen= {path='../../wasmtime/cranelift/codegen'}
-cranelift-entity= {path='../../wasmtime/cranelift/entity'}
-cranelift= {path='../../wasmtime/cranelift/umbrella'}
+cranelift-interpreter= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
+cranelift-codegen= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
+cranelift-entity= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
+cranelift= {git='https://github.com/Matthias-Fauconneau/wasmtime'}
+#cranelift-interpreter= {path='../../wasmtime/cranelift/interpreter'}
+#cranelift-codegen= {path='../../wasmtime/cranelift/codegen'}
+#cranelift-entity= {path='../../wasmtime/cranelift/entity'}
+#cranelift= {path='../../wasmtime/cranelift/umbrella'}

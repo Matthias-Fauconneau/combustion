@@ -11,7 +11,7 @@ edition= '2018'
 [features]
 reaction= ['combustion/reaction','cvode']
 transport= ['combustion/transport']
-default= ['reaction']
+default= ['transport']
 
 [dependencies]
 fehler= ''
@@ -19,6 +19,10 @@ error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 itertools= ''
-combustion= {path='..'}
+combustion= {path='..', default-features= false}
 cvode= {path='../cvode', optional=true}
 trace= {git='https://github.com/Matthias-Fauconneau/trace'}
+
+[[bin]]
+name= 'main'
+path= 'main.rs'

@@ -20,12 +20,12 @@ use {fehler::throws, error::Error, combustion::*};
 		/*let TransportPolynomials{sqrt_viscosity_T14, ..} = &transport_polynomials;
 		for (specie, sqrt_viscosity_T14) in species_names.iter().zip(sqrt_viscosity_T14.iter()) { println!("{} = [{:.5}]", specie, sqrt_viscosity_T14.iter().format(", ")); }*/*/
 		let transport = |single_specie: &str, temperature_C| {
-				let pressure = 1e5/(K*NA);
+				let pressure_R = 1e5/(K*NA);
 				let temperature = 273.15+temperature_C;
 				let volume = 1.;
-				let amount = pressure * volume / (temperature * K);
+				let amount = pressure_R * volume / temperature;
 				transport::transport(&species.molar_mass, transport_polynomials,
-												&State{volume, temperature, pressure,
+												&State{volume, temperature, pressure_R,
 												amounts: {assert!(species_names.contains(&single_specie)); species_names.iter().map(|specie| if specie==&single_specie {amount} else {0.}).collect()}
 												//amounts: {let amounts=vec![0.; species_names.len()].into_boxed_slice(); amounts[species_names.iter().position(|&specie| specie==single_specie).unwrap()] = amount; amounts}
 												} )
@@ -70,4 +70,5 @@ use {fehler::throws, error::Error, combustion::*};
 		let time = (end-start).as_secs_f32();
 		println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);*/*/
 	}
+	println!("OK")
 }

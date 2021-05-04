@@ -29,9 +29,6 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	assert_eq!(state.volume, 1.);
 	let ref transport = benchmark!(transport::transport(&species.molar_mass, &transport_polynomials, state), 1);
 
-	/*let _ : std::io::Result<_> = try { std::process::Command::new("gpu-on").spawn()?.wait()? };
-	let _ : std::io::Result<_> = try { std::process::Command::new("nvidia-modprobe").spawn()?.wait()? };
-	if let Ok(modules) = std::fs::read("/proc/modules") { assert!(std::str::from_utf8(&modules).unwrap().lines().any(|line| line.starts_with("nvidia "))) };*/
 	use rustacuda::{prelude::*, launch, memory::DeviceSlice};
 	rustacuda::init(CudaFlags::empty()).expect("CUDA");
 	let device = Device::get_device(0).expect("device");
@@ -104,10 +101,10 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			let error = Error::error(reference, value);
 			if error > tolerance { println!("{}\n{:?}\n{:?}\n{:e}", label, reference, value, error); }
 		}
-		check("Viscosity", &transport.viscosity, &gpu_transport.viscosity, 2e-6);
+		check("Viscosity", &transport.viscosity, &gpu_transport.viscosity, 4e-6);
 		check("Thermal Conductivity", &transport.thermal_conductivity, &gpu_transport.thermal_conductivity, 7e-6);
 		check("Mixture molar averaged thermal diffusion coefficients", transport.mixture_molar_averaged_thermal_diffusion_coefficients.deref(),
-																																															  gpu_transport.mixture_molar_averaged_thermal_diffusion_coefficients.deref(), 9e-6);
+																																															  gpu_transport.mixture_molar_averaged_thermal_diffusion_coefficients.deref(), 2e-5);
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
 }

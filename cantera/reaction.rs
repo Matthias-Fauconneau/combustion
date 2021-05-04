@@ -1,12 +1,9 @@
-//#![allow(dead_code)]
 fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U) -> U {
 	let mut value = cell.take();
 	let result = f(&mut value);
 	cell.set(value);
 	result
 }
-//pub fn promote(v: &[f32]) -> Box<[f64]> { map(v, |&v| v as f64) }
-//pub fn demote(v: &[f64]) -> Box<[f32]> { map(v, |&v| v as f32) }
 fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
 fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Reconstructs P|V using ideal gas law
 	let temperature = u[0];
@@ -77,7 +74,6 @@ use combustion::{*, reaction::{*, Property::*}};
 		assert_eq!(cantera_equations, equations);
 	}
 	let total_amount = state.amounts.iter().sum();
-	//let volume = state.volume;
 	let constant = state.constant();
 	let state : StateVector<{Volume}> = state.into();
 	let mut state = implicit(&state);
@@ -86,11 +82,6 @@ use combustion::{*, reaction::{*, Property::*}};
 	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
 	let derivative = std::cell::Cell::new(derivative);
 	let (_, rate) = rate(species, &*reactions);
-	/*let ref derivative = move |u| get_mut(derivative, |derivative| {
-		let pressure = constant.0 as f64;
-		rate(constant, &StateVector(map(&explicit(total_amount, pressure, u), |&v| (v as f32).max(0.))), &mut vec![f64::NAN; model.reactions.len()].into_boxed_slice());
-		Some(implicit(&promote(&derivative.0)))
-	});*/
 	// CVODE shim
 	struct Derivative<Rate: self::Rate<CONSTANT>, const CONSTANT: Property> {
 		rate: Rate,
@@ -124,7 +115,6 @@ use combustion::{*, reaction::{*, Property::*}};
 		derivative
 	};
 
-	//let mut last_time = time;
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(/*demote(&*/explicit(total_amount, constant.0 as f64, &state)/*)*/);
 		let (ref equilibrium_constants, ref forward, ref reverse)/*(cantera_creation, cantera_destruction)*/ = {
@@ -147,29 +137,10 @@ use combustion::{*, reaction::{*, Property::*}};
 				unsafe{kin_getRevRatesOfProgress(kinetics, model.reactions.len(), rates.as_mut_ptr())};
 				map(&rates, |c| c*1000.) // kmol -> mol
 			};
-			//let order = |o: &[f64]| (0..species.len()).map(|i| o[cantera_species_names.iter().position(|s| s==species_names[i]).unwrap()]).collect::<Box<_>>();
-			/*let rates = {
-				let mut rates = vec![0.; len];
-				unsafe{kin_getNetProductionRates(kinetics, len, rates.as_mut_ptr())};
-				order rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
-			};*/
-			/*let creation = {
-				let mut rates = vec![0.; len];
-				unsafe{kin_getCreationRates(kinetics, len, rates.as_mut_ptr())};
-				order rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
-			}
-			let destruction = {
-				let mut rates = vec![0.; len];
-				unsafe{kin_getDestructionRates(kinetics, len, destruction_rates.as_mut_ptr())};
-				order rates.iter().map(|c| c*1000.).take(len-1).collect::<Box<_>>() // kmol -> mol
-			}
-			(creation, destruction)*/
 			(equilibrium_constants, forward, reverse)
 		};
 
 		let mut debug = vec![f64::NAN; model.reactions.len()*2].into_boxed_slice();
-		//let mut reactions_rates = vec![0.; model.reactions.len()].into_boxed_slice();
-		//let mut [creation, destruction] = [vec![0.; len].into_boxed_slice(); 2];
 		let _rate = {
 			let ref rate = derivative.rate;
 			let mut derivative = /*Derivative*/StateVector::<{Volume}>(vec![0.; 2+len-1].into_boxed_slice());
@@ -182,57 +153,19 @@ use combustion::{*, reaction::{*, Property::*}};
 		fn to_string(v: f64) -> String { if v == 0. { "0".to_owned() } else { format!("{:.0e}", v) } }
 
 		if true {
-			/*let reactions = {
-					let Model{species: Species{thermodynamics, ..}, reactions, ..} = &model;
-					let State{volume, temperature, amounts, ..} = state;
-					let T = temperature;
-					use num::log;
-					let logP0_RT = log(NASA7::reference_pressure) - log(T);
-					use iter::{vec::eval, eval};
-					let ref H = eval(thermodynamics, |s| s.specific_enthalpy(T));
-					let ref H_T = eval(H.prefix(), |H| H/T);
-					let ref G = eval!(thermodynamics.prefix(), H_T; |s, h_T| h_T - s.specific_entropy(T)); // (H-TS)/RT
-					let ref concentrations = eval(amounts, |n| n / volume);
-					let ref log_concentrations = eval(concentrations, |&c| f64::ln(c));
-					iter::box_collect(reactions.iter().map(move |Reaction{reactants, products, rate_constant, model, net, Σnet, ..}| {
-							let log_kf = log_arrhenius(rate_constant, T);
-							let c = model.efficiency(T, concentrations, log_kf);
-							let mask = |mask, v| iter::zip!(mask, v).map(|(&mask, v):(_,&_)| if mask != 0. { *v } else { 0. });
-							use iter::{into::IntoMap, vec::Dot};
-							let Rf = f64::exp(reactants.dot(mask(reactants, log_concentrations)) + log_kf);
-							let log_equilibrium_constant = -net.dot(G) + Σnet*logP0_RT;
-							let Rr = f64::exp(products.dot(mask(products, log_concentrations)) + log_kf - log_equilibrium_constant);
-							(equation, f64::exp(log_equilibrium_constant), c*Rf, c*Rr)
-					}))
-			};*/
 			let T = state_vector[0];
-			//assert!(T >= NASA7::T_split, "{} {}", T, NASA7::T_split);
 			let a = iter::map(species.thermodynamics, |s| s.0[1]);
 			let pressure_R = state_vector[1];
-			//assert_eq!(pressure_R, 101325./(K*NA));
 			let amounts = &state_vector[2..];
 			fn dot(iter: impl IntoIterator<Item=(f64, f64)>) -> f64 { iter.into_iter().map(|(a,b)| a*b).sum() }
 			use std::array::IntoIter;
 			let [rcpT, T2, T3, T4] = [1./T, T*T, T*T*T, T*T*T*T];
-			/*let G0_RT = a[..len-1].iter().map(|a| ((a[0]-a[6]))+dot(
-				IntoIter::new([(a[5], rcpT), (-a[0], f64::ln(T)), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4], T4)]),
-				)).collect():Box<_>;
-			let RT = NA*K*T;
-			let ref standard_chemical_potentials = map(&G0_RT, |g| g*RT+f64::ln(pressure_R / NASA7::reference_pressure)*RT);
-			dbg!(standard_chemical_potentials);
-			//let ref cantera_standard_chemical_potentials = RT() * log(xx);
-			//dbg!(chemical_potentials);
-			//for (&a,&b) in cantera_chemical_potentials.iter().zip(chemical_potentials.iter()) { assert!(num::relative_error(a,b) < 1e-100, "{:e}", num::relative_error(a,b)); }*/
 			let exp_G_RT = map(a[..len-1], |a| f64::exp(((a[0]-a[6]))+dot(
 				IntoIter::new([(a[5], rcpT), (-a[0], f64::ln(T)), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4], T4)]),
 				)));
 			for (((r, _e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
 			.zip(rcp_equilibrium_constants.iter().zip(equilibrium_constants.iter()))
 			.zip(cR.iter().zip(forward.iter().zip(reverse.iter()))) {
-				//if let ReactionModel::Irreversible = r.model { continue; }
-				//if num::relative_error(1./rcpK,cK) != 0. { println!("{:32} {:15.2e}", e, [1./rcpK, cK, num::relative_error(1./rcpK,cK)].iter().format(" ")); }
-				//use num::sign;
-				//assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 				fn product_of_exponentiations<T: Into<i16>>(iter: impl IntoIterator<Item=(T, f64)>) -> f64 { iter.into_iter().map(|(c,v)| f64::powi(v, c.into().into())).product() }
 				let Reaction{reactants, products, rate_constant, net, Σnet, ..} = r;
 				let P0_RT = NASA7::reference_pressure/T;
@@ -291,83 +224,35 @@ use combustion::{*, reaction::{*, Property::*}};
 				let Rf = product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied()));
 				{
 					let (a, b) = (c*Rf, forward);
-					///*if num::relative_error(a,b) != 0.*/ { println!("{:32} fwd {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(a, b) < 1e-3, "{:.3e}", num::relative_error(a, b));
-					/*assert!(num::relative_error(a, b) < 1e-3, "{:?} {:.3e} {:.3e} {:.3e} {:.3e}", net.iter().zip(exp_G_RT.iter()).filter(|(&c,_)| c != 0).map(|(c,&v)| (c, to_string(v as f64))).format(" "),
-					1./rcp_equilibrium_constant, b, num::relative_error(b, 1./rcp_equilibrium_constant), num::relative_error(cR, ccR));*/
 				}
 				if let ReactionModel::Irreversible = r.model {} else {
 					let (a, b) = (1./rcpK, cK);
-					//if num::relative_error(a,b) != 0. { println!("{:32} K {:15.3e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(1./rcp_equilibrium_constant, 1./rcpK) < 1e-3, "{:e} {:e} {:e}", num::relative_error(1./rcpK, 1./rcp_equilibrium_constant), num::relative_error(1./rcpK, cK), num::relative_error(1./rcp_equilibrium_constant, cK));
 					assert!(num::relative_error(a, b) < 1e-3, "{:.3e} {:e}", num::relative_error(a, b), num::relative_error(1./rcp_equilibrium_constant, cK));
-					/*assert!(num::relative_error(a, b) < 1e-3, "{:?} {:.3e} {:.3e} {:.3e} {:.3e}", net.iter().zip(exp_G_RT.iter()).filter(|(&c,_)| c != 0).map(|(c,&v)| (c, to_string(v as f64))).format(" "),
-					1./rcp_equilibrium_constant, b, num::relative_error(b, 1./rcp_equilibrium_constant), num::relative_error(cR, ccR));*/
 				}
 				{
 					let Rr = if let ReactionModel::Irreversible = r.model { 0. } else {
 						rcp_equilibrium_constant * product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied())) };
 					let (a, b) = (c*Rr, reverse);
-					//if num::relative_error(a,b) != 0. { println!("{:32} rev {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
 					use num::sign;
 					assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
 					assert!(num::relative_error(a, b) < 1e-5, "{:.3e}", num::relative_error(a, b));
-					/*assert!(num::relative_error(a, b) < 1e-3, "{:?} {:.3e} {:.3e} {:.3e} {:.3e}", net.iter().zip(exp_G_RT.iter()).filter(|(&c,_)| c != 0).map(|(c,&v)| (c, to_string(v as f64))).format(" "),
-					1./rcp_equilibrium_constant, b, num::relative_error(b, 1./rcp_equilibrium_constant), num::relative_error(cR, ccR));*/
 				}
 				let _ = rcp_equilibrium_constant;
-				//assert!(num::relative_error(a, b) < 1e-3, "{:?} {:.3e} {:.3e}", net.iter().zip(exp_G_RT.iter()).filter(|(&c,_)| c != 0).map(|(c,&v)| (c, to_string(v as f64))).format(" "), num::relative_error(b, 1./rcp_equilibrium_constant), num::relative_error(cR, ccR));
 			}
-			/*println!("cR");
-			for ((_r, e), (&a, &b)) in model.reactions.iter().zip(equations.iter()).zip(cR.iter().zip(_cantera_reactions.iter())) {
-				if num::relative_error(a,b) != 0. { println!("{:32} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
-				use num::sign;
-				assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
-				assert!(num::relative_error(a, b) < 1e-3);
-			}*/
-			/*for (e, (&a, &b)) in reactions.iter().zip(reactions_rates.iter().zip(cantera_reactions.iter())) {
-				let a = a as f64;
-				if num::relative_error(a,b) != 0. { println!("{:32} {:15.2e}", e, [a, b, num::relative_error(a,b)].iter().format(" ")); }
-				use num::sign;
-				assert!((sign(a)==sign(b) || (f64::max(f64::abs(a),f64::abs(b))<1e-17)) || (sign(a)==sign(b) && num::relative_error(a, b) < 0.));
-				assert!(num::relative_error(a, b) < 0.002, "{:.1e} {:.1e} {}", a, b, num::relative_error(a, b));
-			}*/
 		}
 
-		//let rate = &rate[2..];
-		//let rate = promote(&rate);
-		//let ref rate = rate.iter().map(|dtn| dtn/volume).collect::<Box<_>>();
 		fn absolute_error(a: &[f64], b: &[f64]) -> f64 { a.iter().zip(b).map(|(&a,&b)| f64::abs(a-b)).reduce(f64::max).unwrap() }
 		fn relative_error(a: &[f64], b: &[f64]) -> f64 {
 			a.iter().zip(b).map(|(&a,&b)|
 				if a.abs() < 1e-3 && b.abs() < 1e-3 { 0. } else { num::relative_error(a,b) }
 			).reduce(f64::max).unwrap()
 		}
-		/*let abs = absolute_error(rate, cantera_rates);
-		let rel = relative_error(rate, cantera_rates);
-		//println!("{} {:.5} {:e} {:e}", time*1e3, state[0], abs, rel);
-		//last_time = time;
-		if !(abs < 7e-5 && rel < 1e-3) {
-			/*fn table(labels: &[&str], a: &[f64], b: &[f64]) -> Box<[([String; 5], usize)]> {
-				labels.iter().zip(a.iter().zip(b)).filter(|(_,(&a,&b))| a.abs() > 1e-29 || b.abs() > 1e-29).map(|(&header,(&a,&b))| {
-					let column = [header.to_owned(), to_string(a), to_string(b), to_string(num::abs(a-b)), to_string(num::relative_error(a,b))];
-					let width = column.iter().map(|s| s.len()).max().unwrap();
-					(column, width)
-				}).collect()
-			}
-			fn print<const R: usize>(table: &[([String; R], usize)]) {
-				for row in 0..R { println!("{}", table.iter().format_with(" ", |(c,width), f| f(&format_args!("{:width$}", c[row], width=width)))); }
-			}
-			print(&table(&species_names[..len-1], rate, &cantera_rates[..len-1]));*/
-			for (specie, (&rate, &cantera)) in species_names[..len-1].iter().zip(rate.iter().zip(cantera_rates[..len-1].iter())).filter(|(_,(&a,&b))| a.abs() > 1e-29 || b.abs() > 1e-29) {
-				println!("{:6} {:5.0e} {:5.0e} {:5.0e} {:5.0e}", specie, rate, cantera, num::abs(rate-cantera), num::relative_error(rate, cantera));
-			}
-		}
-		assert!(abs < 7e-3 && rel < 1e-3, "{:e} {:e}", abs, rel);*/
 
 		let next_time = time + model.time_step;
 		let mut steps = 0;
@@ -379,26 +264,6 @@ use combustion::{*, reaction::{*, Property::*}};
 			steps += 1;
 		}
 		println!("{:.0} {:.0} {}", time*1e3, state[0], steps);
-		//println!("{:.0} {:.0} {:.0e} {:.0e} {}", time*1e3, state[0], abs, rel, steps);
 		assert_eq!(time, next_time);
-		/*println!("t {}", time);
-		(time, state) = {
-			let (time, state) = cvode.step(derivative, time+time_step, &state);
-			(time, state.to_vec().into_boxed_slice())
-		}*/
-
-		/*{
-			println!("T {} {} {:e}", state.temperature, cantera_state.temperature, num::relative_error(state.temperature, cantera_state.temperature));
-			print(&table(species_names, &state.amounts, &cantera_state.amounts));
-			{
-				let abs = absolute_error(&state.amounts, &cantera_state.amounts);
-				let rel = relative_error(&state.amounts, &cantera_state.amounts);
-				println!("state {:e} {:e}", abs, rel);
-				assert!(abs < 1e-8 || rel < 0., "state {:e} {:e}", abs, rel);
-			}
-		}*/
-
-		//state = *cantera_state; // Check rates along cantera trajectory
-		//break;
 	}
 }

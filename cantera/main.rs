@@ -1,6 +1,5 @@
 #![allow(mixed_script_confusables, non_snake_case, incomplete_features, confusable_idents, uncommon_codepoints)]
-#![feature(type_ascription, array_map, non_ascii_idents, const_generics, const_evaluatable_checked, destructuring_assignment, test)]
-#![feature(unboxed_closures, fn_traits)]
+#![feature(type_ascription, array_map, const_generics, const_evaluatable_checked, destructuring_assignment, test, unboxed_closures, fn_traits)]
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
