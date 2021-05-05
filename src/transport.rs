@@ -106,7 +106,7 @@ impl Species {
 		(self.viscosity(a, T)/(molar_mass[a]/NA))*K*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 	}
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
-		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., /*3000.*/1000.]; //|*K
+		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000./*1000.*/]; //|*K
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T : [_; N] = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 		TransportPolynomials{
@@ -123,7 +123,7 @@ impl TransportPolynomials {
 	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], ln(T)) }
 }
 
-#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_molar_averaged_thermal_diffusion_coefficients: Box<[f64]> }
+#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_mass_averaged_thermal_diffusion_coefficients: Box<[f64]> }
 pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure_R, volume, amounts}: &State) -> Transport {
 	let T = *temperature;
 	let viscosity = dot(zip(amounts.copied(), |k|
@@ -135,15 +135,17 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 	));
 	let amount = pressure_R * volume / T;
 	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{} {} {:e}", amounts.iter().sum::<f64>(), amount, e);}
+	let mole_fractions = iter::map(amounts.iter(), |n| n/amount);
 	let thermal_conductivity = 1./2. * (
-		dot(zip(amounts.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +
-		amount / dot(zip(amounts.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
+		dot(zip(mole_fractions.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) +
+		1. / dot(zip(mole_fractions.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
 	);
-	let mixture_molar_averaged_thermal_diffusion_coefficients = eval(amounts.len(), |k|
-		(1. - amounts[k]/amount) /
-		dot(zip(amounts.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
+	let mean_molar_mass = dot(mole_fractions.iter().copied().zip(molar_mass.iter().copied()));
+	let mixture_mass_averaged_thermal_diffusion_coefficients = eval(mole_fractions.len(), |k|
+		(1. - mole_fractions[k]*molar_mass[k]/mean_molar_mass) /
+		dot(zip(mole_fractions.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
 	);
-	Transport{viscosity, thermal_conductivity, mixture_molar_averaged_thermal_diffusion_coefficients}
+	Transport{viscosity, thermal_conductivity, mixture_mass_averaged_thermal_diffusion_coefficients}
 }
 
 #[cfg(test)] mod test;

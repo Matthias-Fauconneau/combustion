@@ -9,12 +9,15 @@ const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 pub mod model;
 use model::Element;
 
-#[derive(PartialEq, Debug, /*Eq*/)] pub struct NASA7(pub [[f64; 7]; 2]);
+#[derive(PartialEq)] pub struct NASA7 {
+	pub temperature_split : f64,
+	pub pieces: [[f64; 7]; 2],
+}
+
 impl NASA7 {
-	pub const reference_pressure : f64 = 101325. / (K*NA); // 1 atm
-	pub const temperature_split : f64 = 1000.;
-	pub fn a(&self, T: f64) -> &[f64; 7] { &self.0[if T < Self::temperature_split { 0 } else { 1 }] }
-	pub fn molar_heat_capacity_at_constant_pressure_R(&self, T: f64) -> f64 { let a = self.a(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
+	pub const reference_pressure : f64 = 101325. / (K*NA);
+	pub fn piece(&self, T: f64) -> &[f64; 7] { &self.pieces[if T < self.temperature_split { 0 } else { 1 }] }
+	pub fn molar_heat_capacity_at_constant_pressure_R(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
 }
 
 use {std::{convert::TryInto, lazy::SyncLazy}, linear_map::LinearMap as Map};
@@ -23,7 +26,7 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 	.into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
-#[derive(Debug)] pub struct Species {
+pub struct Species {
 	pub molar_mass: Box<[f64]>,
 	pub thermodynamics: Box<[NASA7]>,
 	diameter: Box<[f64]>,
@@ -47,8 +50,8 @@ impl Species {
 		use iter::map;
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
-			[_,temperature_split,_] if temperature_split == NASA7::temperature_split => NASA7(pieces[..].try_into().unwrap()),
-			[min, max] if min < NASA7::temperature_split && NASA7::temperature_split < max => NASA7([pieces[0]; 2]),
+			[_,temperature_split,_] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
+			[min, max] => NASA7{temperature_split: f64::INFINITY, pieces: [pieces[0]; 2]},
 			ref ranges => panic!("{:?}", ranges),
 		});
 		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);
