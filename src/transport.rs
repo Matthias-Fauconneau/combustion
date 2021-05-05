@@ -50,7 +50,6 @@ impl Species {
 		let Self{molar_mass, ..} = self;
 		molar_mass[a]/NA * molar_mass[b]/NA / (molar_mass[a]/NA + molar_mass[b]/NA) // reduced_mass (a,a) = W/2NA
 	}
-
 	fn χ(&self, a: usize, b: usize) -> f64 { // Corrections to the effective diameter and well depth to account for interaction between a polar and a non-polar molecule
 		let Self{diameter, well_depth_J, polarizability, permanent_dipole_moment, ..} = self;
 		if (permanent_dipole_moment[a]>0.) == (permanent_dipole_moment[b]>0.) { 1. } else {
@@ -62,8 +61,8 @@ impl Species {
 		let Self{well_depth_J, ..} = self;
 		sqrt(well_depth_J[a]*well_depth_J[b]) * sq(self.χ(a, b))
 	}
-	fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * K / self.interaction_well_depth(a, b) }
-	fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 { // ̃δ⃰ Cantera
+	pub fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * K / self.interaction_well_depth(a, b) }
+	pub fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 {
 		let Self{well_depth_J, permanent_dipole_moment, diameter, ..} = self;
 		permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.))
 	}
@@ -71,25 +70,26 @@ impl Species {
 		let Self{diameter, ..} = self;
 		(diameter[a] + diameter[b])/2. * pow(self.χ(a, b), -1./6.)
 	}
-	fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
-		let ln_T⃰ = ln(self.T⃰ (a, a, T));
+	pub fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
+		let ln_T⃰ = ln(self.T⃰ (a, b, T));
 		let δ⃰ = self.reduced_dipole_moment(a, b);
 		/*const*/let header_ln_T⃰ = vec::eval(header_T⃰.copied(), ln);
 		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, header_ln_T⃰.len()-3);
 		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		let polynomials: &[_; 3] = &table[interpolation_start_index..][..3].try_into().unwrap();
+		//println!("{:?}", (a,b,T,self.interaction_well_depth(a, b),self.T⃰ (a, b, T),ln_T⃰, interpolation_start_index, header_ln_T⃰, from_iter::<_,_,3>(polynomials.map(|P| eval_poly(P, δ⃰ )))));
 		let image = quadratic_interpolation(header_ln_T⃰, &from_iter(polynomials.map(|P| eval_poly(P, δ⃰ ))), ln_T⃰);
 		assert!(*header_ln_T⃰ .first().unwrap() <= ln_T⃰  && ln_T⃰  <= *header_ln_T⃰ .last().unwrap());
 		assert!(*header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *header_δ⃰ .last().unwrap());
 		assert!(image > 0.);
 		image
 	}
-	fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral(&Ω⃰22, a, b, T) }
+	pub fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral(&Ω⃰22, a, b, T) }
 	/**/pub fn viscosity(&self, a: usize, T: f64) -> f64 {
 		let Self{molar_mass, diameter, ..} = self;
 		5./16. * sqrt(π * molar_mass[a]/NA * K*T) / (self.Ω⃰22(a, a, T) * π * sq(diameter[a]))
 	}
-	fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral(&A⃰, a, b, T) }
+	pub fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral(&A⃰, a, b, T) }
 	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 {
 		3./16. * sqrt(2.*π/self.reduced_mass(a,b)) * pow(K*T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
@@ -123,7 +123,7 @@ impl TransportPolynomials {
 	/**/pub fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 { pow(T,3./2.) * eval_poly(&self.binary_thermal_diffusion_coefficients_T32[if a>b {a} else {b}][if a>b {b} else {a}], ln(T)) }
 }
 
-#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_mass_averaged_thermal_diffusion_coefficients: Box<[f64]> }
+#[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_diffusion_coefficients: Box<[f64]> }
 pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure_R, volume, amounts}: &State) -> Transport {
 	let T = *temperature;
 	let viscosity = dot(zip(amounts.copied(), |k|
@@ -141,11 +141,11 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 		1. / dot(zip(mole_fractions.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
 	);
 	let mean_molar_mass = dot(mole_fractions.iter().copied().zip(molar_mass.iter().copied()));
-	let mixture_mass_averaged_thermal_diffusion_coefficients = eval(mole_fractions.len(), |k|
+	let mixture_diffusion_coefficients = eval(mole_fractions.len(), |k|
 		(1. - mole_fractions[k]*molar_mass[k]/mean_molar_mass) /
 		dot(zip(mole_fractions.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
 	);
-	Transport{viscosity, thermal_conductivity, mixture_mass_averaged_thermal_diffusion_coefficients}
+	Transport{viscosity, thermal_conductivity, mixture_diffusion_coefficients}
 }
 
 #[cfg(test)] mod test;

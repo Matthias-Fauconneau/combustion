@@ -11,7 +11,7 @@ use {fehler::throws, error::Error};
 #[cfg(feature="transport")] mod transport;
 
 #[throws] fn main() {
-	trace::rstack_self()?; trace::signal_interrupt();
+	#[cfg(feature="trace")] { trace::rstack_self()?; trace::signal_interrupt(); }
 	let model = std::fs::read("CH4+O2.ron")?;
 	let ref model = combustion::model::Model::new(&model)?;
 	let ref state = combustion::initial_state(model);

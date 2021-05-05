@@ -18,10 +18,10 @@ fehler= ''
 error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-itertools= ''
+#itertools= ''
 combustion= {path='..', default-features= false}
 cvode= {path='../cvode', optional=true}
-trace= {git='https://github.com/Matthias-Fauconneau/trace'}
+trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 [[bin]]
 name= 'main'
