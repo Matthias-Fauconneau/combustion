@@ -22,9 +22,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	use combustion::{*, transport::*};
 	let model = model::Model::new(&model)?;
 	let ref state = initial_state(&model);
-	//#[cfg(feature="transport")] {
 	let (_species_names, species) = combustion::Species::new(&model.species);
-	//dbg!(species.len());
 	let transport_polynomials = species.transport_polynomials();
 	assert_eq!(state.volume, 1.);
 	let ref transport = benchmark!(transport::transport(&species.molar_mass, &transport_polynomials, state), 1);
@@ -56,8 +54,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	let mut amounts_buffer = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n as f32).take(len)).flatten())).unwrap();
 	let mut viscosity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
 	let mut thermal_conductivity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
-	let mut mixture_molar_averaged_thermal_diffusion_coefficients =
-		DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|_| std::iter::repeat(f32::NAN).take(len)).flatten())).unwrap();
+	let mut mixture_diffusion_coefficients = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|_| std::iter::repeat(f32::NAN).take(len)).flatten())).unwrap();
 
 	for _ in 0..1 {
 		let start = std::time::Instant::now();
@@ -65,7 +62,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			launch!(module.rates_transport<<</*workgroupCount*/(len/stride) as u32,/*workgroupSize*/stride as u32, 0, stream>>>(
 				len, (*pressure_R) as f32,
 				temperature.as_device_ptr(), amounts_buffer.as_device_ptr(), viscosity.as_device_ptr(),
-				thermal_conductivity.as_device_ptr(), mixture_molar_averaged_thermal_diffusion_coefficients.as_device_ptr())).expect("launch");
+				thermal_conductivity.as_device_ptr(), mixture_diffusion_coefficients.as_device_ptr())).expect("launch");
 		}
 		stream.synchronize().expect("synchronize");
 		let end = std::time::Instant::now();
@@ -91,7 +88,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 		let gpu_transport = Transport{
 			viscosity: all_same(&viscosity) as f64,
 			thermal_conductivity: all_same(&thermal_conductivity) as f64,
-			mixture_molar_averaged_thermal_diffusion_coefficients: iter::map(map_all_same(&mixture_molar_averaged_thermal_diffusion_coefficients, len).iter(), |&v| v as f64)
+			mixture_diffusion_coefficients: iter::map(map_all_same(&mixture_diffusion_coefficients, len).iter(), |&v| v as f64)
 		};
 
 		pub trait Error { fn error(&self, o: &Self) -> f64; }
@@ -102,9 +99,8 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 			if error > tolerance { println!("{}\n{:?}\n{:?}\n{:e}", label, reference, value, error); }
 		}
 		check("Viscosity", &transport.viscosity, &gpu_transport.viscosity, 4e-6);
-		check("Thermal Conductivity", &transport.thermal_conductivity, &gpu_transport.thermal_conductivity, 7e-6);
-		check("Mixture molar averaged thermal diffusion coefficients", transport.mixture_molar_averaged_thermal_diffusion_coefficients.deref(),
-																																															  gpu_transport.mixture_molar_averaged_thermal_diffusion_coefficients.deref(), 2e-5);
+		check("Thermal Conductivity", &transport.thermal_conductivity, &gpu_transport.thermal_conductivity, 5e-6);
+		check("Mixture diffusion coefficients", transport.mixture_diffusion_coefficients.deref(), gpu_transport.mixture_diffusion_coefficients.deref(), 4e-6);
 		println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", len as f32/1e3, time*1e3, time/(len as f32)*1e3, (len as f32)/1e3/time);
 	}
 }

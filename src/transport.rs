@@ -134,16 +134,14 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 		))
 	));
 	let amount = pressure_R * volume / T;
-	{let e = f64::abs(amounts.iter().sum::<f64>()-amount)/amount; assert!(e < 2e-16, "{} {} {:e}", amounts.iter().sum::<f64>(), amount, e);}
-	let mole_fractions = iter::map(amounts.iter(), |n| n/amount);
 	let thermal_conductivity = 1./2. * (
-		dot(zip(mole_fractions.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) +
-		1. / dot(zip(mole_fractions.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
+		dot(zip(amounts.copied(), |k| transport_polynomials.thermal_conductivity(k, T))) / amount +
+		amount / dot(zip(amounts.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
 	);
-	let mean_molar_mass = dot(mole_fractions.iter().copied().zip(molar_mass.iter().copied()));
-	let mixture_diffusion_coefficients = eval(mole_fractions.len(), |k|
-		(1. - mole_fractions[k]*molar_mass[k]/mean_molar_mass) /
-		dot(zip(mole_fractions.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
+	let mean_molar_mass = dot(amounts.iter().copied().zip(molar_mass.iter().copied()));
+	let mixture_diffusion_coefficients = eval(amounts.len(), |k|
+		(1. - amounts[k]*molar_mass[k]/mean_molar_mass) * amount /
+		dot(zip(amounts.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
 	);
 	Transport{viscosity, thermal_conductivity, mixture_diffusion_coefficients}
 }

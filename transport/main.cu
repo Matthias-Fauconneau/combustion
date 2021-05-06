@@ -20,7 +20,7 @@ extern "C" __global__ void rates_transport(
 		const uint len,
 		const float pressure_R,
 		float* temperature, float* _amounts,
-		float* viscosity, float* _thermal_conductivity, float* mixture_molar_averaged_thermal_diffusion_coefficients) {
+		float* viscosity, float* _thermal_conductivity, float* mixture_diffusion_coefficients) {
 	const float volume = 1.;
 	const uint i = blockIdx.x * /*SIMD width*/blockDim.x + /*SIMD lane*/threadIdx.x;
 	float T = temperature[i];
@@ -43,6 +43,8 @@ extern "C" __global__ void rates_transport(
 		dot_amounts_rcp_thermal_conductivities += amounts[k] / thermal_conductivity_k_T;
 	}
 	_thermal_conductivity[i] = 1./2. * (dot_amounts_thermal_conductivities / amount + amount / dot_amounts_rcp_thermal_conductivities);
+
+	float mean_molar_mass = dot(molar_mass, amounts);
 	for(uint k=0;k<SPECIES;k++) {
 		float generate_j[SPECIES];
 		for(uint j=0;j<SPECIES;j++) {
@@ -52,6 +54,6 @@ extern "C" __global__ void rates_transport(
 				generate_j[j] = 0.;
 			}
 		}
-		mixture_molar_averaged_thermal_diffusion_coefficients[k*len+i] = (1. - amounts[k]/amount) / dot(amounts, generate_j);
+		mixture_diffusion_coefficients[k*len+i] = (1. - amounts[k]*molar_mass[k]/mean_molar_mass) * amount / dot(amounts, generate_j);
 	}
 }
