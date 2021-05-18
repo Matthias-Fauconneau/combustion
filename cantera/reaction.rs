@@ -37,8 +37,8 @@ use combustion::{*, reaction::{*, Property::*}};
 #[throws] pub fn check(model: &model::Model, state: &State) {
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let len = species.len();
-	let reactions = map(&model.reactions, |r| Reaction::new(species_names, r));
-	let equations = map(&reactions, |Reaction{reactants, products, model, ..}| {
+	let reactions = iter::map(&model.reactions, |r| Reaction::new(species_names, r));
+	let equations = iter::map(&reactions, |Reaction{reactants, products, model, ..}| {
 		format!("{}", [reactants, products].iter().format_with(if let ReactionModel::Irreversible = model { " => " } else { " <=> " }, |side, f| {
 			f(&side.iter().enumerate().filter(|(_,&ν)| ν > 0)
 				.sorted_by_key(|&(k,_)| species_names[k])
@@ -64,15 +64,9 @@ use combustion::{*, reaction::{*, Property::*}};
 	assert!(state.amounts.len() == len && !state.amounts.iter().any(|&n| n<0.));
 	let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 	let kinetics = unsafe{kin_newFromFile(file, name, phase, 0, 0, 0, 0)};
-	{
-		let cantera_equations= (0..reactions.len()).map(|i| {
-			let mut reaction = [0; 64];
-			unsafe{kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr())};
-			unsafe{std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()}
-		}).collect::<Box<_>>();
-		for (cantera, equation) in cantera_equations.iter().zip(equations.iter()) { assert_eq!(cantera, equation); }
-		assert_eq!(cantera_equations, equations);
-	}
+	assert_eq!(equations, iter::eval(reactions.len(), |i| unsafe {
+		let mut reaction = [0; 64]; kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr()); std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()
+	}));
 	let total_amount = state.amounts.iter().sum();
 	let constant = state.constant();
 	let state : StateVector<{Volume}> = state.into();
@@ -118,7 +112,7 @@ use combustion::{*, reaction::{*, Property::*}};
 	while std::hint::black_box(true) {
 		let ref state_vector = StateVector(/*demote(&*/explicit(total_amount, constant.0 as f64, &state)/*)*/);
 		let (ref equilibrium_constants, ref forward, ref reverse)/*(cantera_creation, cantera_destruction)*/ = {
-			let state = State::new(total_amount, constant, &StateVector(map(state_vector, |v| f64::max(0., *v))));
+			let state = State::new(total_amount, constant, &StateVector(iter::map(state_vector, |v| f64::max(0., *v))));
 			unsafe{thermo_setMoleFractions(phase, state.amounts.len(), cantera_order(&state.amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 			unsafe{thermo_setTemperature(phase, state.temperature)};
 			unsafe{thermo_setPressure(phase, state.pressure_R * (K*NA))}; // /!\ Needs to be set after mole fractions
@@ -130,12 +124,12 @@ use combustion::{*, reaction::{*, Property::*}};
 			let forward = {
 				let mut rates = vec![0.; model.reactions.len()];
 				unsafe{kin_getFwdRatesOfProgress(kinetics, model.reactions.len(), rates.as_mut_ptr())};
-				map(&rates, |c| c*1000.) // kmol -> mol
+				iter::map(&rates, |c| c*1000.) // kmol -> mol
 			};
 			let reverse = {
 				let mut rates = vec![0.; model.reactions.len()];
 				unsafe{kin_getRevRatesOfProgress(kinetics, model.reactions.len(), rates.as_mut_ptr())};
-				map(&rates, |c| c*1000.) // kmol -> mol
+				iter::map(&rates, |c| c*1000.) // kmol -> mol
 			};
 			(equilibrium_constants, forward, reverse)
 		};
@@ -160,7 +154,7 @@ use combustion::{*, reaction::{*, Property::*}};
 			fn dot(iter: impl IntoIterator<Item=(f64, f64)>) -> f64 { iter.into_iter().map(|(a,b)| a*b).sum() }
 			use std::array::IntoIter;
 			let [rcpT, T2, T3, T4] = [1./T, T*T, T*T*T, T*T*T*T];
-			let exp_G_RT = map(a[..len-1], |a| f64::exp(((a[0]-a[6]))+dot(
+			let exp_G_RT = iter::map(a[..len-1], |a| f64::exp(((a[0]-a[6]))+dot(
 				IntoIter::new([(a[5], rcpT), (-a[0], f64::ln(T)), (-a[1]/2., T), ((1./3.-1./2.)*a[2], T2), ((1./4.-1./3.)*a[3], T3), ((1./5.-1./4.)*a[4], T4)]),
 				)));
 			for (((r, _e), (&rcpK, &cK)), (&_cR, (&forward, &reverse))) in reactions.iter().zip(equations.iter())
@@ -216,8 +210,8 @@ use combustion::{*, reaction::{*, Property::*}};
 				let volume = constant.0;
 				let rcpV = 1./volume;
 				let total_concentration = pressure_R/T;
-				let amounts = map(amounts, |n| f64::max(0., *n));
-				let concentrations = map(&amounts, |&n| n*rcpV);
+				let amounts = iter::map(amounts, |n| f64::max(0., *n));
+				let concentrations = iter::map(&amounts, |&n| n*rcpV);
 				let Ca = total_concentration - dot(std::iter::repeat(1.).zip(concentrations.iter().copied()));
 				let ref concentrations = [&concentrations as &[_],&[Ca]].concat();
 				let c = k_inf * efficiency(&r.model, T, concentrations, k_inf);

@@ -394,48 +394,26 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	function
 }
 
-/*pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>>(species@Species{molar_mass, thermodynamics, heat_capacity_ratio, ..}: &Species, reactions: Reactions, stride: usize) -> Function {
-	let mut function = Function::new();
-	let mut function_builder_context = FunctionBuilderContext::new();
-	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
-	let entry_block = f.create_block();
-	const parameters: [Type; 9] = [I32, F64, I32, I32, I32, I32, F64, F64, F64];
-	f.func.signature.params = map(&parameters, |t| AbiParam::new(*t)).to_vec();
-	f.append_block_params_for_function_params(entry_block);
-	f.switch_to_block(entry_block);
-	f.seal_block(entry_block);
-	let [index, pressure_R, T, mass_fractions, mass_rates_base, energy_rate_base,
-				reference_temperature, rcp_mass_rate, rcp_energy_rate_R]: [Value; 9] = f.block_params(entry_block).try_into().unwrap();
-	let ref mut f = Builder::new(f);
-	let offset = f.ins().ishl_imm(index, 3);
-	let T = f.ins().iadd(T, offset);
-	let mass_fractions = f.ins().iadd(mass_fractions, offset);
-	let mass_rates_ptr = f.ins().iadd(mass_rates_base, offset);
-	let energy_rate_ptr = f.ins().iadd(energy_rate_base, offset);
-	let T = f.load(T, 0*stride);
-	let T = f.mul(reference_temperature, T);
-	let rcpT = f.rcp(T);
-	let total_concentration = f.mul(pressure_R, rcpT);
-	let species = species.len();
-	let active_mass_fractions = eval(species-1, |i| max(f.c._0, f.load(mass_fractions, i*stride), f));
-	let inert_mass_fraction = sub(f.c._1, f.cdot(std::iter::repeat(1.).zip(active_mass_fractions.iter().copied()), None).unwrap(), f);
-	let ref mass_fractions = [&active_mass_fractions as &[_],&[inert_mass_fraction]].concat();
-	let rcp_molar_mass = map(&**molar_mass, |m| f.c(1./m));
-	let mean_rcp_molar_mass = f.dot(rcp_molar_mass.iter().copied().zip(mass_fractions.iter().map(|y| *y)));
-	let pressure_R = constant;
-	let density = f.div(total_concentration, mean_rcp_molar_mass);
-	let ref concentrations = map(mass_fractions.iter().copied().zip(&*rcp_molar_mass), |(y, rcp_molar_mass)| mul(density, f.mul(y, *rcp_molar_mass), f));
-	let dtω = reaction(species, reactions, &*concentrations, f);
-	let a = map(&**thermodynamics, |s| s.0[1]);
-	let H_RT = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
-	let H_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
-		let mass_rate = mul(rcp_mass_rate, mul(f.c(*molar_mass), dtω, f), f);
-		store(mass_rate, mass_rates_ptr, i*stride, f);
-		E_RT(f)
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
+#[cfg(feature="jit")] pub fn rate_function<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item=&'t Reaction>) -> impl Rate<CONSTANT> {
+	let mut module = cranelift_jit::JITModule::new({
+		let flag_builder = cranelift_codegen::settings::builder();
+		use cranelift_codegen::settings::Configurable;
+		let mut flag_builder = flag_builder;
+		flag_builder.enable("is_pic").unwrap();
+		flag_builder.set("enable_probestack", "false").unwrap();
+		cranelift_jit::JITBuilder::with_isa(cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(flag_builder)), cranelift_module::default_libcall_names())
 	});
-	let energy_rate_RT = dot!(dtω, E_RT, f);
-	let energy_rate_R = f.mul(T, energy_rate_RT);
-	store(f.mul(rcp_energy_rate_R, energy_rate_R), energy_rate_ptr/*rates*/, 0*stride, f);
-	f.ins().return_(&[]);
-	function
-}*/
+	use cranelift_module::Module;
+	let mut context = module.make_context();
+	context.func = rate::<_, CONSTANT>(species, reactions, 1);
+  let id = module.declare_function(&"", cranelift_module::Linkage::Export, &context.func.signature).unwrap();
+  module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
+	module.finalize_definitions();
+	let function = module.get_finalized_function(id);
+	let function = unsafe{std::mem::transmute::<_,extern fn(u64, f64, *const f64, *mut f64)>(function)};
+	move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, _debug: &mut [f64]| {
+		let constant = constant.0;
+		function(0, constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
+	}
+}

@@ -9,19 +9,19 @@ edition= '2018'
 #bindgen= ''
 
 [features]
-reaction= ['combustion/reaction','cvode']
+reaction= ['combustion/reaction','cvode','itertools']
 transport= ['combustion/transport']
-default= ['transport']
+default= ['reaction']
 
 [dependencies]
 fehler= ''
 error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-#itertools= ''
-combustion= {path='..', default-features= false}
+combustion= {path='..', default-features= false, features=['reaction','jit']}
 cvode= {path='../cvode', optional=true}
 trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
+itertools= {version='', optional=true}
 
 [[bin]]
 name= 'main'

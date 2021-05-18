@@ -14,7 +14,7 @@ fn r#mut<'t>(v: N_Vector) -> &'t mut [f64] {
 pub struct CVODE<F: Fn(&[f64])->Option<Box<[f64]>>>(*mut void, std::marker::PhantomData<F>);
 
 impl<F: Fn(&[f64])->Option<Box<[f64]>>> CVODE<F> {
-	pub fn new(u: &[f64]) -> Self {
+	pub fn new(relative_tolerance: f64, absolute_tolerance: f64, u: &[f64]) -> Self {
 		let cvode = unsafe{CVodeCreate(CV_BDF)};
 		fn to_str<'t>(s: *const i8) -> &'t str { unsafe{std::ffi::CStr::from_ptr(s)}.to_str().unwrap() }
 		extern "C" fn err(_error_code: i32, _module: *const i8, function: *const i8, msg: *mut i8, _user_data: *mut void) { panic!("{}: {}", to_str(function), to_str(msg)); }
@@ -31,7 +31,7 @@ impl<F: Fn(&[f64])->Option<Box<[f64]>>> CVODE<F> {
 		}
 		let /*mut*/ u = n_vector(u);
 		assert_eq!(unsafe{CVodeInit(cvode, Some(shim::<F>), /*t0:*/ 0., u)}, CV_SUCCESS);
-		assert_eq!(unsafe{CVodeSStolerances(cvode, /*relative_tolerance:*/ 1e-8, /*absolute_tolerance:*/ 1e-14)}, CV_SUCCESS);
+		assert_eq!(unsafe{CVodeSStolerances(cvode, relative_tolerance, absolute_tolerance)}, CV_SUCCESS);
 		let A = unsafe{SUNDenseMatrix(len(u) as i64, len(u) as i64)};
 		assert_eq!(unsafe{CVodeSetLinearSolver(cvode, SUNDenseLinearSolver(u, A), A)}, CV_SUCCESS);
 		CVODE(cvode, std::marker::PhantomData)

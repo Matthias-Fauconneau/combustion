@@ -7,30 +7,6 @@ fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U
 	result
 }
 
-pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
-pub fn rate<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item/*:AsRef<Reaction>*/=&'t Reaction>) -> impl Rate<CONSTANT> {
-	let mut module = cranelift_jit::JITModule::new({
-		let flag_builder = cranelift_codegen::settings::builder();
-		use cranelift_codegen::settings::Configurable;
-		let mut flag_builder = flag_builder;
-		flag_builder.enable("is_pic").unwrap();
-		flag_builder.set("enable_probestack", "false").unwrap();
-		cranelift_jit::JITBuilder::with_isa(cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(flag_builder)), cranelift_module::default_libcall_names())
-	});
-	use cranelift_module::Module;
-	let mut context = module.make_context();
-	context.func = combustion::reaction::rate::<_, CONSTANT>(species, reactions, 1);
-  let id = module.declare_function(&"", cranelift_module::Linkage::Export, &context.func.signature).unwrap();
-  module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
-	module.finalize_definitions();
-	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(u64, f64, *const f64, *mut f64/*, *mut f64*/)>(function)};
-	move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, _debug: &mut [f64]| {
-		let constant = constant.0;
-		function(0, constant, state.0.as_ptr(), derivative.0.as_mut_ptr()/*, debug.as_mut_ptr()*/);
-	}
-}
-
 use {fehler::throws, error::Error, combustion::{*, reaction::{*, Property::*}}};
 
 struct Row<W, const N: usize>([W; N]);
@@ -109,7 +85,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 	let app = ui::app::App::new(Row([plot()/*, plot()*/]))?;
 	let state : StateVector<{Pressure}> = state.into();
 	let mut state = implicit(&state);
-	let mut cvode = cvode::CVODE::new(&state);
+	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-5, &state);
 	app.run(move |plots| { //: &mut Row<[ui::plot::Plot; 2]>
 		let next_time = time + model.time_step;
 		let mut steps = 0;
