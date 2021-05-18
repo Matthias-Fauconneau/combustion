@@ -6,7 +6,7 @@ edition= "2018"
 
 [dependencies]
 fehler= ''
-error= {package='anyhow', version=''}
+anyhow= ''
 combustion= {path='..', features=['reaction']}
 cranelift-codegen= ''
 cranelift-module= ''

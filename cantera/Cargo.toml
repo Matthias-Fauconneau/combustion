@@ -14,8 +14,6 @@ transport= ['combustion/transport']
 default= ['reaction']
 
 [dependencies]
-fehler= ''
-error= {package='anyhow', version=''}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 combustion= {path='..', default-features= false, features=['reaction','jit']}
