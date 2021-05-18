@@ -120,7 +120,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 			};
 			steps += 1;
 		}
-		println!("{:.0} {:.0} {}", time*1e3, state[0], steps);
+		println!("{:.0}ms {:.0}K {}", time*1e3, state[0], steps);
 		assert_eq!(time, next_time);
 		plots.0[0].values.push((time*1e3/*ms*/, from(&State::new(total_amount, constant, &StateVector::<{Pressure}>(explicit(total_amount, constant.0 as f64, &state))))));
 		//plots.0[1].values.push((time*1e9/*ns*/, from(&reaction(simulation, time)?)));
