@@ -1,5 +1,5 @@
 #![allow(incomplete_features, non_snake_case)]
-#![feature(const_generics, const_evaluatable_checked, destructuring_assignment, array_map, unboxed_closures, fn_traits, type_ascription, trait_alias)]
+#![feature(const_generics, const_evaluatable_checked, destructuring_assignment, array_map, unboxed_closures, fn_traits, type_ascription, trait_alias, box_patterns)]
 fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U) -> U {
 	let mut value = cell.take();
 	let result = f(&mut value);
@@ -29,7 +29,7 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 	[temperature, volume].iter().chain(&u[1..]).copied().collect()
 }
 
-fn main() -> anyhow::Result<()> {
+#[fehler::throws(anyhow::Error)] fn main() {
 	let model = &std::fs::read("CH4+O2.ron").unwrap();
 	use combustion::{*, reaction::{*, Property::*}};
 	let model = model::Model::new(&model).unwrap();
@@ -58,8 +58,7 @@ fn main() -> anyhow::Result<()> {
 			let Self{rate, constant, total_amount, derivative} = self;
 			get_mut(derivative, |mut derivative| {
 				let pressure_R = constant.0 as f64;
-				let mut debug = vec![f64::NAN; /*model.reactions.len()*/325*2].into_boxed_slice();
-				rate(*constant, &StateVector(explicit(*total_amount, pressure_R, u)), &mut derivative, &mut debug);
+				rate(*constant, &StateVector(explicit(*total_amount, pressure_R, u)), &mut derivative);
 				Some(implicit(&derivative.0))
 			})
 		}
@@ -75,23 +74,40 @@ fn main() -> anyhow::Result<()> {
 	};
 
 	fn from(State{temperature, pressure_R: _, volume, amounts, ..}: &State) -> Box<[Box<[f64]>]> {
-		Box::new( [Box::new([*temperature, /* *pressure_R*K*NA,*/ *volume]) as Box<[_]>, iter::map(&**amounts, |v| v/amounts.iter().sum::<f64>())] ) as Box<[_]>
+		vec![vec![*temperature, /* *pressure_R*K*NA,*/ *volume].into_boxed_slice(), iter::map(&**amounts, |v| v/amounts.iter().sum::<f64>())].into_boxed_slice()
 	}
 	let state : StateVector<{Pressure}> = state.into();
 	let state = implicit(&state);
 	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
+	let plot_min_time = 0.4;
 	let (mut time, mut state) = (0., &*state);
-	let mut plot = ui::plot::Plot::new(Box::new( [&["T",/*"P",*/"V"] as &[_], species_names] ), vec![]);
+	while time < plot_min_time {
+		let next_time = time + model.time_step;
+		while time < next_time { (time, state) = cvode.step(derivative, next_time, state); }
+	}
 	let mut min = 0f64;
-	while time < 0.5 {
-		let plot_min_time = 0.4;
-		if time > plot_min_time {
-			plot.values.push(((time-plot_min_time)*1e3, from(&State::new(total_amount, constant, &StateVector::<{Pressure}>(explicit(total_amount, constant.0 as f64, &state))))));
-		}
+	let values = iter::eval(1000, |_| {
+		let value = ((time-plot_min_time)*1e3, from(&State::new(total_amount, constant, &StateVector::<{Pressure}>(explicit(total_amount, constant.0 as f64, &state)))));
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(derivative, next_time, state); }
 		min = min.min(state[2..].iter().copied().reduce(f64::min).unwrap());
-	}
+		value
+	});
 	println!("{:.0e}", min);
-	ui::app::run(plot)
+	let key = iter::map((0..len).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
+	let mut s = iter::eval(len, |i| i);
+	let (_, _, select) = s.select_nth_unstable_by(len-6, |&a,&b| key[a].partial_cmp(&key[b]).unwrap());
+	let species_names = iter::map(&*select, |&k| species_names[k]);
+	let values = iter::map(Vec::from(values).into_iter(), |(t, sets)| {
+		use std::convert::TryInto;
+		let sets:Box<[_;2]> = sets.try_into().unwrap();
+		let box [sets_0, sets_1] = sets;
+		(t, vec![sets_0, iter::map(&*select, |&k| sets_1[k])].into_boxed_slice())
+	});
+	let mut plot = ui::plot::Plot::new(vec![&["T",/*"P",*/"V"] as &[_], &species_names].into_boxed_slice(), values.to_vec());
+	let mut target = image::Image::zero((3840, 2160).into());
+	plot.paint(&mut target.as_mut())?;
+	pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+	png::save_buffer("/var/tmp/image.png", as_bytes(&target.data), target.size.x, target.size.y, png::ColorType::Rgba8).unwrap();
+	//ui::app::run(plot)?
 }
