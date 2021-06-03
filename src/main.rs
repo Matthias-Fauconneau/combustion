@@ -2,36 +2,19 @@
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = &std::fs::read("CH4.ron")?;
+	let model = &std::fs::read("H2.ron")?;
 	let ref model = model::Model::new(&model)?;
 	let ref state = combustion::initial_state(model);
 	let (ref species_names, ref species) = Species::new(&model.species);
 	#[cfg(feature="transport")] {
 		let ref transport_polynomials = species.transport_polynomials();
-		let transport = |single_specie: &str, temperature_C| {
-			let pressure_R = 1e5/(K*NA);
-			let temperature = 273.15+temperature_C;
-			let volume = 1.;
-			let amount = pressure_R * volume / temperature;
-			transport::transport(&species.molar_mass, transport_polynomials,
-												&State{volume, temperature, pressure_R,
-												amounts: {assert!(species_names.contains(&single_specie)); species_names.iter().map(|specie| if specie==&single_specie {amount} else {0.}).collect()}
-												} )
-		};
-		let viscosity = |single_specie: &str, T, expected| {
-			let e = f64::abs(transport(single_specie, T).viscosity*1e6-expected)/expected;
-			println!("{} {} {} {}", single_specie, T, transport(single_specie, T).viscosity, e);
-			assert!(e < 0.03);
-		};
-		viscosity("AR", 25., 22.58); // 23
-		viscosity("CH4", 25., 11.07); // 11.4
-		let thermal_conductivity = |single_specie, T, expected| {
-			let value = transport(single_specie, T).thermal_conductivity;
-			let e = f64::abs(value-expected)/expected;
-			println!("{}", e);
-			assert!(e < 0.001, "{} {}", value, expected);
-		};
-		thermal_conductivity("AR",500., 0.03650);
+		let pressure_R = 1e5/(K*NA);
+		let temperature = 1000.;
+		let volume = 1.;
+		let amount = pressure_R * volume / temperature;
+		println!("{}",
+			transport::transport(&species.molar_mass, transport_polynomials, &State{volume, temperature, pressure_R, amounts: vec![1./(species.len() as f64); species.len()]})
+			.mixture_diffusion_coefficients);
 	}
 	#[cfg(feature="reaction")] {
 		use reaction::*;

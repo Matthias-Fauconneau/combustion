@@ -15,15 +15,16 @@ fn trans_getMixDiffCoeffs(n: i32, ldt: i32, dt: *mut f64) -> i32;
 
 use combustion::*;
 
-pub fn check(model: &model::Model, state: &State) {
-	let pressure = state.pressure_R * (K*NA);
-	let temperature = state.temperature;
+pub fn check(file: &str) {
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&file).unwrap()).unwrap()).unwrap();
+	let model = yaml::parse(&model).unwrap();
+	let state = initial_state(&model);
 	let (species_names, ref species) = Species::new(&model.species);
+	let pressure = 101325.;
+	let temperature = 1000.;
 
 	let len = species.len();
-	let file = std::ffi::CStr::from_bytes_with_nul(b"gri30.yaml\0").unwrap().as_ptr();
-	let name = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
-	let phase = unsafe{thermo_newFromFile(file, name)};
+	let phase = unsafe{let file = std::ffi::CString::new(file).unwrap(); thermo_newFromFile(file.as_ptr(), std::ffi::CStr::from_bytes_with_nul(b"\0").unwrap().as_ptr())};
 	let _species_names = iter::eval(unsafe{thermo_nSpecies(phase)}, |k| {
 		let mut specie = [0; 8];
 		unsafe{thermo_getSpeciesName(phase, k, specie.len(), specie.as_mut_ptr())};
@@ -31,8 +32,7 @@ pub fn check(model: &model::Model, state: &State) {
 	});
 	let position = |i| _species_names.iter().position(|s| s==species_names[i]).unwrap();
 	let ref transport_polynomials = species.transport_polynomials();
-	let transport::Transport{viscosity, thermal_conductivity, mixture_diffusion_coefficients} =
-		transport::transport(&species.molar_mass, &transport_polynomials, state);
+	let transport::Transport{viscosity, thermal_conductivity, mixture_diffusion_coefficients} = transport::transport(&species.molar_mass, &transport_polynomials, &state);
 	let mixture_diffusion_coefficients = iter::map(&*mixture_diffusion_coefficients, |cP| cP / pressure);
 	let _order = |o: &[f64]| iter::eval(o.len(), |i| o[species_names.iter().position(|&s| s==_species_names[i]).unwrap()]);
 	unsafe{thermo_setMoleFractions(phase, state.amounts.len(), _order(&state.amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
@@ -48,7 +48,9 @@ pub fn check(model: &model::Model, state: &State) {
 	println!("Thermal conductivity: {:.0e}", num::relative_error(thermal_conductivity, _thermal_conductivity));
 	let e = mixture_diffusion_coefficients.iter().zip(_mixture_diffusion_coefficients.iter()).map(|(a,b)| num::relative_error(*a, *b)).filter(|e| e.is_finite()).reduce(f64::max).unwrap();
 	println!("Mixture diffusion coefficients: {:.0e}", e);
-	assert!(num::relative_error(viscosity, _viscosity) < 2e-5, "{:e}", num::relative_error(viscosity, _viscosity));
+	assert!(num::relative_error(viscosity, _viscosity) < 5e-4, "{:e}", num::relative_error(viscosity, _viscosity));
 	assert!(num::relative_error(thermal_conductivity, _thermal_conductivity) < 0.06, "{:e}", num::relative_error(thermal_conductivity, _thermal_conductivity));
 	assert!(e < 0.01);
+	use itertools::Itertools;
+	println!("{}", mixture_diffusion_coefficients.iter().format(" "));
 }

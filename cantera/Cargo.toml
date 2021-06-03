@@ -5,21 +5,19 @@ version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
-#[build-dependencies]
-#bindgen= ''
-
 [features]
-reaction= ['combustion/reaction','cvode','itertools']
-transport= ['combustion/transport']
-default= ['reaction']
+reaction= ['combustion/reaction', 'combustion/jit', 'cvode', 'itertools']
+transport= ['combustion/transport', 'itertools']
+default= ['transport','yaml']
 
 [dependencies]
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-combustion= {path='..', default-features= false, features=['reaction','jit']}
+combustion= {path='..', default-features= false}
 cvode= {path='../cvode', optional=true}
 trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 itertools= {version='', optional=true}
+yaml= {path='../yaml', package='combustion-yaml', optional=true}
 
 [[bin]]
 name= 'main'

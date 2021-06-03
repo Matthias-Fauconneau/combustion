@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 fehler = ''
 anyhow = ''
-combustion = {path=".."}
+combustion = {path="..", default-features= false}
 ron = ''
 yaml-rust = ''
 pest_derive= ''
@@ -15,6 +15,9 @@ pest= ''
 itertools = ''
 float-pretty-print = ''
 pretty_assertions= ''
+
+[lib]
+path= 'lib.rs'
 
 [[bin]]
 name= 'yaml'
