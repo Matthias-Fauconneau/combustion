@@ -9,7 +9,8 @@ edition= '2018'
 reaction= ['cranelift']
 jit= ['cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
 transport= ['nalgebra']
-default=['reaction','jit']
+default=['transport']
+#default=['reaction','jit']
 
 [dependencies]
 derive_more=''

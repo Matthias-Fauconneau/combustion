@@ -13,13 +13,11 @@ fn trans_thermalConductivity(n: i32) -> f64;
 fn trans_getMixDiffCoeffs(n: i32, ldt: i32, dt: *mut f64) -> i32;
 }
 
-use combustion::*;
-
 pub fn check(file: &str) {
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&file).unwrap()).unwrap()).unwrap();
 	let model = yaml::parse(&model).unwrap();
-	let state = initial_state(&model);
-	let (species_names, ref species) = Species::new(&model.species);
+	let state = combustion::initial_state(&model);
+	let (species_names, ref species) = combustion::Species::new(&model.species);
 	let pressure = 101325.;
 	let temperature = 1000.;
 

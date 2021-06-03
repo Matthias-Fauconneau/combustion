@@ -1,8 +1,8 @@
-#![feature(type_ascription, array_map, array_methods, bindings_after_at, try_blocks, unboxed_closures)] #![allow(non_snake_case)]
+#![feature(bool_to_option, array_map)]#![allow(non_snake_case)]
 use std::{ops::Deref, convert::TryInto};
 mod parse;
 
-fn time<T:Fn<()>>(task: T) -> (T::Output, f32) {
+fn time<T>(task: impl Fn()->T) -> (T, f32) {
 	let start = std::time::Instant::now();
 	let result = task();
 	(result, (std::time::Instant::now()-start).as_secs_f32())
@@ -17,10 +17,10 @@ fn benchmark<T>(task: impl Fn()->T, times: usize, header: impl std::fmt::Display
 macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, $times, stringify!($task)) } }
 
 #[fehler::throws(Box<dyn std::error::Error>)] fn main() {
-	use iter::box_collect;
-	let model = &std::fs::read("CH4+O2.ron")?;
+	let file = "/usr/share/cantera/data/LiDryer.yaml";
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(file).unwrap()).unwrap()).unwrap();
+	let model = yaml::parse(&model).unwrap();
 	use combustion::{*, transport::*};
-	let model = model::Model::new(&model)?;
 	let ref state = initial_state(&model);
 	let (_species_names, species) = combustion::Species::new(&model.species);
 	let transport_polynomials = species.transport_polynomials();
@@ -31,14 +31,21 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	rustacuda::init(CudaFlags::empty()).expect("CUDA");
 	let device = Device::get_device(0).expect("device");
 	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device).expect("context");
-	let module = Module::load_from_string(&std::ffi::CString::new(include_str!(concat!(env!("OUT_DIR"), "/main.ptx"))).unwrap()).expect("module");
-	const N: usize = parse::parse(env!("SPECIES"));
-	use iter::map;
-	let molar_mass = map(species.molar_mass.iter(), |&v| v as f32);
+	let module = //include_str!(concat!(env!("OUT_DIR"), "/main.ptx"))
+	{
+		std::fs::write("/var/tmp/main.cu", include_str!("main.cu"))?;
+		std::process::Command::new("nvcc").args(&[&format!("-DSPECIES={}", species.len()),"--ptx","/var/tmp/main.cu","-o",&format!("/var/tmp/main.ptx")]).spawn()?.wait()?
+			.success().then_some(()).unwrap();
+		std::fs::read("/var/tmp/main.ptx")?
+	};
+	let module = Module::load_from_string(&std::ffi::CString::new(module).unwrap()).expect("module");
+	let molar_mass = iter::map(species.molar_mass.iter(), |&v| v as f32);
 	let TransportPolynomials{sqrt_viscosity_T14, thermal_conductivity_T12, binary_thermal_diffusion_coefficients_T32} = &transport_polynomials;
-	let sqrt_viscosity_T14 = map(sqrt_viscosity_T14.iter(), |e| e.map(|v| v as f32) );
-	let thermal_conductivity_T12 = map(thermal_conductivity_T12.iter(), |e| e.map(|v| v as f32) );
-	let binary_thermal_diffusion_coefficients_T32 = map(binary_thermal_diffusion_coefficients_T32.iter(), |e| map(e.iter(), |e| e.map(|v| v as f32) ) );
+	let sqrt_viscosity_T14 = iter::map(sqrt_viscosity_T14.iter(), |e| e.map(|v| v as f32) );
+	let thermal_conductivity_T12 = iter::map(thermal_conductivity_T12.iter(), |e| e.map(|v| v as f32) );
+	let binary_thermal_diffusion_coefficients_T32 = iter::map(binary_thermal_diffusion_coefficients_T32.iter(), |e| iter::map(e.iter(), |e| e.map(|v| v as f32) ) );
+	const N: usize = parse::parse(env!("SPECIES"));
+	assert!(species.len() == N);
 	module.get_global::<[f32; N]>(std::ffi::CStr::from_bytes_with_nul(b"molar_mass\0")?)?.copy_from(molar_mass.deref().try_into()?)?;
 	module.get_global::<[[f32; 5]; N]>(std::ffi::CStr::from_bytes_with_nul(b"sqrt_viscosity_T14\0")?)?.copy_from(sqrt_viscosity_T14.deref().try_into()?)?;
 	module.get_global::<[[f32; 5]; N]>(std::ffi::CStr::from_bytes_with_nul(b"thermal_conductivity_T12\0")?)?.copy_from(thermal_conductivity_T12.deref().try_into()?)?;
@@ -51,10 +58,10 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	let len = ((512*32)/stride)*stride;
 	let State{temperature, pressure_R, amounts, ..} = state;
 	let mut temperature = DeviceBuffer::from_slice(&vec![(*temperature) as f32; len]).unwrap();
-	let mut amounts_buffer = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|&n| std::iter::repeat(n as f32).take(len)).flatten())).unwrap();
+	let mut amounts_buffer = DeviceBuffer::from_slice(&iter::box_collect(amounts.iter().map(|&n| std::iter::repeat(n as f32).take(len)).flatten())).unwrap();
 	let mut viscosity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
 	let mut thermal_conductivity = DeviceBuffer::from_slice(&vec![f32::NAN; len]).unwrap();
-	let mut mixture_diffusion_coefficients = DeviceBuffer::from_slice(&box_collect(amounts.iter().map(|_| std::iter::repeat(f32::NAN).take(len)).flatten())).unwrap();
+	let mut mixture_diffusion_coefficients = DeviceBuffer::from_slice(&iter::box_collect(amounts.iter().map(|_| std::iter::repeat(f32::NAN).take(len)).flatten())).unwrap();
 
 	for _ in 0..1 {
 		let start = std::time::Instant::now();

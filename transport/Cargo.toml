@@ -9,12 +9,12 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 fehler= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-combustion= {path='..', features=['transport']}
+combustion= {path='..', default-features=false, features=['transport']}
 rustacuda= ''
+yaml= {path='../yaml', package='combustion-yaml'}
 
 [build-dependencies]
-fehler= ''
-combustion= {path='..', features=['transport']}
+yaml= {path='../yaml', package='combustion-yaml'}
 
 [[bin]]
 name= 'transport'

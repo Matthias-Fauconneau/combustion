@@ -2,19 +2,14 @@
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = &std::fs::read("H2.ron")?;
-	let ref model = model::Model::new(&model)?;
-	let ref state = combustion::initial_state(model);
-	let (ref species_names, ref species) = Species::new(&model.species);
+	let model = &std::fs::read("LiDryer.ron")?;
+	let model = model::Model::new(&model)?;
+	let ref state = combustion::initial_state(&model);
+	let (_species_names, species) = combustion::Species::new(&model.species);
 	#[cfg(feature="transport")] {
 		let ref transport_polynomials = species.transport_polynomials();
-		let pressure_R = 1e5/(K*NA);
-		let temperature = 1000.;
-		let volume = 1.;
-		let amount = pressure_R * volume / temperature;
-		println!("{}",
-			transport::transport(&species.molar_mass, transport_polynomials, &State{volume, temperature, pressure_R, amounts: vec![1./(species.len() as f64); species.len()]})
-			.mixture_diffusion_coefficients);
+		dbg!(&transport_polynomials.binary_thermal_diffusion_coefficients_T32);
+		//println!("{}", transport::transport(&species.molar_mass, transport_polynomials, state).mixture_diffusion_coefficients);
 	}
 	#[cfg(feature="reaction")] {
 		use reaction::*;

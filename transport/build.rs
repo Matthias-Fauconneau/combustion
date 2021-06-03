@@ -1,15 +1,11 @@
-#![allow(incomplete_features, non_snake_case)]#![feature(const_generics, const_evaluatable_checked, bool_to_option, array_methods, slice_pattern)]
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = &std::fs::read("CH4+O2.ron")?;
-	use combustion::*;
-	let model = model::Model::new(&model)?;
-	let (_species_names, species) = combustion::Species::new(&model.species);
-	let OUT_DIR = std::env::var("OUT_DIR").unwrap();
-	std::process::Command::new("nvcc").args(&["-I",&OUT_DIR,&format!("-DSPECIES={}", species.len()),"--ptx","main.cu","-o",&format!("{}/main.ptx",OUT_DIR)]).spawn()?.wait()?
-		.success().then_some(()).unwrap();
-	println!("cargo:rerun-if-changed=CH4+O2.ron");
+#![feature(bool_to_option)]
+fn main() {
+	let file = "/usr/share/cantera/data/LiDryer.yaml";
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(file).unwrap()).unwrap()).unwrap();
+	let species = yaml::parse(&model).unwrap().species;
+	let _ = std::process::Command::new("nvcc").args(&[&format!("-DSPECIES={}", species.len()),"--ptx","main.cu","-o",&format!("{}/main.ptx",std::env::var("OUT_DIR").unwrap())])
+		.spawn().map(|mut c| c.wait().unwrap().success().then_some(()).unwrap());
+	println!("cargo:rerun-if-changed={}", file);
 	println!("cargo:rerun-if-changed=main.cu");
 	println!("cargo:rustc-env=SPECIES={}", species.len());
-	Ok(())
 }
