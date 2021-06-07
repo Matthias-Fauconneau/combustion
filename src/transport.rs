@@ -34,10 +34,10 @@ fn polynomial_regression_δ⃰(table: &[[f64; 8]; 39]) -> [[f64; 7]; 39] { table
 use std::lazy::SyncLazy;
 /*const*/static Ω⃰22: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
 /*const*/static A⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::A⃰));
-/*const*/static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
-/*const*/static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
+///*const*/static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
+///*const*/static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
 
-const D : usize = 5;
+const D : usize = 4;
 #[derive(Debug)] pub struct TransportPolynomials {
 	pub sqrt_viscosity_T14: Box<[[f64; D]]>,
 	pub thermal_conductivity_T12: Box<[[f64; D]]>,
@@ -109,7 +109,7 @@ impl Species {
 		TransportPolynomials{
 			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))),
 			thermal_conductivity_T12: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.thermal_conductivity(a,T)/sqrt(T))),
-			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.binary_thermal_diffusion_coefficient(a,b,T)/pow(T,3./2.))))
+			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.binary_thermal_diffusion_coefficient(a, b, T) / pow(T, 3./2.))))
 		}
 	}
 }

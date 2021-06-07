@@ -318,7 +318,7 @@ fn reaction<'t, Reactions: IntoIterator<Item=&'t Reaction>>(Species{thermodynami
 	let exp_G_RT = map(&a[..a.len()-1], |a|
 		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
 	);
-	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f);
+	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f); // TODO: CSE P0_RT^-Σnet
 	let mut dtω = vec![None; a.len()-1].into_boxed_slice();
 	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
 		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;
@@ -394,7 +394,7 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	function
 }
 
-pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>, &mut [f64]);
+pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
 #[cfg(feature="jit")] pub fn rate_function<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item=&'t Reaction>) -> impl Rate<CONSTANT> {
 	let mut module = cranelift_jit::JITModule::new({
 		let flag_builder = cranelift_codegen::settings::builder();
@@ -412,7 +412,7 @@ pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<C
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
 	let function = unsafe{std::mem::transmute::<_,extern fn(u64, f64, *const f64, *mut f64)>(function)};
-	move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>, _debug: &mut [f64]| {
+	move |constant:Constant<CONSTANT>, state:&StateVector<CONSTANT>, derivative:&mut Derivative<CONSTANT>| {
 		let constant = constant.0;
 		function(0, constant, state.0.as_ptr(), derivative.0.as_mut_ptr());
 	}

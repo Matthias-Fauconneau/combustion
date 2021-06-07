@@ -9,7 +9,7 @@ const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 pub mod model;
 use model::Element;
 
-#[derive(PartialEq)] pub struct NASA7 {
+#[derive(PartialEq, Debug)] pub struct NASA7 {
 	pub temperature_split : f64,
 	pub pieces: [[f64; 7]; 2],
 }
@@ -26,15 +26,15 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 	.into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
 });
 
-pub struct Species {
+#[derive(Debug)] pub struct Species {
 	pub molar_mass: Box<[f64]>,
 	pub thermodynamics: Box<[NASA7]>,
-	diameter: Box<[f64]>,
-	well_depth_J: Box<[f64]>,
-	polarizability: Box<[f64]>,
-	permanent_dipole_moment: Box<[f64]>,
-	rotational_relaxation: Box<[f64]>,
-	internal_degrees_of_freedom: Box<[f64]>,
+	pub diameter: Box<[f64]>,
+	pub well_depth_J: Box<[f64]>,
+	pub polarizability: Box<[f64]>,
+	pub permanent_dipole_moment: Box<[f64]>,
+	pub rotational_relaxation: Box<[f64]>,
+	pub internal_degrees_of_freedom: Box<[f64]>,
 	pub heat_capacity_ratio: Box<[f64]>,
 }
 impl Species {
@@ -62,10 +62,7 @@ impl Species {
 			if let Nonlinear{permanent_dipole_moment_Debye,..} = s.transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
 		let rotational_relaxation = map(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
 		let internal_degrees_of_freedom = map(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
-		let heat_capacity_ratio = map(species, |(_,s)| {
-			let f = match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. };
-			1. + 2./f
-		});
+		let heat_capacity_ratio = map(species, |(_,s)| 1. + 2. / match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. });
 		let species_names = map(species, |(name,_)| *name);
 		let species_composition = map(species, |(_,s)| &s.composition);
 		(species_names,

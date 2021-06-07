@@ -1,26 +1,25 @@
-#![feature(type_ascription)]#![allow(confusable_idents,non_snake_case,unused_variables,unused_mut,uncommon_codepoints)]
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = &std::fs::read("LiDryer.ron")?;
 	let model = model::Model::new(&model)?;
 	let ref state = combustion::initial_state(&model);
-	let (_species_names, species) = combustion::Species::new(&model.species);
+	let (ref species_names, ref species) = combustion::Species::new(&model.species);
 	#[cfg(feature="transport")] {
+		println!("{:#?}", &species);
 		let ref transport_polynomials = species.transport_polynomials();
-		dbg!(&transport_polynomials.binary_thermal_diffusion_coefficients_T32);
+		//println!("{:#?}", &transport_polynomials.binary_thermal_diffusion_coefficients_T32);
 		//println!("{}", transport::transport(&species.molar_mass, transport_polynomials, state).mixture_diffusion_coefficients);
 	}
-	#[cfg(feature="reaction")] {
-		use reaction::*;
+	#[cfg(all(feature="reaction", feature="jit"))] {
+		use reaction::{*, Property::*};
 		let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
-		rate::<_,_,{Property::Volume}>(species, &*reactions, &mut std::io::stdout())?
-		/*let (_, rate) = rate(species, &*reactions);
-		let mut derivative = /*Derivative*/StateVector::<{Property::Volume}>(std::iter::repeat(0.).take(2+species.len()-1).collect());
+		//rate::<_,_,{Property::Volume}>(species, &*reactions, &mut std::io::stdout())?
+		let rate = rate_function(species, &*reactions);
+		let mut derivative = /*Derivative*/StateVector::<{Volume}>(std::iter::repeat(0.).take(2+species.len()-1).collect());
 
 		{
-			let mut debug = vec![f64::NAN; model.reactions.len()*2].into_boxed_slice();
-			let rate = {rate(state.constant(), &state.into(), &mut derivative, &mut debug); &derivative.0};
+			let rate = {rate(state.constant(), &state.into(), &mut derivative); &derivative.0};
 			let (_dt_temperature, _dt_variable, dt_amounts) =
 				if let [_dt_temperature, _dt_variable, dt_amounts @..] = &rate[..] { (_dt_temperature, _dt_variable, dt_amounts) } else { unreachable!() };
 			let ref molar_rate = dt_amounts.iter().map(|dtn| dtn/state.volume).collect::<Box<_>>();
@@ -34,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		for _ in 0..len { rate(constant, &state, &mut derivative) }
 		let end = std::time::Instant::now();
 		let time = (end-start).as_secs_f32();
-		println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);*/*/
+		println!("{:.1}ms\t{:.0}K/s", time*1e3, (len as f32)/time/1e3);*/
 	}
 	Ok(())
 }
