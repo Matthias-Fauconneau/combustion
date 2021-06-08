@@ -7,7 +7,10 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 	map
 }
 
-type Value = usize;
+#[derive(PartialEq, Eq, Clone, Copy)] struct Value(usize);
+impl Value {
+	const NONE: Value = Value(!0);
+}
 enum Expression {
 	Literal(f64),
 	Use(Value),
@@ -58,37 +61,29 @@ impl std::ops::Sub<Expression> for Expression { type Output = Expression; fn sub
 impl<E:Into<Expression>> std::ops::Mul<E> for Expression { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<Expression> for Expression { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
-struct Definition(Value);
-impl From<&Definition> for Expression { fn from(d: &Definition) -> Expression { r#use(d.0) } }
-
-impl<E:Into<Expression>> std::ops::Mul<E> for &Definition { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
-impl std::ops::Div<Expression> for &Definition { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
+impl From<&Value> for Expression { fn from(value: &Value) -> Expression { r#use(*value) } }
+impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
+impl std::ops::Div<Expression> for &Value { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
 struct Block {
 	base: usize,
 	statements: Vec<Statement>,
 }
-impl FnOnce<(Expression,)> for Block {
-	type Output = Definition;
-	extern "rust-call" fn call_once(mut self, args: (Expression,)) -> Self::Output { self.call_mut(args) }
-}
-impl FnMut<(Expression,)> for Block {
-	extern "rust-call" fn call_mut(&mut self, (value,): (Expression,)) -> Self::Output  {
-		let id = self.base+self.statements.len();
+impl Block {
+	fn new(parameters: &[&'static str]) -> Self { Self { base: parameters.len(), statements: vec![] } }
+	fn block(&self, build: impl Fn(&mut Block)->Expression) -> Expression {
+		let mut block = Block{ base: self.base+self.statements.len(), statements: vec![] };
+		let result = build(&mut block);
+		Expression::Block { statements: block.statements.into(), result: box_(result) }
+	}
+	fn def(&mut self, value: Expression) -> Value {
+		let id = Value(self.base+self.statements.len());
 		self.statements.push(define(id, value));
-		Definition(id)
+		id
 	}
 }
-
-struct Builder(usize);
-impl Builder {
-	fn new(parameters: &[&'static str]) -> Self { Self(parameters.len()) }
-	fn block(&self, block: impl Fn(&mut Block)->Expression) -> Expression {
-		let mut defines = Block{ base: self.0, statements: vec![] };
-		let result = block(&mut defines);
-		Expression::Block { statements: defines.statements.into(), result: box_(result) }
-	}
-}
+impl FnOnce<(Expression,)> for Block { type Output = Value; extern "rust-call" fn call_once(mut self, args: (Expression,)) -> Self::Output { self.call_mut(args) }}
+impl FnMut<(Expression,)> for Block { extern "rust-call" fn call_mut(&mut self, (value,): (Expression,)) -> Self::Output  { self.def(value) } }
 
 impl From<f64> for Expression { fn from(v: f64) -> Self { Self::Literal(v) } }
 impl std::ops::Add<f64> for Expression { type Output = Expression; fn add(self, b: f64) -> Self::Output { add(self, b) } }
@@ -96,7 +91,7 @@ impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, 
 impl std::ops::Sub<f64> for Expression { type Output = Expression; fn sub(self, b: f64) -> Self::Output { sub(self, b) } }
 impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }
-impl std::ops::Mul<&Definition> for f64 { type Output = Expression; fn mul(self, b: &Definition) -> Self::Output { mul(self, b) } }
+impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<f64> for Expression { type Output = Expression; fn div(self, b: f64) -> Self::Output { mul(1./b, self) } }
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
@@ -105,6 +100,7 @@ impl FnOnce<(&[f64],&[&[f64]])> for Subroutine {
 impl FnMut<(&[f64],&[&[f64]])> for Subroutine { extern "rust-call" fn call_mut(&mut self, args: (&[f64],&[&[f64]])) -> Self::Output  { self.call(args) } }
 impl Fn<(&[f64],&[&[f64]])> for Subroutine {
 	extern "rust-call" fn call(&self, (arguments, arrays): (&[f64],&[&[f64]])) -> Self::Output  {
+		assert!(arguments.len()+arrays.len() == self.parameters.len());
 		struct State<'t> {
 			arguments: &'t [f64],
 			arrays: &'t [&'t [f64]],
@@ -112,15 +108,34 @@ impl Fn<(&[f64],&[&[f64]])> for Subroutine {
 			output: Box<[f64]>
 		}
 		impl State<'_> {
-			fn eval(&self, expression: &Expression) -> f64 {
+			fn eval(&mut self, expression: &Expression) -> f64 {
 				use Expression::*;
 				match expression {
+					&Literal(value) => value,
 					&Use(id) => {
-						if id < self.arguments.len() { self.arguments[id] }
-						else if id < self.arguments.len()+self.arrays.len() { unreachable!() }
+						if id.0 < self.arguments.len() { self.arguments[id.0] }
+						else if id.0 < self.arguments.len()+self.arrays.len() { unreachable!() }
 						else { self.definitions[&id] }
 					}
+					&Index { base, index } => {
+						assert!(base.0 >= self.arguments.len(), "{:?} {:?}", base.0, self.arguments);
+						let base = base.0 - self.arguments.len();
+						self.arrays[base][index]
+					}
+					Neg(x) => -self.eval(x),
+					Add(a, b) => self.eval(a) + self.eval(b),
+					Sub(a, b) => self.eval(a) - self.eval(b),
 					Less(a, b) => if self.eval(a) < self.eval(b) { 1. } else { 0. },
+					Mul(a, b) => self.eval(a) * self.eval(b),
+					Div(a, b) => self.eval(a) / self.eval(b),
+					Call { function: "exp2", arguments } => f64::exp2(self.eval(&arguments[0])),
+					Call { function: "log2", arguments } => f64::log2(self.eval(&arguments[0])),
+					Block { statements, result } => {
+						self.run(statements);
+						let result = self.eval(result);
+						for statement in statements.iter() { if let Statement::Definition { id, .. } = statement { self.definitions.remove(id).unwrap(); } else { unreachable!() } }
+						result
+					}
 					e => panic!("{:?}", e),
 				}
 			}
@@ -130,9 +145,12 @@ impl Fn<(&[f64],&[&[f64]])> for Subroutine {
 					match statement {
 						ConditionalStatement { condition, consequent, alternative } => {
 							if self.eval(condition) != 0. { self.run(consequent); } else { self.run(alternative); }
-						}
+						},
+						Definition { id, value } => {
+							let value = self.eval(value);
+							assert!(self.definitions.insert(*id, value).is_none());//, "{} {:?}", id.0, &self.definitions)
+						},
 						Output { index, value } => self.output[*index] = self.eval(value),
-						s => panic!("{:?}", s),
 					}
 				}
 			}
@@ -151,16 +169,16 @@ impl std::fmt::Debug for Expression {
 		use Expression::*;
 		match self {
 			Literal(v) => v.fmt(f),
-			Use(v) => write!(f, "#{}", v),
-			Index { base, index } => write!(f, "{}[{}]", base, index),
+			Use(v) => write!(f, "#{}", v.0),
+			Index { base, index } => write!(f, "{}[{}]", base.0, index),
 			Neg(x) => write!(f, "-{:?}", x),
 			Add(a, b) => write!(f, "({:?} + {:?})", a, b),
 			Sub(a, b) => write!(f, "({:?} - {:?})", a, b),
 			Less(a, b) => write!(f, "{:?} < {:?}", a, b),
 			Mul(a, b) => write!(f, "({:?} * {:?})", a, b),
 			Div(a, b) => write!(f, "({:?} / {:?})", a, b),
-			Call { function, arguments } => write!(f, "{:?}({:?})", function, arguments.iter().format(", ")),
-			Block { statements, result } => write!(f, "{{ {:?}; {:?} }}", statements.iter().format(";"), result),
+			Call { function, arguments } => write!(f, "{}({:?})", function, arguments.iter().format(", ")),
+			Block { statements, result } => write!(f, "{{ {:?}; {:?} }}", statements.iter().format(";\n"), result),
 		}
 	}
 }
@@ -169,8 +187,8 @@ impl std::fmt::Debug for Statement {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use Statement::*;
 		match self {
-			Definition { id, value } => write!(f, "#{:?} = {:?}", id, value),
-			Output { index, value } => write!(f, "@{:?} = {:?}", index, value),
+			Definition { id, value } => write!(f, "#{} = {:?}", id.0, value),
+			Output { index, value } => write!(f, "@{} = {:?}", index, value),
 			ConditionalStatement { condition, consequent, alternative } => write!(f, "if {:?} {{\n{:?}\n}} else {{\n{:?}\n}}", condition, consequent.iter().format("\n"), alternative.iter().format("\n")),
 		}
 	}
@@ -204,7 +222,7 @@ fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: Value) -> Expression
 }
 
 macro_rules! stringify{ [$($parameter:ident),*] => ([$(std::stringify!($parameter)),*]) }
-fn parameters<const N: usize>(parameters: [&'static str; N]) -> ([&'static str; N], [Value; N]) { (parameters, iter::from_iter(iter::ConstRange::<N>)) }
+fn parameters<const N: usize>(parameters: [&'static str; N]) -> ([&'static str; N], [Value; N]) { (parameters, iter::from_iter(iter::ConstRange::<N>).map(|id| Value(id))) }
 
 use std::f64::consts::LN_2;
 use super::*;
@@ -215,7 +233,7 @@ impl From<&T<Value>> for T<Expression> { fn from(&T{log_T,T,T2,T3,T4,rcp_T,rcp_T
 
 fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<Expression>)->Expression) -> Subroutine {
 	let (parameters, [log_T,T,T2,T3,T4,rcp_T]) = parameters(stringify![log_T,T,T2,T3,T4,rcp_T]);
-	let ref Ts = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2:0};
+	let ref Ts = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2:Value::NONE};
 	Subroutine{
 		parameters: parameters.to_vec(),
 		output: thermodynamics.len(),
@@ -257,7 +275,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 }
 
 fn rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant,
-														T{log_T,T,T2,T4,rcp_T,rcp_T2,..}: T<Expression>) -> Expression {
+														T{log_T,T,T2,rcp_T,rcp_T2,..}: T<Expression>) -> Expression {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
 		if temperature_exponent == 0. { (1./A).into() }
 		else if temperature_exponent == -1. { T / A }
@@ -273,7 +291,7 @@ fn rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, a
 }
 
 impl ReactionModel {
-fn efficiency(&self, k_inf: &RateConstant, T: &T<Value>, concentrations: Value, f: &Builder) -> Expression {
+fn efficiency(&self, k_inf: &RateConstant, T: &T<Value>, concentrations: Value, f: &Block) -> Expression {
 	use ReactionModel::*; match self {
 		Elementary|Irreversible => arrhenius(k_inf, T.into()),
 		ThreeBody{efficiencies} => arrhenius(k_inf, T.into()) * dot(efficiencies, concentrations),
@@ -299,33 +317,31 @@ fn efficiency(&self, k_inf: &RateConstant, T: &T<Value>, concentrations: Value, 
 
 pub fn rates(reactions: &[Reaction]) -> Subroutine {
 	let species_len = reactions[0].reactants.len();
-	let (parameters,          [log_T,T,T2,T4,rcp_T,rcp_T2, exp_Gibbs0_RT, P0_RT,rcp_P0_RT, concentrations])
-	= parameters(stringify![log_T,T,T2,T4,rcp_T,rcp_T2, exp_Gibbs0_RT, P0_RT,rcp_P0_RT, concentrations]);
-	let ref f = Builder::new(&parameters);
-	let ref T = T{log_T,rcp_T,T,T2,T3:0,T4,rcp_T2};
-	Subroutine {
-		parameters: parameters.into(),
-		output: species_len-1,
-		statements: reactions.iter().enumerate().map(|(reaction, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
-			let c = model.efficiency(rate_constant, T, concentrations, f); // todo: CSE
-			let Rf = product_of_exponentiations(reactants, concentrations);
-			let R = if let ReactionModel::Irreversible = model { Rf } else {
-				let rcp_equilibrium_constant = product_of_exponentiations(net, exp_Gibbs0_RT)
-																												- match Σnet { 0=>(0.).into(), 1=>r#use(P0_RT), -1=>r#use(rcp_P0_RT), _ => unreachable!()};
-				let Rr = rcp_equilibrium_constant * product_of_exponentiations(products, concentrations);
-				Rf - Rr
-			};
-			define(reaction, c * R)
-		}).chain((0..species_len-1).map(|specie|
-			output(specie, reactions.iter().enumerate().fold(None, |dtω, (reaction, Reaction{net, ..})| {
-					let cR = r#use(reaction);
-					match net[specie] {
-						0 => dtω,
-						1 => match dtω { None => Some(cR), Some(dtω) => Some(dtω + cR) }
-						-1 => match dtω { None => Some(-cR), Some(dtω) => Some(dtω - cR) }
-						ν => match dtω { None => Some((ν as f64) * cR), Some(dtω) => Some((ν as f64) * cR + dtω) }
-					}
-			}).unwrap())
-		)).collect()
-	}
+	let (parameters,          [log_T,T,T2,T4,rcp_T,rcp_T2,P0_RT,rcp_P0_RT, exp_Gibbs0_RT,concentrations])
+	= parameters(stringify![log_T,T,T2,T4,rcp_T,rcp_T2,P0_RT,rcp_P0_RT, exp_Gibbs0_RT,concentrations]);
+	let ref T = T{log_T,rcp_T,T,T2,T3:Value::NONE,T4,rcp_T2};
+	let mut f = Block::new(&parameters);
+	let rates = iter::map(reactions, |Reaction{reactants, products, net, Σnet, rate_constant, model, ..}| {
+		let efficiency = model.efficiency(rate_constant, T, concentrations, &f); // todo: CSE
+		let forward_rate = product_of_exponentiations(reactants, concentrations);
+		let rate = if let ReactionModel::Irreversible = model { forward_rate } else {
+			let rcp_equilibrium_constant = product_of_exponentiations(net, exp_Gibbs0_RT)
+																											- match Σnet { 0=>(0.).into(), 1=>r#use(P0_RT), -1=>r#use(rcp_P0_RT), _ => unreachable!()};
+			let reverse_rate = rcp_equilibrium_constant * product_of_exponentiations(products, concentrations);
+			forward_rate - reverse_rate
+		};
+		f.def(efficiency * rate)
+	});
+	f.statements.extend((0..species_len-1).map(|specie|
+		output(specie, rates.iter().zip(reactions.iter()).fold(None, |dtω, (&rate, Reaction{net, ..})| {
+				let rate = r#use(rate);
+				match net[specie] {
+					0 => dtω,
+					1 => match dtω { None => Some(rate), Some(dtω) => Some(dtω + rate) }
+					-1 => match dtω { None => Some(-rate), Some(dtω) => Some(dtω - rate) }
+					ν => match dtω { None => Some((ν as f64) * rate), Some(dtω) => Some((ν as f64) * rate + dtω) }
+				}
+		}).unwrap())
+	));
+	Subroutine {parameters: parameters.into(), output: species_len-1, statements: f.statements}
 }

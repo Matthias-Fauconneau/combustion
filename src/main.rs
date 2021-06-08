@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let P0_RT = NASA7::reference_pressure / T;
 		let exp_Gibbs0_RT = exp_Gibbs_RT(&[log_T,T,T2,T3,T4,rcp_T],&[]);
 		let rates = rates(&[log_T,T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], &[&exp_Gibbs0_RT, &concentrations]);
-		dbg!(rates);
+		for (i, (specie, rate)) in _species_names.iter().zip(rates.iter()).enumerate() { if rate.abs() > 1e-29 { println!("{:3} {:4} {:>+0.3e}", i, specie, rate); } }
 	}
 
 	#[cfg(feature="transport")] {
@@ -43,8 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let rate = {rate(state.constant(), &state.into(), &mut derivative); &derivative.0};
 			let (_dt_temperature, _dt_variable, dt_amounts) =
 				if let [_dt_temperature, _dt_variable, dt_amounts @..] = &rate[..] { (_dt_temperature, _dt_variable, dt_amounts) } else { unreachable!() };
-			let ref molar_rate = dt_amounts.iter().map(|dtn| dtn/state.volume).collect::<Box<_>>();
-			for (i, (specie, rate)) in _species_names.iter().zip(molar_rate.iter()).enumerate() { if rate.abs() > 1e-29 { println!("{:3} {:4} {:>+0.3e}", i, specie, rate); } }
+			let ref rates = dt_amounts.iter().map(|dtn| dtn/state.volume).collect::<Box<_>>();
+			for (i, (specie, rate)) in _species_names.iter().zip(rates.iter()).enumerate() { if rate.abs() > 1e-29 { println!("{:3} {:4} {:>+0.3e}", i, specie, rate); } }
 			println!("");
 		}
 		/*let len = 100000;

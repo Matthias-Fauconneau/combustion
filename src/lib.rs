@@ -1,6 +1,4 @@
-#![feature(nll, const_generics, const_evaluatable_checked, once_cell, in_band_lifetimes, array_map, trait_alias, unboxed_closures, fn_traits, array_methods, bindings_after_at, associated_type_bounds, default_free_fn)]
-#![allow(incomplete_features, non_upper_case_globals, non_snake_case, confusable_idents, uncommon_codepoints)]
-#![allow(unused_variables, dead_code)]
+#![feature(associated_type_bounds, unboxed_closures, once_cell, default_free_fn, fn_traits, in_band_lifetimes, const_generics, array_map)]#![allow(uncommon_codepoints, confusable_idents, incomplete_features, non_upper_case_globals, non_snake_case)]
 
 pub const K : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
@@ -44,8 +42,8 @@ impl Species {
 	pub fn new(species: &Map<&'t str, model::Specie>) -> (Box<[&'t str]>, Self) {
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
-			[_,temperature_split,_] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
-			[min, max] => NASA7{temperature_split: f64::INFINITY, pieces: [pieces[0]; 2]},
+			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
+			[_, _] => NASA7{temperature_split: f64::INFINITY, pieces: [pieces[0]; 2]},
 			ref ranges => panic!("{:?}", ranges),
 		});
 		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);
@@ -69,7 +67,7 @@ pub struct State {
     pub amounts: Box<[f64]>
 }
 
-pub fn initial_state(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> State {
+pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> State {
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
 	let species_names = map(species, |(name,_)| *name);
 	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
