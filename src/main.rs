@@ -8,12 +8,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	#[cfg(feature="program")] {
 		use program::*;
-		println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
-		println!("fn enthalpy_RT{}", enthalpy_RT(&species.thermodynamics));
+		//println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
+		//println!("fn enthalpy_RT{}", enthalpy_RT(&species.thermodynamics));
 		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics);
-		println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT);
+		//println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT);
 		let rates = rates(&iter::map(&*model.reactions, |r| Reaction::new(_species_names, r)));
-		println!("fn rates{}", rates);
+		//println!("fn rates{}", rates);
 		let state = initial_state(&model);
 		assert!(state.volume == 1.);
 		let State{temperature: T, amounts: concentrations, ..} = state;

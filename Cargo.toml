@@ -30,3 +30,6 @@ cranelift-codegen= {optional=true, version='*'}
 cranelift-module= {optional=true, version='*'}
 cranelift-native= {optional=true, version='*'}
 cranelift-jit= {optional=true, version='*'}
+
+[patch.'https://github.com/Matthias-Fauconneau/iter']
+iter= {path='../iter'}
