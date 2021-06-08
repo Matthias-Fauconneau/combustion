@@ -6,7 +6,7 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [features]
-reaction= ['combustion/reaction', 'combustion/jit', 'cvode', 'itertools']
+reaction= ['combustion/jit', 'cvode', 'itertools']
 transport= ['combustion/transport', 'itertools']
 default= ['transport','yaml']
 

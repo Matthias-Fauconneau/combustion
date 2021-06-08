@@ -9,7 +9,7 @@ fehler= ''
 anyhow= ''
 reaction= {path='../reaction'}
 cranelift-codegen= ''
-combustion= {path='..', features=['reaction']}
+combustion= {path='..', features=['cranelift']}
 shaderc= ''
 ash= ''
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}

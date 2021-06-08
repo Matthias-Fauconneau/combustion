@@ -1,120 +1,9 @@
 use std::default::default;
 use super::*;
-
-#[derive(Clone, Copy)] pub struct RateConstant {
-	pub preexponential_factor: f64,
-	pub temperature_exponent: f64,
-	pub activation_temperature: f64
-}
-
-impl From<&model::RateConstant> for RateConstant {
-	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &model::RateConstant) -> Self {
-		const J_per_cal: f64 = 4.184;
-		Self{preexponential_factor: *preexponential_factor, temperature_exponent: *temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
-	}
-}
-
-use model::Troe;
-
-pub enum ReactionModel {
-	Elementary,
-	Irreversible,
-	ThreeBody { efficiencies: Box<[f64]> },
-	PressureModification { efficiencies: Box<[f64]>, k0: RateConstant },
-	Falloff { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
-}
-
-pub struct Reaction {
-	pub reactants: Box<[u8]>,
-	pub products: Box<[u8]>,
-	pub net: Box<[i8/*; S-1*/]>,
-	pub Σreactants: u8,
-	pub Σproducts: u8,
-	pub Σnet: i8,
-	pub rate_constant: RateConstant,
-	pub model: ReactionModel,
-}
-
-use iter::map;
-
-impl Reaction {
-	pub fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}: &model::Reaction) -> Self {
-		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
-		let [reactants, products] = iter::vec::eval(equation, |e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
-		let net = products.into_iter().zip(reactants.into_iter()).take(species_names.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
-		/*{let mut net_composition = Map::new();
-			for (s, &ν) in net.into_iter().enumerate() {
-				for (element, &count) in species_composition[s] {
-					if !net_composition.contains_key(&element) { net_composition.insert(element, 0); }
-					*net_composition.get_mut(&element).unwrap() += ν as i8 * count as i8;
-				}
-			}
-			for (_, &ν) in &net_composition { assert!(ν == 0, "{:?} {:?}", net_composition, equation); }
-		}*/
-		let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
-		let Σnet = Σproducts as i8 - Σreactants as i8;
-		let from = |efficiencies:&Map<_,_>| map(species_names, |&specie| *efficiencies.get(specie).unwrap_or(&1.));
-		Reaction{
-			reactants, products, net, Σreactants, Σproducts, Σnet,
-			rate_constant: rate_constant.into(),
-			model: {use model::ReactionModel::*; match model {
-				Elementary => ReactionModel::Elementary,
-				Irreversible => ReactionModel::Irreversible,
-				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
-				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
-				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe: *troe},
-			}}
-		}
-	}
-}
-
-#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
-#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
-#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,/*P|V,*/[S-1]*/]>);
-pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
-
-impl State {
-	pub fn constant<const CONSTANT: Property>(&self) -> Constant<CONSTANT> { let Self{pressure_R, volume, ..} = self;
-		Constant(*{use Property::*; match CONSTANT {Pressure => pressure_R, Volume => volume}})
-	}
-}
-
-use std::array::IntoIter;
-
-impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
-	fn from(State{temperature, pressure_R, volume, amounts}: &State) -> Self {
-		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
-	}
-}
-
-impl State {
-	#[track_caller] pub fn new<const CONSTANT: Property>(total_amount: f64, Constant(thermodynamic_state_constant): Constant<CONSTANT>, u: &StateVector<CONSTANT>) -> Self {
-		let u = &u.0;
-		let amounts = &u[2..];
-		let (pressure_R, volume) = {use Property::*; match CONSTANT {
-			Pressure => (thermodynamic_state_constant, u[1]),
-			Volume => (u[1], thermodynamic_state_constant)
-		}};
-		State{
-			temperature: u[0],
-			pressure_R,
-			volume,
-			amounts: amounts.iter().chain(&[total_amount - iter::into::Sum::<f64>::sum(amounts)]).copied().collect()
-		}
-	}
-}
-
-impl std::fmt::Display for State {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let Self{temperature, pressure_R, volume, amounts} = self;
-		write!(fmt, "T: {}, P: {}, V: {}, n: {:?}", temperature/*/K*/, pressure_R*(K*NA), volume, amounts)
-	}
-}
-
-pub use cranelift::codegen::ir::types::{I32, I64, F32, F64};
+pub use cranelift::codegen::ir::{function::Function, types::{I32, I64, F32, F64}};
 use cranelift::{
 	frontend::{self as frontend, FunctionBuilderContext},
-	codegen::{ir::{types::Type, function::Function, InstBuilder, MemFlags, entities::{Value, SigRef}, AbiParam, ExternalName, ExtFuncData}},
+	codegen::{ir::{types::Type, InstBuilder, MemFlags, entities::{Value, SigRef}, AbiParam, ExternalName, ExtFuncData}},
 };
 
 fn import(function: &mut Function, index: u32, signature: SigRef) {
@@ -260,9 +149,9 @@ use std::f64::consts::LN_2;
 struct T { log: Value, rcp: Value, _1: Value, _2: Value, _4: Value, m: Value, mrcp: Value, rcp2: Value }
 
 // A.T^β.exp(-Ea/kT) = exp(-(Ea/k)/T+β.logT+logA) = exp2(-(Ea/k)/T+β.log2T+log2A)
-fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activation_temperature}: &RateConstant, T: &T, f: &mut FunctionBuilder) -> Value {
+fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T: &T, f: &mut FunctionBuilder) -> Value {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		let A = f.c(preexponential_factor);
+		let A = f.c(A);
 		if temperature_exponent == 0. { A }
 		else if temperature_exponent == -1. { f.mul(A, T.rcp) }
 		else if temperature_exponent == 1. { f.mul(A, T._1) }
@@ -271,8 +160,7 @@ fn arrhenius(&RateConstant{preexponential_factor, temperature_exponent, activati
 		else if temperature_exponent == -2. { f.mul(A, T.rcp2) }
 		else { unreachable!() }
 	} else {
-		let logA = f.c(f64::log2(preexponential_factor));
-		let βlogT𐊛logA = if temperature_exponent == 0. { logA } else { fma(f.c(temperature_exponent), T.log, logA, f) };
+		let βlogT𐊛logA = if temperature_exponent == 0. { f.c(f64::log2(A)) } else { fma(f.c(temperature_exponent), T.log, f.c(f64::log2(A)), f) };
 		let log_arrhenius = if activation_temperature == 0. { βlogT𐊛logA } else { fma(f.c(-activation_temperature/LN_2), T.rcp, βlogT𐊛logA, f) };
 		f.exp2(log_arrhenius)
 	}
@@ -282,7 +170,7 @@ impl ReactionModel {
 fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut FunctionBuilder) -> Value {
 	use ReactionModel::*; match self {
 		Elementary|Irreversible => f.c(1.),
-		ThreeBody{efficiencies} => { f.cdot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None).unwrap() },
+		ThreeBody{efficiencies} => f.cdot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None).unwrap(),
 		PressureModification{efficiencies, k0} => {
 			let Pr = mul(f.cdot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None).unwrap(), div(arrhenius(k0, T, f), k_inf, f), f);
 			div(Pr, add(f.c(1.), Pr, f), f)
@@ -290,9 +178,9 @@ fn efficiency(&self, T: &T, concentrations: &[Value], k_inf: Value, f: &mut Func
 		Falloff{efficiencies, k0, troe} => {
 			let Pr = mul(f.cdot(efficiencies.iter().copied().zip(concentrations.iter().copied()), None).unwrap(), div(arrhenius(k0, T, f), k_inf, f), f);
 			let model::Troe{A, T3, T1, T2} = *troe;
-			let Fcent = fma(f.c(1.-A), exp2(mul(T.m, f.c(1./(LN_2*T3)), f), f),
-												 fma(f.c(A), exp2(mul(T.m, f.c(1./(LN_2*T1)), f), f),
-												                        exp2(mul(T.mrcp, f.c(T2/LN_2), f), f), f), f);
+			let Fcent = fma(f.c(1.-A), exp2(mul(T._1, f.c(-1./(LN_2*T3)), f), f),
+												 fma(f.c(A), exp2(mul(T._1, f.c(-1./(LN_2*T1)), f), f),
+												                        exp2(mul(T.rcp, f.c(-T2/LN_2), f), f), f), f);
 			let logFcent = f.log2(Fcent);
 			let c =fma(f.c(-0.67), logFcent, f.c(-0.4*f64::log2(10.)), f);
 			let N = fma(f.c(-1.27), logFcent, f.c(0.75*f64::log2(10.)), f);
@@ -309,25 +197,25 @@ fn dot<const N: usize>(constant: f64, iter: [(f64, Value); N]) -> impl /*FnOnce<
 	move |f: &mut FunctionBuilder<'_>| { let c = f.c(constant); f.cdot(IntoIter::new(iter), Some(c)).unwrap() }
 }
 
-fn reaction<'t, Reactions: IntoIterator<Item=&'t Reaction>>(Species{thermodynamics, ..}: &Species, reactions: Reactions, concentrations: &[Value], f: &mut FunctionBuilder, T: Value, rcpT: Value, T2: Value, T3: Value, T4: Value) -> Box<[Value]> {
+fn reaction<'t, Reactions: IntoIterator<Item=&'t Reaction>>(Species{thermodynamics, ..}: &Species, reactions: Reactions, concentrations: &[Value], f: &mut FunctionBuilder, T: Value, rcp_T: Value, T2: Value, T3: Value, T4: Value) -> Box<[Value]> {
 	let logT = f.log2(T);
 	let mT = f.neg(T);
-	let mrcpT = f.neg(rcpT);
-	let rcpT2 = f.mul(rcpT, rcpT);
+	let mrcp_T = f.neg(rcp_T);
+	let rcp_T2 = f.mul(rcp_T, rcp_T);
 	let a = map(&**thermodynamics, |s| s.pieces[1]);
-	let exp_G_RT = map(&a[..a.len()-1], |a|
-		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcpT), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
+	let exp_Gibbs_RT = map(&a[..a.len()-1], |a|
+		exp2(dot((a[0]-a[6])/LN_2, [(a[5]/LN_2, rcp_T), (-a[0], logT), (-a[1]/2./LN_2, T), ((1./3.-1./2.)*a[2]/LN_2, T2), ((1./4.-1./3.)*a[3]/LN_2, T3), ((1./5.-1./4.)*a[4]/LN_2, T4)])(f), f)
 	);
-	let P0_RT = mul(f.c(NASA7::reference_pressure), rcpT, f); // TODO: CSE P0_RT^-Σnet
+	let P0_RT = mul(f.c(NASA7::reference_pressure), rcp_T, f); // TODO: CSE P0_RT^-Σnet
 	let mut dtω = vec![None; a.len()-1].into_boxed_slice();
 	for (_reaction_index, reaction) in reactions.into_iter().enumerate() {
 		let Reaction{reactants, products, net, Σnet, rate_constant, model, ..} = reaction;
-		let ref T = T{log: logT, rcp: rcpT, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcpT, rcp2: rcpT2};
+		let ref T = T{log: logT, rcp: rcp_T, _1: T, _2: T2, _4: T4, m: mT, mrcp: mrcp_T, rcp2: rcp_T2};
 		let k_inf = arrhenius(rate_constant, T, f);
 		let c = mul(k_inf, model.efficiency(T, &concentrations, k_inf, f), f); // todo: CSE
 		let Rf = f.product_of_exponentiations(reactants.iter().copied().zip(concentrations.iter().copied())).unwrap();
 		let R = if let ReactionModel::Irreversible = model { Rf } else {
-			let rcp_equilibrium_constant = f.product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_G_RT.iter().chain(&[P0_RT]).copied())).unwrap();
+			let rcp_equilibrium_constant = f.product_of_exponentiations(net.iter().chain(&[-Σnet]).copied().zip(exp_Gibbs_RT.iter().chain(&[P0_RT]).copied())).unwrap();
 			let Rr = mul(rcp_equilibrium_constant, f.product_of_exponentiations(products.iter().copied().zip(concentrations.iter().copied())).unwrap(), f);
 			f.sub(Rf, Rr)
 		};
@@ -360,10 +248,10 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	let state = f.ins().iadd(states, offset);
 	let rates = f.ins().iadd(rates, offset);
 	let T = f.load(states, 0*stride);
-	let rcpT = f.rcp(T);
+	let rcp_T = f.rcp(T);
 	let variable = f.load(state, 1*stride);
 	let (pressure_R, volume) = {use Property::*; match CONSTANT {Pressure => (constant, variable), Volume => (variable, constant)}};
-	let total_concentration = f.mul(pressure_R, rcpT);
+	let total_concentration = f.mul(pressure_R, rcp_T);
 	let active_amounts = iter::eval(species.len()-1, |i| f.load(state, (2+i)*stride));
 	let rcpV = f.rcp(volume);
 	let active_amounts = map(&*active_amounts, |&n| max(f.c(0.), n, f));
@@ -373,10 +261,10 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 	let T2 = f.mul(T, T);
 	let T3 = f.mul(T2, T);
 	let T4 = f.mul(T3, T);
-	let dtω = reaction(species, reactions, &*concentrations, f, T, rcpT, T2, T3, T4);
+	let dtω = reaction(species, reactions, &*concentrations, f, T, rcp_T, T2, T3, T4);
 	let a = map(&**thermodynamics, |s| *s.piece(/*T:*/1000.));
 	let a = {use Property::*; match CONSTANT {Pressure => a, Volume => a.iter().zip(heat_capacity_ratio.iter()).map(|(a,γ)| a.map(|a| a / γ)).collect()}};
-	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcpT), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
+	let E_RT/*H/RT|U/RT*/ = a.iter().map(|a| dot(a[0], [(a[5], rcp_T), (a[1]/2., T), (a[2]/3., T2), (a[3]/4., T3), (a[4]/5., T4)]));
 	let E_RT = dtω.into_iter().enumerate().zip(E_RT).zip(&**molar_mass).map(|(((i, &dtω), E_RT), molar_mass)| move |f: &mut FunctionBuilder<'_>| {
 		store(dtω, rates, (2+i)*stride, f);
 		E_RT(f)
@@ -395,7 +283,7 @@ pub fn rate<'t, Reactions: IntoIterator<Item=&'t Reaction>, const CONSTANT: Prop
 }
 
 pub trait Rate<const CONSTANT: Property> = Fn(Constant<CONSTANT>, &StateVector<CONSTANT>, &mut Derivative<CONSTANT>);
-#[cfg(feature="jit")] pub fn rate_function<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item=&'t Reaction>) -> impl Rate<CONSTANT> {
+#[cfg(feature="jit")] pub fn JIT<'t, const CONSTANT: Property>(species: &Species, reactions: impl IntoIterator<Item=&'t Reaction>) -> impl Rate<CONSTANT> {
 	let mut module = cranelift_jit::JITModule::new({
 		let flag_builder = cranelift_codegen::settings::builder();
 		use cranelift_codegen::settings::Configurable;

@@ -1,4 +1,6 @@
-#![feature(array_methods)]#![allow(non_snake_case)]
+#![feature(default_free_fn,array_map)]#![allow(non_snake_case)]
+use std::default::default;
+fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -80,63 +82,57 @@ pub use yaml_rust::YamlLoader as Loader;
 		}}
 		})(&specie["transport"])
 	})).collect();
-	let model = Model{
-		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: species.iter().map(|(&name,_)| (name, 1.)).collect()},
-		species,
-		reactions: data["reactions"].as_vec().unwrap().iter().map(|reaction| {
-			let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
-			let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
-			let reactants = reactants + if let Some("three-body") = reaction["type"].as_str() {1} else {0};
-			let rate_constant = |rate_constant:&yaml_rust::Yaml, C_cm3_unit_conversion_factor_exponent: u8| RateConstant{
-				// ẇ = AxΠc [mol/m³/s = Ax(mol/m³)^r] => [A] = ((mol/m³)^(1-r))/s; 1 mol/m³ = 1e-2³.mol/cm³ => A[m] = A[cm] / (1e-2³)^(1-r)
-				preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, C_cm3_unit_conversion_factor_exponent as f64),
-				temperature_exponent: rate_constant["b"].as_f64().unwrap(),
-				activation_energy: rate_constant["Ea"].as_f64().unwrap(),
-			};
-			Reaction{
-				equation,
-				rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"]), reactants-1),
-				model: {
-					let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
-					use ReactionModel::*;
-					match reaction["type"].as_str() {
-						None|Some("elementary") => {
-							if reaction["equation"].as_str().unwrap().contains(" <=> ") { Elementary }
-							else if reaction["equation"].as_str().unwrap().contains(" => ") { Irreversible }
-							else { unimplemented!() }
-						},
-						Some("three-body") => ThreeBody{efficiencies},
-						// Pr = c x k0 / k∞ [1 = mol/m³ x [k0] / [k∞]] => [k0] = [k∞]/(mol/m³) = ((mol/m³)^(-r))/s => k0[m] = k0[cm] / (1e-2³)^(-r)
-						Some("falloff") if reaction["Troe"].is_badvalue() => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants)},
-						Some("falloff") => Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants), troe: Troe{
-							A: reaction["Troe"]["A"].as_f64().unwrap(),
-							T1: reaction["Troe"]["T1"].as_f64().unwrap(),
-							T3: reaction["Troe"]["T3"].as_f64().unwrap(),
-							T2: reaction["Troe"]["T2"].as_f64().unwrap_or(0.)
-						}},
-						_ => unimplemented!()
-					}
+	//let species = {let mut species = species; species.insert("AR", species.remove("AR").unwrap()); species};
+	let reactions : Box<_> = data["reactions"].as_vec().unwrap().iter().map(|reaction| {
+		let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
+		let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
+		let reactants = reactants + if let Some("three-body") = reaction["type"].as_str() {1} else {0};
+		let rate_constant = |rate_constant:&yaml_rust::Yaml, C_cm3_unit_conversion_factor_exponent: u8| RateConstant{
+			// ẇ = AxΠc [mol/m³/s = Ax(mol/m³)^r] => [A] = ((mol/m³)^(1-r))/s; 1 mol/m³ = 1e-2³.mol/cm³ => A[m] = A[cm] / (1e-2³)^(1-r)
+			preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, C_cm3_unit_conversion_factor_exponent as f64),
+			temperature_exponent: rate_constant["b"].as_f64().unwrap(),
+			activation_energy: rate_constant["Ea"].as_f64().unwrap(),
+		};
+		Reaction{
+			equation,
+			rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"]), reactants-1),
+			model: {
+				let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
+				use ReactionModel::*;
+				match reaction["type"].as_str() {
+					None|Some("elementary") => {
+						if reaction["equation"].as_str().unwrap().contains(" <=> ") { Elementary }
+						else if reaction["equation"].as_str().unwrap().contains(" => ") { Irreversible }
+						else { unimplemented!() }
+					},
+					Some("three-body") => ThreeBody{efficiencies},
+					// Pr = c x k0 / k∞ [1 = mol/m³ x [k0] / [k∞]] => [k0] = [k∞]/(mol/m³) = ((mol/m³)^(-r))/s => k0[m] = k0[cm] / (1e-2³)^(-r)
+					Some("falloff") if reaction["Troe"].is_badvalue() => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants)},
+					Some("falloff") => Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants), troe: Troe{
+						A: reaction["Troe"]["A"].as_f64().unwrap(),
+						T1: reaction["Troe"]["T1"].as_f64().unwrap(),
+						T3: reaction["Troe"]["T3"].as_f64().unwrap(),
+						T2: reaction["Troe"]["T2"].as_f64().unwrap_or(0.)
+					}},
+					_ => unimplemented!()
 				}
 			}
-		}).collect(),
-		time_step: 1e-8,
-	};
-	/*let model = {
-		let mut model = model;
-		let inert = model.species.remove("AR").unwrap();
-		model.species.insert("AR", inert);
-		model
-	};*/
-	/*let model = {
-		let mut model = model;
-		for (_, specie) in model.species.iter_mut() {
-			let mid = &mut specie.thermodynamic.temperature_ranges[1];
-			assert!(*mid >= 1000. && *mid <= 1478., "{}", *mid);
-			*mid = 1000.
 		}
-		model
-	};*/
-	model //println!("{}", to_string(&model)?);
+	}).collect();
+	let species_names : Box<_> = species.iter().map(|(name,_)| *name).collect();
+	let species = if species_names.iter().map(|s| reactions.iter().all(|Reaction{equation:[a,b],..}| *a.get(s).unwrap_or(&0) as i8 == *b.get(s).unwrap_or(&0) as i8))
+													.position(|inert| inert == true).filter(|&s| s == species.len()-1).is_some() { species } else {
+		let mut species = species;
+		species.insert("INERT", Specie{composition: default(), thermodynamic: NASA7{temperature_ranges: box_([]), pieces: box_([])},
+		                                                     transport: Transport{well_depth_K: 0., diameter_Å: 0.,geometry: Geometry::Atom}});
+		species
+	};
+	Model{
+		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: species.iter().map(|(&name,_)| (name, 1.)).collect()},
+		species,
+		reactions,
+		time_step: 1e-8,
+	}
 }
 
 #[throws(std::fmt::Error)] pub fn to_string(model: &Model) -> String {

@@ -37,17 +37,11 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| 
 	pub internal_degrees_of_freedom: Box<[f64]>,
 	pub heat_capacity_ratio: Box<[f64]>,
 }
+
+use iter::map;
+
 impl Species {
 	pub fn new(species: &Map<&'t str, model::Specie>) -> (Box<[&'t str]>, Self) {
-		/*let species = eval(species, |(k,specie):&(_,model::Specie)| {
-			let mut specie = specie.clone();
-			for T in specie.thermodynamic.temperature_ranges.iter_mut() { *T *= K; } // K->J
-			for piece in specie.thermodynamic.pieces.iter_mut() { for (order, a) in piece[0..6].iter_mut().enumerate() { *a /= f64::powi(K, (1+order) as i32); } } // /K^n->/J^n
-			(k, specie)
-		});
-		use std::ops::Deref;
-		let species = species.deref();*/
-		use iter::map;
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_,temperature_split,_] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
@@ -63,11 +57,7 @@ impl Species {
 		let rotational_relaxation = map(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
 		let internal_degrees_of_freedom = map(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
 		let heat_capacity_ratio = map(species, |(_,s)| 1. + 2. / match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. });
-		let species_names = map(species, |(name,_)| *name);
-		let species_composition = map(species, |(_,s)| &s.composition);
-		(species_names,
-			Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom,
-										heat_capacity_ratio})
+		(map(species, |(name,_)| *name), Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, heat_capacity_ratio})
 	}
 	pub fn len(&self) -> usize { self.molar_mass.len() }
 }
@@ -80,18 +70,114 @@ pub struct State {
 }
 
 pub fn initial_state(model::Model{species, state, time_step, ..}: &model::Model<'t>) -> State {
-	let species_names = iter::map(species, |(name,_)| *name);
-
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
+	let species_names = map(species, |(name,_)| *name);
+	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
+	let amount_proportions = map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
 	let pressure_R = pressure/(K*NA);
 	let temperature = *temperature; //K*: K->J
 	let amount = pressure_R * volume / temperature;
-	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
-	let amount_proportions = iter::map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
 	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
-
 	State{temperature, pressure_R, volume: *volume, amounts}
 }
 
+#[derive(Clone, Copy)] pub struct RateConstant {
+	pub preexponential_factor: f64,
+	pub temperature_exponent: f64,
+	pub activation_temperature: f64
+}
+
+impl From<&model::RateConstant> for RateConstant {
+	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &model::RateConstant) -> Self {
+		const J_per_cal: f64 = 4.184;
+		Self{preexponential_factor: *preexponential_factor, temperature_exponent: *temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
+	}
+}
+
+use model::Troe;
+
+pub enum ReactionModel {
+	Elementary,
+	Irreversible,
+	ThreeBody { efficiencies: Box<[f64]> },
+	PressureModification { efficiencies: Box<[f64]>, k0: RateConstant },
+	Falloff { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
+}
+
+pub struct Reaction {
+	pub reactants: Box<[u8]>,
+	pub products: Box<[u8]>,
+	pub net: Box<[i8/*; S-1*/]>,
+	pub Σreactants: u8,
+	pub Σproducts: u8,
+	pub Σnet: i8,
+	pub rate_constant: RateConstant,
+	pub model: ReactionModel,
+}
+
+impl Reaction {
+	pub fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}: &model::Reaction) -> Self {
+		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
+		let [reactants, products] = iter::vec::eval(equation, |e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
+		let net = products.into_iter().zip(reactants.into_iter()).take(species_names.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
+		let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
+		let Σnet = Σproducts as i8 - Σreactants as i8;
+		let from = |efficiencies:&Map<_,_>| map(species_names, |&specie| *efficiencies.get(specie).unwrap_or(&1.));
+		Reaction{
+			reactants, products, net, Σreactants, Σproducts, Σnet,
+			rate_constant: rate_constant.into(),
+			model: {use model::ReactionModel::*; match model {
+				Elementary => ReactionModel::Elementary,
+				Irreversible => ReactionModel::Irreversible,
+				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
+				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
+				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe: *troe},
+			}}
+		}
+	}
+}
+
+#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
+#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
+#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,/*P|V,*/[S-1]*/]>);
+pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
+
+impl State {
+	pub fn constant<const CONSTANT: Property>(&self) -> Constant<CONSTANT> { let Self{pressure_R, volume, ..} = self;
+		Constant(*{use Property::*; match CONSTANT {Pressure => pressure_R, Volume => volume}})
+	}
+}
+
+impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
+	fn from(State{temperature, pressure_R, volume, amounts}: &State) -> Self {
+		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
+	}
+}
+
+impl State {
+	#[track_caller] pub fn new<const CONSTANT: Property>(total_amount: f64, Constant(thermodynamic_state_constant): Constant<CONSTANT>, u: &StateVector<CONSTANT>) -> Self {
+		let u = &u.0;
+		let amounts = &u[2..];
+		let (pressure_R, volume) = {use Property::*; match CONSTANT {
+			Pressure => (thermodynamic_state_constant, u[1]),
+			Volume => (u[1], thermodynamic_state_constant)
+		}};
+		State{
+			temperature: u[0],
+			pressure_R,
+			volume,
+			amounts: amounts.iter().chain(&[total_amount - iter::into::Sum::<f64>::sum(amounts)]).copied().collect()
+		}
+	}
+}
+
+impl std::fmt::Display for State {
+	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let Self{temperature, pressure_R, volume, amounts} = self;
+		write!(fmt, "T: {}, P: {}, V: {}, n: {:?}", temperature/*/K*/, pressure_R*(K*NA), volume, amounts)
+	}
+}
+
 #[cfg(feature= "transport")] pub mod transport;
-#[cfg(feature= "reaction")] pub mod reaction;
+#[cfg(feature= "program")] pub mod program;
+#[cfg(feature= "cranelift")] pub mod cranelift;

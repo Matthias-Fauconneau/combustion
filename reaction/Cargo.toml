@@ -7,9 +7,8 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 [dependencies]
 fehler= ''
 anyhow= ''
-combustion= {path='..', features=['reaction']}
+combustion= {path='..', features=['cranelift']}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-cranelift-codegen= ''
 
 [lib]
 path = 'lib.rs'

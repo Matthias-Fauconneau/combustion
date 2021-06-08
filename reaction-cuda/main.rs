@@ -3,7 +3,7 @@ use {fehler::throws, anyhow::Error};
 
 use reaction::Simulation;
 #[throws] fn main() {
-	let model = std::fs::read("CH4+O2.ron")?;
+	let model = std::fs::read("LiDryer.ron")?;
 	let width = 32;
 	let simulation = Simulation::new(&model, 512*width)?;
 	let states_len = simulation.states_len();
@@ -65,6 +65,5 @@ use reaction::Simulation;
 	let mut rates = rates;
 	device_rates.copy_to(&mut rates).unwrap();
 	reaction::report(&species_names, &rates);
-	println!("{:8} {:e}", "HRR", rates[0]*energy_rate_R*8.31446261815324);
-	println!("{:8} {:e}", "HRR0", energy_rate_R*8.31446261815324);
+	println!("{:8} {:e}", "HRR", rates[0]);
 }

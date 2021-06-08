@@ -1,7 +1,7 @@
 #![feature(trait_alias)]#![allow(non_snake_case)]
 use {fehler::throws, anyhow::Error};
 
-use cranelift_codegen::ir::Function;
+use combustion::*;
 pub struct Simulation<'t> {
 	pub species_names: Box<[&'t str]>,
 	pub function: Function,
@@ -15,7 +15,6 @@ pub struct Simulation<'t> {
 
 impl<'t> Simulation<'t> {
 #[throws] pub fn new(model: &'t [u8], states_len: usize) -> Self {
-	use combustion::*;
 	let model = model::Model::new(&model)?;
 	let (species_names, species) = combustion::Species::new(&model.species);
 	use reaction::*;

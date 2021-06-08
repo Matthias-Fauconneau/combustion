@@ -6,11 +6,13 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [features]
-reaction= ['cranelift']
-jit= ['cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
+program= ['itertools']
 transport= ['nalgebra']
+jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
+
+default=['program']
 #default=['transport']
-default=['reaction','jit']
+#default=['jit']
 
 [dependencies]
 derive_more='*'
@@ -21,6 +23,7 @@ num= {git='https://github.com/Matthias-Fauconneau/num'}
 serde='*'
 ron='*'
 linear-map= {features= ['serde_impl'], version='*'}
+itertools= {optional=true, version='*'}
 nalgebra= {optional=true, version='*'}
 cranelift= {optional=true, version='*'}
 cranelift-codegen= {optional=true, version='*'}
