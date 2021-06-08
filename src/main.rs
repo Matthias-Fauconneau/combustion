@@ -1,4 +1,4 @@
-//#![feature(default_free_fn, array_map,bindings_after_at, associated_type_bounds)]#![allow(non_snake_case)]
+#![allow(non_snake_case)]
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,8 +10,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		use program::*;
 		println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
 		println!("fn enthalpy_RT{}", enthalpy_RT(&species.thermodynamics));
-		println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT(&species.thermodynamics));
-		println!("fn rates{}", rates(&iter::map(&*model.reactions, |r| Reaction::new(_species_names, r))));
+		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics);
+		println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT);
+		let rates = rates(&iter::map(&*model.reactions, |r| Reaction::new(_species_names, r)));
+		println!("fn rates{}", rates);
+		let state = initial_state(&model);
+		assert!(state.volume == 1.);
+		let State{temperature: T, amounts: concentrations, ..} = state;
+		let log_T = f64::log2(T);
+		let T2 = T*T;
+		let T3 = T*T2;
+		let T4 = T*T3;
+		let rcp_T = 1./T;
+		let P0_RT = NASA7::reference_pressure / T;
+		let exp_Gibbs0_RT = exp_Gibbs_RT(&[log_T,T,T2,T3,T4,rcp_T],&[]);
+		let rates = rates(&[log_T,T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], &[&exp_Gibbs0_RT, &concentrations]);
+		dbg!(rates);
 	}
 
 	#[cfg(feature="transport")] {

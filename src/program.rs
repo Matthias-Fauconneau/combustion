@@ -27,7 +27,7 @@ enum Statement {
 	ConditionalStatement { condition: Expression, consequent: Vec<Statement>, alternative: Vec<Statement> },
 }
 
-pub struct Subroutine { parameters: Vec<&'static str>, output: usize, body: Vec<Statement> }
+pub struct Subroutine { parameters: Vec<&'static str>, output: usize, statements: Vec<Statement> }
 
 fn parameter(name: &'static str) -> Expression { Expression::Parameter(name) }
 fn r#use(index: usize) -> Expression { Expression::Use(index) }
@@ -90,6 +90,40 @@ impl std::ops::Mul<&Definition> for f64 { type Output = Expression; fn mul(self,
 impl std::ops::Div<f64> for Expression { type Output = Expression; fn div(self, b: f64) -> Self::Output { mul(1./b, self) } }
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
+impl FnOnce<(&[f64],&[&[f64]])> for Subroutine {
+	type Output = Box<[f64]>; extern "rust-call" fn call_once(mut self, args: (&[f64],&[&[f64]])) -> Self::Output { self.call_mut(args) } }
+impl FnMut<(&[f64],&[&[f64]])> for Subroutine { extern "rust-call" fn call_mut(&mut self, args: (&[f64],&[&[f64]])) -> Self::Output  { self.call(args) } }
+impl Fn<(&[f64],&[&[f64]])> for Subroutine {
+	extern "rust-call" fn call(&self, (arguments, arrays): (&[f64],&[&[f64]])) -> Self::Output  {
+		struct State { output: Box<[f64]> }
+		impl State {
+			fn eval(&self, expression: &Expression) -> f64 {
+				use Expression::*;
+				match expression {
+					Less(a, b) => if self.eval(a) < self.eval(b) { 1. } else { 0. },
+					e => panic!("{}", e),
+				}
+			}
+			fn run(&mut self, statements: &[Statement]) {
+				for statement in statements {
+					use Statement::*;
+					match statement {
+						ConditionalStatement { condition, consequent, alternative } => {
+							if self.eval(condition) != 0. { self.run(consequent); } else { self.run(alternative); }
+						}
+						Assign { destination: Expression::Index { base: "", index }, value } => self.output[*index] = self.eval(value),
+						s => panic!("{}", s),
+					}
+				}
+			}
+		}
+		let mut state = State{output: vec![0.; self.output].into_boxed_slice()};
+		state.run(&self.statements);
+		state.output
+	}
+}
+
+
 use itertools::Itertools;
 
 impl std::fmt::Display for Expression {
@@ -101,11 +135,11 @@ impl std::fmt::Display for Expression {
 			Use(v) => write!(f, "#{}", v),
 			Index { base, index } => write!(f, "{}[{}]", base, index),
 			Neg(x) => write!(f, "-{}", x),
-			Add(a, b) => write!(f, "{} + {}", a, b),
-			Sub(a, b) => write!(f, "{} - {}", a, b),
+			Add(a, b) => write!(f, "({} + {})", a, b),
+			Sub(a, b) => write!(f, "({} - {})", a, b),
 			Less(a, b) => write!(f, "{} < {}", a, b),
-			Mul(a, b) => write!(f, "{} * {}", a, b),
-			Div(a, b) => write!(f, "{} / {}", a, b),
+			Mul(a, b) => write!(f, "({} * {})", a, b),
+			Div(a, b) => write!(f, "({} / {})", a, b),
 			Call { function, arguments } => write!(f, "{}({})", function, arguments.iter().format(", ")),
 			Block { statements, result } => write!(f, "{{ {}; {} }}", statements.iter().format(";"), result),
 		}
@@ -125,7 +159,7 @@ impl std::fmt::Display for Statement {
 
 impl std::fmt::Display for Subroutine {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "({}) -> {} {{\n{}\n}}", self.parameters.iter().format(", "), self.output, self.body.iter().format("\n"))
+		write!(f, "({}) -> {} {{\n{}\n}}", self.parameters.iter().format(", "), self.output, self.statements.iter().format("\n"))
 	}
 }
 
@@ -165,7 +199,7 @@ fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], 
 	Subroutine{
 		parameters: parameters.to_vec(),
 		output: thermodynamics.len(),
-		body: bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter().map(|(temperature_split, species)| Statement::ConditionalStatement{
+		statements: bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter().map(|(temperature_split, species)| Statement::ConditionalStatement{
 			condition: less(parameter(T), f64::from_bits(temperature_split)),
 			consequent: species.iter().map(|&specie| assign(output(specie), expression(&thermodynamics[specie].pieces[0], Ts.into()))).collect(),
 			alternative: species.iter().map(|&specie| assign(output(specie), expression(&thermodynamics[specie].pieces[1], Ts.into()))).collect()
@@ -251,7 +285,7 @@ pub fn rates(reactions: &[Reaction]) -> Subroutine {
 	Subroutine {
 		parameters: parameters.into(),
 		output: species_len-1,
-		body: reactions.iter().enumerate().map(|(reaction, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
+		statements: reactions.iter().enumerate().map(|(reaction, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 			let c = model.efficiency(rate_constant, T, &concentrations); // todo: CSE
 			let Rf = product_of_exponentiations(reactants, concentrations);
 			let R = if let ReactionModel::Irreversible = model { Rf } else {
