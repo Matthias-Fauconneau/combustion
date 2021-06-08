@@ -7,10 +7,11 @@ edition= '2018'
 
 [features]
 program= ['itertools']
+reaction= ['program']
 transport= ['nalgebra']
 jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
 
-default=['program']
+default=['reaction']
 #default=['transport']
 #default=['jit']
 
@@ -30,6 +31,3 @@ cranelift-codegen= {optional=true, version='*'}
 cranelift-module= {optional=true, version='*'}
 cranelift-native= {optional=true, version='*'}
 cranelift-jit= {optional=true, version='*'}
-
-[patch.'https://github.com/Matthias-Fauconneau/iter']
-iter= {path='../iter'}

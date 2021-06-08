@@ -178,4 +178,5 @@ impl std::fmt::Display for State {
 
 #[cfg(feature= "transport")] pub mod transport;
 #[cfg(feature= "program")] pub mod program;
+#[cfg(feature= "reaction")] pub mod reaction;
 #[cfg(feature= "cranelift")] pub mod cranelift;

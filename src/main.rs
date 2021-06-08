@@ -6,11 +6,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = model::Model::new(&model)?;
 	let (ref _species_names, ref species) = Species::new(&model.species);
 
-	#[cfg(feature="program")] {
-		use program::*;
+	#[cfg(feature="reaction")] {
+		use reaction::*;
 		//println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
 		//println!("fn enthalpy_RT{}", enthalpy_RT(&species.thermodynamics));
-		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics);
+		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]);
 		//println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT);
 		let rates = rates(&iter::map(&*model.reactions, |r| Reaction::new(_species_names, r)));
 		//println!("fn rates{}", rates);
@@ -25,7 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let P0_RT = NASA7::reference_pressure / T;
 		let exp_Gibbs0_RT = exp_Gibbs_RT(&[log_T,T,T2,T3,T4,rcp_T],&[]);
 		let rates = rates(&[log_T,T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], &[&exp_Gibbs0_RT, &concentrations]);
-		for (i, (specie, rate)) in _species_names.iter().zip(rates.iter()).enumerate() { if rate.abs() > 1e-29 { println!("{:3} {:4} {:>+0.3e}", i, specie, rate); } }
+		for rate in rates[species.len()-1..].iter() { println!("     {:>+0.3e}", rate); }
+		let rates = &rates[..species.len()-1];
+		for (specie, rate) in _species_names.iter().zip(rates.iter()) { println!("{:4} {:>+0.3e}", specie, rate); }
 	}
 
 	#[cfg(feature="transport")] {
