@@ -1,4 +1,3 @@
-//fn linear_interpolation(x: &[f64; 2], y: &[f64; 2], x0: f64) -> f64 { assert!(x[0] != x[1]); y[0] + (y[1]-y[0])/(x[1]-x[0])*(x0-x[0]) }
 fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
@@ -71,7 +70,7 @@ impl Species {
 	fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
 		let ln_T⃰ = ln(self.T⃰ (a, b, T));
 		let δ⃰ = self.reduced_dipole_moment(a, b);
-		/*const*/let header_ln_T⃰ = vec::eval(header_T⃰.copied(), ln);
+		/*const*/let header_ln_T⃰ = header_T⃰.each_ref().map(|&T| ln(T));
 		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, header_ln_T⃰.len()-3);
 		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		let polynomials: &[_; 3] = &table[interpolation_start_index..][..3].try_into().unwrap();
@@ -91,7 +90,7 @@ impl Species {
 		3./16. * sqrt(2.*π/self.reduced_mass(a,b)) * pow(K*T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
 	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {
-		let Self{molar_mass, thermodynamics, diameter, well_depth_J, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
+		let Self{molar_mass, thermodynamics, well_depth_J, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
 		let f_internal = molar_mass[a]/NA/(K * T) * self.binary_thermal_diffusion_coefficient(a,a,T) / self.viscosity(a, T);
 		let T⃰ = self.T⃰ (a, a, T);
 		let fz = |T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;

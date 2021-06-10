@@ -11,7 +11,7 @@ reaction= ['program']
 transport= ['nalgebra']
 jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
 
-default=['reaction']
+#default=['reaction']
 #default=['transport']
 #default=['jit']
 

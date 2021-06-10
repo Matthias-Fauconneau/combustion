@@ -1,4 +1,5 @@
-#![feature(associated_type_bounds, unboxed_closures, once_cell, default_free_fn, fn_traits, in_band_lifetimes, const_generics, array_map)]#![allow(uncommon_codepoints, confusable_idents, incomplete_features, non_upper_case_globals, non_snake_case)]
+#![feature(associated_type_bounds, unboxed_closures, once_cell, default_free_fn, fn_traits, in_band_lifetimes, const_generics, array_map, array_methods, trait_alias)]
+#![allow(uncommon_codepoints, confusable_idents, incomplete_features, non_upper_case_globals, non_snake_case)]
 
 pub const K : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
@@ -52,7 +53,8 @@ impl Species {
 		let polarizability = map(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
 		let permanent_dipole_moment = map(species, |(_,s)|
 			if let Nonlinear{permanent_dipole_moment_Debye,..} = s.transport.geometry { permanent_dipole_moment_Debye*Cm_per_Debye } else { 0. });
-		let rotational_relaxation = map(species, |(_,s)| if let Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
+		let rotational_relaxation =
+			map(species, |(_,s)| if let Linear{rotational_relaxation,..}|Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
 		let internal_degrees_of_freedom = map(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
 		let heat_capacity_ratio = map(species, |(_,s)| 1. + 2. / match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. });
 		(map(species, |(name,_)| *name), Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, heat_capacity_ratio})
@@ -116,7 +118,7 @@ pub struct Reaction {
 impl Reaction {
 	pub fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}: &model::Reaction) -> Self {
 		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
-		let [reactants, products] = iter::vec::eval(equation, |e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
+		let [reactants, products] = equation.each_ref().map(|e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
 		let net = products.into_iter().zip(reactants.into_iter()).take(species_names.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
 		let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
 		let Σnet = Σproducts as i8 - Σreactants as i8;
