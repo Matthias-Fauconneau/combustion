@@ -1,20 +1,20 @@
 [package]
-name = "combustion-yaml"
-version = "0.0.0"
-authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
-edition = "2018"
+name= 'combustion-yaml'
+version= '0.0.0'
+authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition= '2018'
 
 [dependencies]
-fehler = ''
-anyhow = ''
-combustion = {path="..", default-features= false}
-ron = ''
-yaml-rust = ''
-pest_derive= ''
-pest= ''
-itertools = ''
-float-pretty-print = ''
-pretty_assertions= ''
+fehler=''
+anyhow=''
+combustion= {path="..", default-features= false}
+ron=''
+yaml-rust=''
+pest_derive=''
+pest=''
+itertools=''
+float-pretty-print=''
+pretty_assertions=''
 
 [lib]
 path= 'lib.rs'

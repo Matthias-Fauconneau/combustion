@@ -87,9 +87,8 @@ pub use yaml_rust::YamlLoader as Loader;
 		let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 		let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 		let reactants = reactants + if let Some("three-body") = reaction["type"].as_str() {1} else {0};
-		let rate_constant = |rate_constant:&yaml_rust::Yaml, C_cm3_unit_conversion_factor_exponent: u8| RateConstant{
-			// ẇ = AxΠc [mol/m³/s = Ax(mol/m³)^r] => [A] = ((mol/m³)^(1-r))/s; 1 mol/m³ = 1e-2³.mol/cm³ => A[m] = A[cm] / (1e-2³)^(1-r)
-			preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, C_cm3_unit_conversion_factor_exponent as f64),
+		let rate_constant = |rate_constant:&yaml_rust::Yaml, concentration_cm3_unit_conversion_factor_exponent: u8| RateConstant{
+			preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, concentration_cm3_unit_conversion_factor_exponent as f64),
 			temperature_exponent: rate_constant["b"].as_f64().unwrap(),
 			activation_energy: rate_constant["Ea"].as_f64().unwrap(),
 		};

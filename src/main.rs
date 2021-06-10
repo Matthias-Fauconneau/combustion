@@ -2,18 +2,20 @@
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = &std::fs::read("LiDryer.ron")?;
-	let model = model::Model::new(&model)?;
+	//let model = &std::fs::read("LiDryer.ron")?;
+	let model = include_bytes!("../LiDryer.ron");
+	let model = model::Model::new(model)?;
 	let (ref _species_names, ref species) = Species::new(&model.species);
+	//eprintln!("molar_mass: {:?}", &species.molar_mass);
 
 	#[cfg(feature="reaction")] {
 		use reaction::*;
 		//println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
 		//println!("fn enthalpy_RT{}", enthalpy_RT(&species.thermodynamics));
 		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]);
-		//println!("fn exp_Gibbs_RT{}", exp_Gibbs_RT);
+		println!("fn exp_Gibbs_RT{:?}", exp_Gibbs_RT);
 		let rates = rates(&iter::map(&*model.reactions, |r| Reaction::new(_species_names, r)));
-		//println!("fn rates{}", rates);
+		println!("fn rates{:?}", rates);
 		let state = initial_state(&model);
 		assert!(state.volume == 1.);
 		let State{temperature: T, amounts: concentrations, ..} = state;
@@ -22,12 +24,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let T3 = T*T2;
 		let T4 = T*T3;
 		let rcp_T = 1./T;
-		let P0_RT = NASA7::reference_pressure / T;
 		let exp_Gibbs0_RT = exp_Gibbs_RT(&[log_T,T,T2,T3,T4,rcp_T],&[]);
+		let P0_RT = NASA7::reference_pressure / T;
 		let rates = rates(&[log_T,T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], &[&exp_Gibbs0_RT, &concentrations]);
-		for rate in rates[species.len()-1..].iter() { println!("     {:>+0.3e}", rate); }
-		let rates = &rates[..species.len()-1];
-		for (specie, rate) in _species_names.iter().zip(rates.iter()) { println!("{:4} {:>+0.3e}", specie, rate); }
+		use itertools::Itertools;
+		eprintln!("{:e}", rates.iter().format(", "));
+		//for rate in rates[species.len()-1..].iter() { eprintln!("     {:>+0.3e}", rate); }
+		//let rates = &rates[..species.len()-1];
+		//for (specie, rate) in _species_names.iter().zip(rates.iter()) { eprintln!("{:4} {:>+0.3e}", specie, rate); }
 	}
 
 	#[cfg(feature="transport")] {

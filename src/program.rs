@@ -161,7 +161,13 @@ impl std::fmt::Debug for Expression {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use Expression::*;
 		match self {
-			Literal(v) => v.fmt(f),
+			&Literal(v) => {
+				if v == f64::floor(v) {
+					if v >= 1e4 { write!(f, "{:e}", v) }
+					else { (v as i64).fmt(f) }
+				}
+				else { use std::fmt::Display; float_pretty_print::PrettyPrintFloat(v).fmt(f) }
+			}
 			Use(v) => write!(f, "#{}", v.0),
 			Index { base, index } => write!(f, "{}[{}]", base.0, index),
 			Neg(x) => write!(f, "-{:?}", x),
@@ -189,7 +195,7 @@ impl std::fmt::Debug for Statement {
 
 impl std::fmt::Debug for Subroutine {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "({:?}) -> {:?} {{\n{:?}\n}}", self.parameters.iter().format(", "), self.output, self.statements.iter().format("\n"))
+		write!(f, "({}) -> {:?} {{\n{:?}\n}}", self.parameters.iter().format(", "), self.output, self.statements.iter().format("\n"))
 	}
 }
 
