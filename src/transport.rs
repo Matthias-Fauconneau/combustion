@@ -3,9 +3,9 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
 }
 
-fn evaluate_polynomial<const N: usize>(P: &[f64; N], x: f64) -> f64 { P.dot(generate(|k| x.powi(k as i32))) }
+fn evaluate_polynomial<const N: usize>(P: &[f64; N], x: f64) -> f64 { iter::Dot::dot(P, iter::ConstRange.map(|k| x.powi(k as i32))) }
 
-trait Vector<const N: usize> = vec::Vector<N>+iter::IntoIterator<Item=f64>;
+trait Vector<const N: usize> = iter::ConstSizeIterator<N>+iter::IntoIterator<Item=f64>;
 fn weighted_polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
 	use nalgebra::{DMatrix, DVector, SVD};
 	let ref w = DVector::from_iterator(N, w.into_iter());
@@ -15,19 +15,18 @@ fn weighted_polynomial_regression<const D: usize, const N: usize>(x: impl Vector
 	SVD::new(A, true, true).solve(&b, f64::EPSILON).unwrap().as_slice().try_into().unwrap()
 }
 
-use iter::into::IntoMap;
+use {std::{convert::TryInto, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}, iter::{from_iter, into::{IntoCopied, IntoMap}}};
+
 // Regression with 1/y² weights (towards relative vertical error)
 fn polynomial_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_polynomial_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 fn polynomial_fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { polynomial_regression(t.map(x), t.map(y)) }
 
-use {std::{convert::TryInto, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}};
-use {iter::{from_iter, eval, zip, dot, into::IntoCopied, vec::{self, Dot, generate}}};
 const light_speed : f64 = 299_792_458.;
 const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
 const ε0 : f64 = 1./(light_speed*light_speed*μ0); // F/m (Farad=s⁴A²/(m²kg)
 use super::{K, NA, Species, State};
 mod collision_integrals; // Reduced collision integrals table computed from Chapman-Enskog theory with Stockmayer potential by L. Monchick and E.A. Mason. Transport properties of polar gases. J. Chem. Phys.
-use collision_integrals::{header_T⃰, header_δ⃰};
+pub use collision_integrals::{header_T⃰, header_δ⃰};
 // Least square fits polynomials in δ⃰, for each T⃰  row of the collision integrals tables
 fn polynomial_regression_δ⃰(table: &[[f64; 8]; 39]) -> [[f64; 7]; 39] { table.each_ref().map(|T⃰_row:&[_; 8]| polynomial_regression(header_δ⃰.copied(), T⃰_row.copied())) }
 use std::lazy::SyncLazy;
@@ -58,7 +57,7 @@ impl Species {
 		let Self{well_depth_J, ..} = self;
 		sqrt(well_depth_J[a]*well_depth_J[b]) * sq(self.χ(a, b))
 	}
-	fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * K / self.interaction_well_depth(a, b) }
+	pub fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * K / self.interaction_well_depth(a, b) }
 	fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 {
 		let Self{well_depth_J, permanent_dipole_moment, diameter, ..} = self;
 		permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.))
@@ -69,11 +68,11 @@ impl Species {
 	}
 	fn collision_integral(&self, table: &[[f64; 7]; 39], a: usize, b: usize, T: f64) -> f64 {
 		let ln_T⃰ = ln(self.T⃰ (a, b, T));
-		let δ⃰ = self.reduced_dipole_moment(a, b);
 		/*const*/let header_ln_T⃰ = header_T⃰.each_ref().map(|&T| ln(T));
 		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, header_ln_T⃰.len()-3);
 		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		let polynomials: &[_; 3] = &table[interpolation_start_index..][..3].try_into().unwrap();
+		let δ⃰ = self.reduced_dipole_moment(a, b);
 		let image = quadratic_interpolation(header_ln_T⃰, &from_iter(polynomials.map(|P| evaluate_polynomial(P, δ⃰ ))), ln_T⃰);
 		assert!(*header_ln_T⃰ .first().unwrap() <= ln_T⃰  && ln_T⃰  <= *header_ln_T⃰ .last().unwrap());
 		assert!(*header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *header_δ⃰ .last().unwrap());
@@ -104,11 +103,12 @@ impl Species {
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
 		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
 		const N : usize = /*D+2 FIXME: Remez*/50;
-		let T : [_; N] = generate(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
+		let T : [_; N] = iter::ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 		TransportPolynomials{
-			sqrt_viscosity_T14: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))),
-			thermal_conductivity_T12: eval(self.len(), |a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.thermal_conductivity(a,T)/sqrt(T))),
-			binary_thermal_diffusion_coefficients_T32: eval(self.len(), |a| eval(self.len(), |b| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.binary_thermal_diffusion_coefficient(a, b, T) / pow(T, 3./2.))))
+			sqrt_viscosity_T14: (0..self.len()).map(|a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| sqrt(self.viscosity(a, T))/sqrt(sqrt(T)))).collect(),
+			thermal_conductivity_T12: (0..self.len()).map(|a| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.thermal_conductivity(a,T)/sqrt(T))).collect(),
+			binary_thermal_diffusion_coefficients_T32:
+				(0..self.len()).map(|a| (0..self.len()).map(|b| polynomial_fit::<_,_,_,D,N>(T, ln, |T| self.binary_thermal_diffusion_coefficient(a, b, T) / pow(T, 3./2.))).collect()).collect()
 		}
 	}
 }
@@ -122,6 +122,7 @@ impl TransportPolynomials {
 #[derive(Debug)] pub struct Transport { pub viscosity: f64, pub thermal_conductivity: f64, pub mixture_diffusion_coefficients: Box<[f64]> }
 pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomials, State{temperature, pressure_R, volume, amounts}: &State) -> Transport {
 	let T = *temperature;
+	use iter::{zip, dot};
 	let viscosity = dot(zip(amounts.copied(), |k|
 		sq(transport_polynomials.sqrt_viscosity(k, T)) /
 		dot(zip(amounts.copied(), |j|
@@ -135,10 +136,10 @@ pub fn transport(molar_mass: &[f64], transport_polynomials: &TransportPolynomial
 		amount / dot(zip(amounts.copied(), |k| 1. / transport_polynomials.thermal_conductivity(k, T)))
 	);
 	let mean_molar_mass = dot(amounts.iter().copied().zip(molar_mass.iter().copied()));
-	let mixture_diffusion_coefficients = eval(amounts.len(), |k|
+	let mixture_diffusion_coefficients = (0..amounts.len()).map(|k|
 		(1. - amounts[k]*molar_mass[k]/mean_molar_mass) * amount /
 		dot(zip(amounts.copied(), |j| if j != k { 1. / transport_polynomials.binary_thermal_diffusion_coefficient(k, j, T) } else { 0. }))
-	);
+	).collect();
 	Transport{viscosity, thermal_conductivity, mixture_diffusion_coefficients}
 }
 

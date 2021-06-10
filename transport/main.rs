@@ -50,7 +50,7 @@ macro_rules! benchmark { ($task:expr, $times:expr) => { benchmark(|| { $task }, 
 	module.get_global::<[[f32; 5]; N]>(std::ffi::CStr::from_bytes_with_nul(b"sqrt_viscosity_T14\0")?)?.copy_from(sqrt_viscosity_T14.deref().try_into()?)?;
 	module.get_global::<[[f32; 5]; N]>(std::ffi::CStr::from_bytes_with_nul(b"thermal_conductivity_T12\0")?)?.copy_from(thermal_conductivity_T12.deref().try_into()?)?;
 	module.get_global::<[[[f32; 5]; N]; N]>(std::ffi::CStr::from_bytes_with_nul(b"binary_thermal_diffusion_coefficients_T32\0")?)?
-		.copy_from(&iter::from_iter_(binary_thermal_diffusion_coefficients_T32.iter().map(|e| (*e.deref()).try_into().unwrap())))?;
+		.copy_from(&iter::from_iter(iter::into::map(binary_thermal_diffusion_coefficients_T32, |e| (*e.deref()).try_into().unwrap())))?;
 
 	let stream = Stream::new(StreamFlags::NON_BLOCKING, None).expect("stream");
 

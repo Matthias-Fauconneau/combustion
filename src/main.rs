@@ -1,4 +1,4 @@
-#![allow(non_snake_case)]
+#![feature(array_methods, array_map)]#![allow(non_snake_case, uncommon_codepoints)]
 use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -7,9 +7,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = model::Model::new(model)?;
 	let (ref _species_names, ref species) = Species::new(&model.species);
 	use itertools::Itertools;
-	let pretty = |array:&[f64]| array.iter().format_with(", ", |&e, f| f(&float_pretty_print::PrettyPrintFloat(e))).to_string();
-	let dbg = |label, array:&[f64]| eprintln!("{}: {}", label, pretty(array));
-	dbg("molar_mass", &species.molar_mass);
+	fn pretty(iter: impl IntoIterator<Item=f64>) -> String { iter.into_iter().format_with(", ", |e, f| f(&float_pretty_print::PrettyPrintFloat(e))).to_string() }
+	//let dbg = |label: &str, array:&[f64]| eprintln!("{}: {}", label, pretty(array));
+	/*dbg("molar_mass", &species.molar_mass);
 	dbg("internal_degrees_of_freedom", &species.internal_degrees_of_freedom);
 	dbg("heat_capacity_ratio", &species.heat_capacity_ratio);
 	dbg("well_depth_J", &species.well_depth_J);
@@ -18,8 +18,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	dbg("polarizability", &species.polarizability);
 	dbg("rotational_relaxation", &species.rotational_relaxation);
 	eprintln!("thermodynamics: {}", species.thermodynamics.iter().format_with(", ",
-		|&NASA7{temperature_split, pieces}, f| f(&format_args!("({}, [{}])", temperature_split, pieces.iter().format_with(", ", |piece, f| f(&format_args!("[{}]", pretty(piece))))))
-	));
+		|&NASA7{temperature_split, pieces}, f| f(&format_args!("({}, [{}])", temperature_split, pieces.iter().format_with(", ", |p, f| f(&format_args!("[{}]", pretty(p))))))
+	));*/
+
+	#[cfg(feature="transport")] {
+		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
+		const N : usize = /*D+2 FIXME: Remez*/50;
+		use iter::{into::{IntoCopied, IntoMap}, ConstSizeIterator};
+		let T : [_; N] = iter::ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
+		//eprintln!("{}", pretty(T.iter().map(|&T| species.T⃰(0,0, T))));
+		let (a, b, T) = (0, 0, T[47]);
+		let ln_T⃰ = num::ln(species.T⃰ (a, b, T));
+		/*const*/let header_ln_T⃰ = transport::header_T⃰.each_ref().map(|&T| num::ln(T));
+		let interpolation_start_index = std::cmp::min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, header_ln_T⃰.len()-3);
+		//dbg!(interpolation_start_index, header_ln_T⃰.len());
+		if false {
+			let ref transport_polynomials = species.transport_polynomials();
+			eprintln!("{}", transport_polynomials.binary_thermal_diffusion_coefficients_T32.iter().format_with(",\n",
+				|c, f| f(&format_args!("[\n{}\n]", c.iter().format_with(",\n", |p, f| f(&format_args!("[{}]", pretty(p.copied())))))) ));
+			//println!("{}", transport::transport(&species.molar_mass, transport_polynomials, state).mixture_diffusion_coefficients);
+		}
+	}
+
 	#[cfg(feature="reaction")] {
 		use reaction::*;
 		//println!("fn molar_heat_capacity_at_constant_pressure_R{}", molar_heat_capacity_at_constant_pressure_R(&species.thermodynamics));
@@ -44,11 +64,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		//for (specie, rate) in _species_names.iter().zip(rates.iter()) { eprintln!("{:4} {:>+0.3e}", specie, rate); }
 	}
 
-	#[cfg(feature="transport")] {
-		let ref transport_polynomials = species.transport_polynomials();
-		println!("{:#?}", &transport_polynomials.binary_thermal_diffusion_coefficients_T32);
-		//println!("{}", transport::transport(&species.molar_mass, transport_polynomials, state).mixture_diffusion_coefficients);
-	}
 	#[cfg(all(feature="jit"))] {
 		use reaction::{*, Property::*};
 		let rate = rate_function(species, model.reactions.map(|r| Reaction::new(species_names, r)));
