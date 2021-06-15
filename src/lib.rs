@@ -22,7 +22,7 @@ impl NASA7 {
 use {std::{convert::TryInto, lazy::SyncLazy}, linear_map::LinearMap as Map};
 static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
 	ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, N: 14.0067, O: 15.999, Ar: 39.95}").unwrap()
-	.into_iter().map(|(e,g)| (e, g*1e-3/*kg/g*/)).collect()
+	.into_iter().map(|(e,g)| (e, g/1e3/*kg/g*/)).collect()
 });
 
 #[derive(Debug)] pub struct Species {

@@ -80,7 +80,7 @@ impl Species {
 		image
 	}
 	fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral(&Ω⃰22, a, b, T) }
-	fn viscosity(&self, a: usize, T: f64) -> f64 {
+	pub fn viscosity(&self, a: usize, T: f64) -> f64 {
 		let Self{molar_mass, diameter, ..} = self;
 		5./16. * sqrt(π * molar_mass[a]/NA * K*T) / (self.Ω⃰22(a, a, T) * π * sq(diameter[a]))
 	}
@@ -101,7 +101,7 @@ impl Species {
 		(self.viscosity(a, T)/(molar_mass[a]/NA))*K*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
 	}
 	pub fn transport_polynomials(&self) -> TransportPolynomials {
-		/*const*/let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
+		let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
 		const N : usize = /*D+2 FIXME: Remez*/50;
 		let T : [_; N] = iter::ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 		TransportPolynomials{
