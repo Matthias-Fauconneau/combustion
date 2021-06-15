@@ -137,7 +137,7 @@ impl Reaction {
 	}
 }
 
-#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
+/*#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
 #[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
 #[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,/*P|V,*/[S-1]*/]>);
 pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
@@ -176,7 +176,7 @@ impl std::fmt::Display for State {
 		let Self{temperature, pressure_R, volume, amounts} = self;
 		write!(fmt, "T: {}, P: {}, V: {}, n: {:?}", temperature/*/K*/, pressure_R*(K*NA), volume, amounts)
 	}
-}
+}*/
 
 #[cfg(feature= "transport")] pub mod transport;
 #[cfg(feature= "program")] pub mod program;

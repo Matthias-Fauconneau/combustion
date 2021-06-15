@@ -11,21 +11,20 @@ fn r#mut<'t>(v: N_Vector) -> &'t mut [f64] {
 	unsafe{std::slice::from_raw_parts_mut(N_VGetArrayPointer_Serial(v), len(v))}.try_into().unwrap()
 }
 
-pub struct CVODE<F: Fn(&[f64])->Option<Box<[f64]>>>(*mut void, std::marker::PhantomData<F>);
+pub struct CVODE<F: Fn(&[f64], &mut [f64])->bool>(*mut void, std::marker::PhantomData<F>);
 
-impl<F: Fn(&[f64])->Option<Box<[f64]>>> CVODE<F> {
+impl<F: Fn(&[f64], &mut [f64])->bool> CVODE<F> {
 	pub fn new(relative_tolerance: f64, absolute_tolerance: f64, u: &[f64]) -> Self {
 		let cvode = unsafe{CVodeCreate(CV_BDF)};
 		fn to_str<'t>(s: *const i8) -> &'t str { unsafe{std::ffi::CStr::from_ptr(s)}.to_str().unwrap() }
 		extern "C" fn err(_error_code: i32, _module: *const i8, function: *const i8, msg: *mut i8, _user_data: *mut void) { panic!("{}: {}", to_str(function), to_str(msg)); }
 		unsafe{CVodeSetErrHandlerFn(cvode, Some(err), std::ptr::null_mut())};
-		extern "C" fn shim<F: Fn(&[f64])->Option<Box<[f64]>>>(_t: f64, u: N_Vector, /*mut*/ fu: N_Vector, f: *mut void) -> i32 {
+		extern "C" fn shim<F: Fn(&[f64], &mut [f64])->bool>(_t: f64, u: N_Vector, /*mut*/ f_u: N_Vector, f: *mut void) -> i32 {
 			let u = r#ref(u);
 			for u in u { assert!(u.is_finite()); }
-			if let Some(f_u) = unsafe{(f as *const F).as_ref()}.unwrap()(u) {
+			assert_eq!(r#mut(f_u).len(), u.len());
+			if unsafe{(f as *const F).as_ref()}.unwrap()(u, r#mut(fu)) {
 				for f_u in f_u.iter() { assert!(f_u.is_finite()); }
-				assert_eq!(r#mut(fu).len(), f_u.len());
-				r#mut(fu).copy_from_slice(&f_u);
 				0
 			} else { 1 }
 		}

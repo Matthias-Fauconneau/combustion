@@ -7,7 +7,7 @@ fn get_mut<T: Default, U>(cell: &std::cell::Cell<T>, f: impl FnOnce(&mut T) -> U
 	result
 }
 
-struct Row<W, const N: usize>([W; N]);
+/*struct Row<W, const N: usize>([W; N]);
 use {xy::xy, ui::widget::{size, Target, Widget, Event, EventContext}};
 impl<W:Widget, const N: usize> Widget for Row<W,N> {
 	fn size(&mut self, size: size) -> size { self.0[0].size(size) }
@@ -20,77 +20,58 @@ impl<W:Widget, const N: usize> Widget for Row<W,N> {
 		for (_column, widget) in self.0.iter_mut().enumerate() { if widget.event(size, event_context, event)? { return true; } } // todo: translate position
 		false
 	}
-}
-
-fn implicit(u: &[f64]) -> Box<[f64]> { [u[0]].iter().chain(&u[2..]).copied().collect() } // one of P or V imply the other using ideal gas law
-fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Reconstructs P|V using ideal gas law
-	let temperature = u[0];
-	let volume = total_amount / pressure_R * temperature;
-	[temperature, volume].iter().chain(&u[1..]).copied().collect()
-}
+}*/
 
 #[fehler::throws(anyhow::Error)] fn main() {
-	let model = &std::fs::read("CH4+O2.ron").unwrap();
+	let model = &std::fs::read("../LiDryer.ron").unwrap();
 	use combustion::{*, reaction::{*, Property::*}};
 	let model = model::Model::new(&model).unwrap();
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let len = species.len();
 	let reactions = iter::map(&*model.reactions, |r| Reaction::new(species_names, r));
-	let rate = rate_function(species, &*reactions);
+
+	use reaction::*;
+	let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]);
+	let rates = rates(&iter::map(&*model.reactions, |r| Reaction::new(species_names, r)));
+
+	let f = |u, f_u| {
+		let [temperature, active_amounts..] = u;
+		let total_concentration = pressure_R / T;
+		let density = total_concentration / total_amount;
+		let active_concentrations = map(active_amounts, |&n| density*max(0., n)));
+		let inert_concentration = total_concentration - active_concentrations.sum();
+		let ref concentrations = [&active_concentrations as &[_],&[inert_concentration]].concat();
+		let log_T = f64::log2(T);
+		let T2 = T*T;
+		let T3 = T*T2;
+		let T4 = T*T3;
+		let rcp_T = 1./T;
+		let exp_Gibbs0_RT = vec![0.; u.len()];
+		exp_Gibbs_RT(&[log_T,T,T2,T3,T4,rcp_T],&[], &mut exp_Gibbs0_RT);
+		let P0_RT = NASA7::reference_pressure / T;
+		rates(&[log_T,T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], &[&exp_Gibbs0_RT, &concentrations], du)
+	}
+
 	let ref state = combustion::initial_state(&model);
 	let total_amount = state.amounts.iter().sum();
+	let state = [&[state.temperature], amounts[..amounts.len()-1]].concat();
 
-	struct Derivative<Rate: reaction::Rate<CONSTANT>, const CONSTANT: Property> {
-		rate: Rate,
-		constant: Constant<CONSTANT>,
-		total_amount: f64,
-		derivative: std::cell::Cell<StateVector::<CONSTANT>>
-	}
-	impl<Rate: reaction::Rate<CONSTANT>, const CONSTANT: Property> FnOnce<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		type Output = Option<Box<[f64]>>;
-		extern "rust-call" fn call_once(mut self, args: (&[f64],)) -> Self::Output { self.call_mut(args) }
-	}
-	impl<Rate: reaction::Rate<CONSTANT>, const CONSTANT: Property> FnMut<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		extern "rust-call" fn call_mut(&mut self, args: (&[f64],)) -> Self::Output { self.call(args) }
-	}
-	impl<Rate: reaction::Rate<CONSTANT>, const CONSTANT: Property> Fn<(&[f64],)> for Derivative<Rate, CONSTANT> {
-		extern "rust-call" fn call(&self, (u,): (&[f64],)) -> Self::Output {
-			let Self{rate, constant, total_amount, derivative} = self;
-			get_mut(derivative, |mut derivative| {
-				let pressure_R = constant.0 as f64;
-				rate(*constant, &StateVector(explicit(*total_amount, pressure_R, u)), &mut derivative);
-				Some(implicit(&derivative.0))
-			})
-		}
-	}
-	let constant = state.constant();
-	let derivative = /*Derivative*/StateVector(std::iter::repeat(0.).take(2+len-1).collect());
-	let derivative = std::cell::Cell::new(derivative);
-	let ref derivative = Derivative{
-		rate,
-		constant,
-		total_amount,
-		derivative
-	};
-
-	fn from(State{temperature, pressure_R: _, volume, amounts, ..}: &State) -> Box<[Box<[f64]>]> {
-		vec![vec![*temperature, /* *pressure_R*K*NA,*/ *volume].into_boxed_slice(), iter::map(&**amounts, |v| v/amounts.iter().sum::<f64>())].into_boxed_slice()
-	}
-	let state : StateVector<{Pressure}> = state.into();
-	let state = implicit(&state);
 	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
 	let plot_min_time = 0.4;
 	let (mut time, mut state) = (0., &*state);
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = cvode.step(derivative, next_time, state); }
+		while time < next_time { (time, state) = cvode.step(f, next_time, state); }
 	}
 	let mut min = 0f64;
 	let values = iter::eval(1000, |_| {
-		let value = ((time-plot_min_time)*1e3, from(&State::new(total_amount, constant, &StateVector::<{Pressure}>(explicit(total_amount, constant.0 as f64, &state)))));
+		fn from([temperature, active_amounts..] : &[f64]) -> Box<[Box<[f64]>]> {
+        vec![vec![*temperature].into_boxed_slice(), iter::map(&**active_amounts, |v| v/active_amounts.iter().sum::<f64>())].into_boxed_slice()
+		}
+		let value = ((time-plot_min_time)*1e3))));
 		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = cvode.step(derivative, next_time, state); }
-		min = min.min(state[2..].iter().copied().reduce(f64::min).unwrap());
+		while time < next_time { (time, state) = cvode.step(f, next_time, state); }
+		min = min.min(state[1..].iter().copied().reduce(f64::min).unwrap());
 		value
 	});
 	println!("{:.0e}", min);
@@ -105,9 +86,11 @@ fn explicit(total_amount: f64, pressure_R: f64, u: &[f64]) -> Box<[f64]> { // Re
 		(t, vec![sets_0, iter::map(&*select, |&k| sets_1[k])].into_boxed_slice())
 	});
 	let mut plot = ui::plot::Plot::new(vec![&["T",/*"P",*/"V"] as &[_], &species_names].into_boxed_slice(), values.to_vec());
-	let mut target = image::Image::zero((3840, 2160).into());
-	plot.paint(&mut target.as_mut())?;
-	pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-	png::save_buffer("/var/tmp/image.png", as_bytes(&target.data), target.size.x, target.size.y, png::ColorType::Rgba8).unwrap();
-	//ui::app::run(plot)?
+	if true { ui::app::run(plot)? }
+	else {
+		let mut target = image::Image::zero((3840, 2160).into());
+		plot.paint(&mut target.as_mut())?;
+		pub fn as_bytes<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+		png::save_buffer("/var/tmp/image.png", as_bytes(&target.data), target.size.x, target.size.y, png::ColorType::Rgba8).unwrap();
+	}
 }

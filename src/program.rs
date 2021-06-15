@@ -88,17 +88,17 @@ impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &
 impl std::ops::Div<f64> for Expression { type Output = Expression; fn div(self, b: f64) -> Self::Output { mul(1./b, self) } }
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
-impl FnOnce<(&[f64],&[&[f64]])> for Subroutine {
-	type Output = Box<[f64]>; extern "rust-call" fn call_once(mut self, args: (&[f64],&[&[f64]])) -> Self::Output { self.call_mut(args) } }
-impl FnMut<(&[f64],&[&[f64]])> for Subroutine { extern "rust-call" fn call_mut(&mut self, args: (&[f64],&[&[f64]])) -> Self::Output  { self.call(args) } }
-impl Fn<(&[f64],&[&[f64]])> for Subroutine {
-	extern "rust-call" fn call(&self, (arguments, arrays): (&[f64],&[&[f64]])) -> Self::Output  {
+impl FnOnce<(&[f64],&[&[f64]], &mut [f64])> for Subroutine {
+	type Output = (); extern "rust-call" fn call_once(mut self, args: (&[f64], &[&[f64]], &mut [f64])) -> Self::Output { self.call_mut(args) } }
+impl FnMut<(&[f64],&[&[f64]])> for Subroutine { extern "rust-call" fn call_mut(&mut self, args: (&[f64], &[&[f64]], &mut [f64])) -> Self::Output  { self.call(args) } }
+impl Fn<(&[f64], &[&[f64]], &mut [f64])> for Subroutine {
+	extern "rust-call" fn call(&self, (arguments, arrays, output): (&[f64], &[&[f64]], &mut [f64])) -> Self::Output  {
 		assert!(arguments.len()+arrays.len() == self.parameters.len());
 		struct State<'t> {
 			arguments: &'t [f64],
 			arrays: &'t [&'t [f64]],
 			definitions: linear_map::LinearMap<Value, f64>,
-			output: Box<[f64]>
+			output: &mut [f64]
 		}
 		impl State<'_> {
 			fn eval(&mut self, expression: &Expression) -> f64 {
@@ -148,9 +148,8 @@ impl Fn<(&[f64],&[&[f64]])> for Subroutine {
 				}
 			}
 		}
-		let mut state = State{arguments, arrays, definitions: default(), output: vec![0.; self.output].into_boxed_slice()};
+		let mut state = State{arguments, arrays, definitions: default(), output};
 		state.run(&self.statements);
-		state.output
 	}
 }
 
