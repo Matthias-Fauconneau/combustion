@@ -7,8 +7,9 @@ edition= '2021'
 
 [features]
 transport= ['nalgebra']
-debug= ['itertools','float-pretty-print']
 jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
+tool= ['itertools']
+default= ['transport']
 
 [dependencies]
 derive_more='*'
@@ -26,4 +27,3 @@ cranelift-module= {optional=true, version='*'}
 cranelift-native= {optional=true, version='*'}
 cranelift-jit= {optional=true, version='*'}
 itertools= {optional=true, version='*'}
-float-pretty-print= {optional=true, version='*'}
