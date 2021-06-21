@@ -1,19 +1,14 @@
+cargo-features=['edition2021']
 [package]
 name= 'combustion'
 description= 'Chemical reaction kinetics'
 version= '0.0.0'
-authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
-edition= '2018'
+edition= '2021'
 
 [features]
-program= ['itertools','float-pretty-print']
-reaction= ['program']
 transport= ['nalgebra']
+debug= ['itertools','float-pretty-print']
 jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
-
-#default=['reaction']
-#default=['transport']
-#default=['jit']
 
 [dependencies]
 derive_more='*'

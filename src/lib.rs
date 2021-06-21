@@ -1,7 +1,7 @@
-#![feature(associated_type_bounds, unboxed_closures, once_cell, default_free_fn, fn_traits, in_band_lifetimes, const_generics, array_map, array_methods, trait_alias)]
-#![allow(uncommon_codepoints, confusable_idents, incomplete_features, non_upper_case_globals, non_snake_case)]
+#![feature(unboxed_closures, associated_type_bounds, once_cell, default_free_fn, fn_traits, in_band_lifetimes, array_methods, array_map, trait_alias)]
+#![allow(uncommon_codepoints, confusable_idents, non_upper_case_globals, non_snake_case)]
 
-pub const K : f64 = 1.380649e-23; // J / K
+pub const kB : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 
@@ -14,9 +14,10 @@ use model::Element;
 }
 
 impl NASA7 {
-	pub const reference_pressure : f64 = 101325. / (K*NA);
+	pub const reference_pressure : f64 = 101325. / (kB*NA);
 	pub fn piece(&self, T: f64) -> &[f64; 7] { &self.pieces[if T < self.temperature_split { 0 } else { 1 }] }
 	pub fn molar_heat_capacity_at_constant_pressure_R(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
+	pub fn enthalpy_RT(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]/2.*T + a[2]/3.*T*T + a[3]/4.*T*T*T + a[4]/5.*T*T*T*T + a[5]/T } // /RT
 }
 
 use {std::{convert::TryInto, lazy::SyncLazy}, linear_map::LinearMap as Map};
@@ -48,7 +49,7 @@ impl Species {
 			ref ranges => panic!("{:?}", ranges),
 		});
 		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);
-		let well_depth_J = map(species, |(_,s)| s.transport.well_depth_K * K);
+		let well_depth_J = map(species, |(_,s)| s.transport.well_depth_K * kB);
 		use model::Geometry::*;
 		let polarizability = map(species, |(_,s)| if let Linear{polarizability_Å3,..}|Nonlinear{polarizability_Å3,..} = s.transport.geometry { polarizability_Å3*1e-30 } else { 0. });
 		let permanent_dipole_moment = map(species, |(_,s)|
@@ -74,7 +75,7 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> Sta
 	let species_names = map(species, |(name,_)| *name);
 	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
 	let amount_proportions = map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
-	let pressure_R = pressure/(K*NA);
+	let pressure_R = pressure/(kB*NA);
 	let temperature = *temperature; //K*: K->J
 	let amount = pressure_R * volume / temperature;
 	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
@@ -90,7 +91,7 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> Sta
 impl From<&model::RateConstant> for RateConstant {
 	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &model::RateConstant) -> Self {
 		const J_per_cal: f64 = 4.184;
-		Self{preexponential_factor: *preexponential_factor, temperature_exponent: *temperature_exponent, activation_temperature: activation_energy*J_per_cal/(K*NA)}
+		Self{preexponential_factor: *preexponential_factor, temperature_exponent: *temperature_exponent, activation_temperature: activation_energy*J_per_cal/(kB*NA)}
 	}
 }
 
@@ -137,48 +138,7 @@ impl Reaction {
 	}
 }
 
-/*#[derive(PartialEq, Eq)] pub enum Property { Pressure, Volume }
-#[derive(Clone, Copy)] pub struct Constant<const CONSTANT: Property>(pub f64);
-#[derive(derive_more::Deref, Default)] pub struct StateVector<const CONSTANT: Property>(pub Box<[f64/*; T,/*P|V,*/[S-1]*/]>);
-pub type Derivative<const CONSTANT: Property> = StateVector<CONSTANT>;
-
-impl State {
-	pub fn constant<const CONSTANT: Property>(&self) -> Constant<CONSTANT> { let Self{pressure_R, volume, ..} = self;
-		Constant(*{use Property::*; match CONSTANT {Pressure => pressure_R, Volume => volume}})
-	}
-}
-
-impl<const CONSTANT: Property> From<&State> for StateVector<CONSTANT> {
-	fn from(State{temperature, pressure_R, volume, amounts}: &State) -> Self {
-		Self([*temperature, *{use Property::*; match CONSTANT {Pressure => volume, Volume => pressure_R}}].iter().chain(amounts[..amounts.len()-1].iter()).copied().collect())
-	}
-}
-
-impl State {
-	#[track_caller] pub fn new<const CONSTANT: Property>(total_amount: f64, Constant(thermodynamic_state_constant): Constant<CONSTANT>, u: &StateVector<CONSTANT>) -> Self {
-		let u = &u.0;
-		let amounts = &u[2..];
-		let (pressure_R, volume) = {use Property::*; match CONSTANT {
-			Pressure => (thermodynamic_state_constant, u[1]),
-			Volume => (u[1], thermodynamic_state_constant)
-		}};
-		State{
-			temperature: u[0],
-			pressure_R,
-			volume,
-			amounts: amounts.iter().chain(&[total_amount - iter::into::Sum::<f64>::sum(amounts)]).copied().collect()
-		}
-	}
-}
-
-impl std::fmt::Display for State {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let Self{temperature, pressure_R, volume, amounts} = self;
-		write!(fmt, "T: {}, P: {}, V: {}, n: {:?}", temperature/*/K*/, pressure_R*(K*NA), volume, amounts)
-	}
-}*/
-
+pub mod program;
+pub mod reaction;
 #[cfg(feature= "transport")] pub mod transport;
-#[cfg(feature= "program")] pub mod program;
-#[cfg(feature= "reaction")] pub mod reaction;
 #[cfg(feature= "cranelift")] pub mod cranelift;

@@ -23,8 +23,8 @@ impl<F: Fn(&[f64], &mut [f64])->bool> CVODE<F> {
 			let u = r#ref(u);
 			for u in u { assert!(u.is_finite()); }
 			assert_eq!(r#mut(f_u).len(), u.len());
-			if unsafe{(f as *const F).as_ref()}.unwrap()(u, r#mut(fu)) {
-				for f_u in f_u.iter() { assert!(f_u.is_finite()); }
+			if unsafe{(f as *const F).as_ref()}.unwrap()(u, r#mut(f_u)) {
+				for f_u in r#ref(f_u) { assert!(f_u.is_finite()); }
 				0
 			} else { 1 }
 		}

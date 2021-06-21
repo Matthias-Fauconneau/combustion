@@ -9,13 +9,13 @@ use super::{*, program::*};
 
 struct T<T> { log_T: T, T: T, T2: T, T3: T, T4: T, rcp_T: T, rcp_T2: T }
 macro_rules! T{ {$($field:ident),*} => (T{$($field: r#use($field)),*}) }
-impl From<&T<Value>> for T<Expression> { fn from(&T{log_T,T,T2,T3,T4,rcp_T,rcp_T2}:&T<Value>) -> Self { T!{log_T,T,T2,T3,T4,rcp_T,rcp_T2} } }
+impl From<&T<&Value>> for T<Expression> { fn from(T{log_T,T,T2,T3,T4,rcp_T,rcp_T2}:&T<&Value>) -> Self { T!{log_T,T,T2,T3,T4,rcp_T,rcp_T2} } }
 
-fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<Expression>)->Expression) -> Subroutine {
-	let (parameters, [log_T,T,T2,T3,T4,rcp_T]) = parameters(self::stringify![log_T,T,T2,T3,T4,rcp_T]);
-	let ref Ts = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2:Value::NONE};
+fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<Expression>)->Expression) -> Subroutine<6, 0> {
+	let (parameters, [ref log_T,ref T, ref T2, ref T3, ref T4, ref rcp_T], _) = parameters(self::stringify![log_T,T,T2,T3,T4,rcp_T], []);
+	let ref Ts = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2:&Value::NONE};
 	Subroutine{
-		parameters: parameters.to_vec(),
+		parameters,
 		output: thermodynamics.len(),
 		statements: bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter().map(|(temperature_split, species)| Statement::ConditionalStatement{
 			condition: less(r#use(T), f64::from_bits(temperature_split)),
@@ -25,13 +25,13 @@ fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], 
 	}
 }
 
-pub fn molar_heat_capacity_at_constant_pressure_R(thermodynamics: &[NASA7]) -> Subroutine {
+pub fn molar_heat_capacity_at_constant_pressure_R(thermodynamics: &[NASA7]) -> Subroutine<6, 0> {
 		thermodynamic_function(&thermodynamics, |a, T{T,T2,T3,T4,..}| a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 )
 }
-pub fn enthalpy_RT(thermodynamics: &[NASA7]) -> Subroutine {
+pub fn enthalpy_RT(thermodynamics: &[NASA7]) -> Subroutine<6, 0> {
 	thermodynamic_function(&thermodynamics, |a, T{T,T2,T3,T4,rcp_T,..}| a[0]+a[1]/2.*T+a[2]/3.*T2+a[3]/4.*T3+a[4]/5.*T4+a[5]*rcp_T )
 }
-pub fn exp_Gibbs_RT(thermodynamics: &[NASA7]) -> Subroutine {
+pub fn exp_Gibbs_RT(thermodynamics: &[NASA7]) -> Subroutine<6, 0> {
 	thermodynamic_function(&thermodynamics, |a, T{log_T,T,T2,T3,T4,rcp_T,..}|
 			exp2((a[0]-a[6])/LN_2-a[0]*log_T-a[1]/2./LN_2*T+(1./3.-1./2.)*a[2]/LN_2*T2+(1./4.-1./3.)*a[3]/LN_2*T3+(1./5.-1./4.)*a[4]/LN_2*T4+a[5]/LN_2*rcp_T) )
 }
@@ -71,7 +71,7 @@ fn rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, a
 }
 
 impl ReactionModel {
-fn efficiency(&self, k_inf: &RateConstant, T: &T<Value>, concentrations: Value, f: &Block) -> Expression {
+fn efficiency(&self, k_inf: &RateConstant, T: &T<&Value>, concentrations: &Value, f: &Block) -> Expression {
 	use ReactionModel::*; match self {
 		Elementary|Irreversible => arrhenius(k_inf, T.into()),
 		ThreeBody{efficiencies} => arrhenius(k_inf, T.into()) * dot(efficiencies, concentrations),
@@ -95,11 +95,11 @@ fn efficiency(&self, k_inf: &RateConstant, T: &T<Value>, concentrations: Value, 
 }
 }
 
-pub fn rates(reactions: &[Reaction]) -> Subroutine {
+pub fn rates(reactions: &[Reaction]) -> Subroutine<8, 2> {
 	let species_len = reactions[0].reactants.len();
-	let (parameters,                   [log_T,T,T2,T4,rcp_T,rcp_T2,P0_RT,rcp_P0_RT, exp_Gibbs0_RT,concentrations])
-	= parameters(self::stringify![log_T,T,T2,T4,rcp_T,rcp_T2,P0_RT,rcp_P0_RT, exp_Gibbs0_RT,concentrations]);
-	let ref T = T{log_T,rcp_T,T,T2,T3:Value::NONE,T4,rcp_T2};
+	let (parameters, [ref log_T, ref T, ref T2, ref T4, ref rcp_T, ref rcp_T2, ref P0_RT, ref rcp_P0_RT], [ref exp_Gibbs0_RT, ref concentrations])
+		 = parameters!([ref log_T, ref T, ref T2, ref T4, ref rcp_T, ref rcp_T2, ref P0_RT, ref rcp_P0_RT], [ref exp_Gibbs0_RT, ref concentrations]);
+	let ref T = T{log_T,rcp_T,T,T2,T3:&Value::NONE,T4,rcp_T2};
 	let mut f = Block::new(&parameters);
 	let rates = iter::map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let efficiency = model.efficiency(rate_constant, T, concentrations, &f); // todo: CSE
@@ -110,12 +110,10 @@ pub fn rates(reactions: &[Reaction]) -> Subroutine {
 			let reverse_rate = rcp_equilibrium_constant * product_of_exponentiations(products, concentrations);
 			forward_rate - reverse_rate
 		};
-		let rate = f.def(efficiency * rate);
-		//f.statements.push(output(species_len-1+_i, r#use(rate)));
-		rate
+		f.def(efficiency * rate)
 	});
 	f.extend((0..species_len-1).map(|specie|
-		output(specie, rates.iter().zip(reactions.iter()).fold(None, |dtω, (&rate, Reaction{net, ..})| {
+		output(specie, rates.iter().zip(reactions.iter()).fold(None, |dtω, (rate, Reaction{net, ..})| {
 				let rate = r#use(rate);
 				match net[specie] {
 					0 => dtω,
@@ -125,5 +123,5 @@ pub fn rates(reactions: &[Reaction]) -> Subroutine {
 				}
 		}).unwrap())
 	));
-	Subroutine {parameters: parameters.into(), output: species_len-1/*+rates.len()*/, statements: f.statements}
+	Subroutine {parameters: parameters.into(), output: species_len-1/*+rates.len()*/, statements: f.into()}
 }
