@@ -31,7 +31,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let ref transport_polynomials = species.transport_polynomials();
 		let viscosity_T_12 = wrap(viscosity_T_12(&species.molar_mass, &transport_polynomials.sqrt_viscosity_T_14));
 		let thermal_conductivity_T_12_2 = wrap(thermal_conductivity_T_12_2(&transport_polynomials.thermal_conductivity_T_12));
-		let P_T_32_mixture_diffusion_coefficients = wrap(P_T_32_mixture_diffusion_coefficients(&map(&*transport_polynomials.binary_thermal_diffusion_coefficients_T32, |row| &**row)));
+		let P_T_32_mixture_diffusion_coefficients = P_T_32_mixture_diffusion_coefficients(&map(&*transport_polynomials.binary_thermal_diffusion_coefficients_T32, |row| &**row));
+		#[cfg(feature="debug")] println!("{:?}", P_T_32_mixture_diffusion_coefficients);
+		let P_T_32_mixture_diffusion_coefficients = wrap(P_T_32_mixture_diffusion_coefficients);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let T_12 = f64::sqrt(*T);
 		let ln_T = f64::ln(*T);
@@ -47,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let T_32_P = T*T_12/(pressure_R*NA*kB);
 		let P_T_32_mixture_diffusion_coefficients = P_T_32_mixture_diffusion_coefficients([ln_T, ln_T_2, ln_T_3], [&mole_fractions, &mass_fractions]);
 		let mixture_diffusion_coefficients = map(P_T_32_mixture_diffusion_coefficients, |P_T_32_D| T_32_P*P_T_32_D);
-		println!("μ: {:.5e}, λ: {:.5}, D: {:.3e}", viscosity, thermal_conductivity, mixture_diffusion_coefficients.iter().format(", "));
+		eprintln!("μ: {:.4e}, λ: {:.4}, D: {:.4e}", viscosity, thermal_conductivity, mixture_diffusion_coefficients.iter().format(" "));
 	}
 	Ok(())
 }
