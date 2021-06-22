@@ -6,16 +6,13 @@ description= 'Import YAML model'
 version= '0.0.0'
 
 [dependencies]
-fehler=''
-anyhow=''
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 chemical-model= {path="../model"}
-ron=''
 yaml-rust=''
 pest_derive=''
 pest=''
 itertools=''
 float-pretty-print=''
-pretty_assertions=''
 
 [lib]
 path= 'lib.rs'

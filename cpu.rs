@@ -3,18 +3,20 @@ pub fn dot(a: &[f64], b: &[f64]) -> f64 { assert!(a.len()==b.len()); iter::dot(a
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
-	let model = yaml_model::parse(&model)?;
+	let model = yaml_model::parse(&model);
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let ref state = initial_state(&model);
 	use {iter::map, itertools::Itertools, ast::wrap};
 	if true {
 		use reaction::*;
-		let rates = wrap(rates(species.thermodynamics[..species.len()-1], &iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
+		let rates = wrap(rates(&species.thermodynamics[..species.len()-1], &map(&*model.reactions, |r| Reaction::new(species_names, r))));
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
-		let rates = rates([T, pressure_R],[amounts]);
-		let (energy_rate_RT, rates) = (rates[0], rates[1..]);
+		let total_amount = amounts.iter().sum::<f64>();
+		let active_amounts = &amounts[0..amounts.len()-1];
+		let rates = rates([*pressure_R], [total_amount, *T],[active_amounts]);
+		let (energy_rate_RT, rates) = (rates[0], &rates[1..]);
 		eprintln!("{}, HRR: {:.3e}", rates.iter().zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
 	}
 	#[cfg(feature="transport")] {

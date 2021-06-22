@@ -20,7 +20,7 @@ mod vulkan;
 
 use reaction::Simulation;*/
 /*#[throws]*/ fn main() {
-	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
+	/*let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model)?;
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);

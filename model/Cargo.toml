@@ -2,7 +2,7 @@ cargo-features=['edition2021']
 package= { name= 'chemical-model', description= 'Chemical Model', version= '0.0.0', edition= '2021' }
 lib = {path= 'lib.rs'}
 [dependencies]
-serde='*'
+serde={version='*', features=['derive']}
 strum='*'
 strum_macros='*'
 linear-map={version='*', features=['serde_impl']}

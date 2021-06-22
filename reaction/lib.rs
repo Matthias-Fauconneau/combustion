@@ -6,19 +6,20 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 }
 
 use ast::*;
-fn dot(iter: impl IntoIterator<Item=(f64, Value)>) -> Expression {
-	iter.into_iter().fold(None, |sum, (c, ref e)|
+fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
+	iter.into_iter().fold(None, |sum, (c, e)|
 		if c == 0. { sum }
-		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e}) }
-		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => -e}) } // fixme: reorder -a+b -> b-a to avoid neg
+		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
+		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => -e }) } // fixme: reorder -a+b -> b-a to avoid neg
 		else { Some(match sum { Some(sum) => c * e + sum, None => c * e }) }
 	).unwrap()
 }
+fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
 
-fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expression {
-	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).enumerate().filter(|&(_,c)| c!=0).partition(|&(_,c)| c>0);
-	let num = num.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
-	let div = div.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..-c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
+fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &[Value]) -> Expression {
+	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).zip(v).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0);
+	let num : Option<Expression> = num.into_iter().fold(None, |mut p, (c,e)|{ for _ in 0..c { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
+	let div : Option<Expression> = div.into_iter().fold(None, |mut p, (c,e)|{ for _ in 0..-c { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
 	match (num, div) {
 		(None, None) => None,
 		(Some(num), None) => Some(num),
@@ -29,12 +30,12 @@ fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expressio
 
 use iter::map;
 use chemistry::*;
-struct T<'t> { log_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
+#[derive(Clone, Copy)] struct T<'t> { log_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
 fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>)->Expression, T: T<'_>, slots: Box<[Variable]>) -> (Box<[Statement]>, Box<[Variable]>) {
 	let mut slots = map(slots.into_vec(), Some);
-	let mut results = map(0..slots.len(), |_| None);
-	(map(bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter(), |(temperature_split, species)| {
-		let slots = map(species, |specie| slots[specie].take().unwrap());
+	let mut results = map(thermodynamics, |_| None);
+	(map(bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter(), |(temperature_split, ref species)| {
+		let slots = map(species, |&specie| slots[specie].take().unwrap());
 		let spline = Statement::Branch{
 			condition: less(r#use(T.T), f64::from_bits(temperature_split)),
 			consequent: map(species.iter().zip(&*slots), |(&specie, slot)| store(slot, expression(&thermodynamics[specie].pieces[0], T))),
@@ -44,12 +45,12 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>)->
 		spline
 	}), map(results.into_vec().into_iter(), Option::unwrap))
 }
-fn eval(f: &mut Block, algorithm: Box<[Statement]>, results: Box<[Variable]>) -> Box<[Value]> {
+fn eval((algorithm, results): (Box<[Statement]>, Box<[Variable]>), f: &mut Block) -> Box<[Value]> {
 	f.extend(algorithm.into_vec());
 	map(results.into_vec(), |v| f.load(v))
 }
 
-fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T) -> Expression { a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 }
+//fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T) -> Expression { a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 }
 fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>) -> Expression { a[0]+a[1]/2.*T+a[2]/3.*T2+a[3]/4.*T3+a[4]/5.*T4+a[5]*rcp_T }
 use std::f64::consts::LN_2;
 fn exp_Gibbs_RT(a: &[f64], T{log_T,T,T2,T3,T4,rcp_T,..}: T<'_>) -> Expression {
@@ -88,16 +89,16 @@ fn rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, a
 	}
 }
 
-fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &Block) -> Expression {
+fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => arrhenius(k_inf, T),
 		ThreeBody{efficiencies} => arrhenius(k_inf, T) * dot(efficiencies, concentrations),
 		PressureModification{efficiencies, k0} => f.block(|def|{
-			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T.into()));
-			Pr / (rcp_arrhenius(k_inf, T.into()) * Pr + 1.)
+			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T));
+			Pr / (rcp_arrhenius(k_inf, T) * Pr + 1.)
 		}),
 		Falloff{efficiencies, k0, troe} => f.block(|def|{
-			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T.into()));
+			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T));
 			let Troe{A, T3, T1, T2} = *troe;
 			let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
 			let ref logFcent = def(log2(Fcent));
@@ -106,15 +107,14 @@ fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations:
 			let ref logPr𐊛c = def(log2(Pr) + c);
 			let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
 			let F = exp2(logFcent/(f1*f1+1.));
-			Pr / (rcp_arrhenius(k_inf, T.into()) * Pr + 1.) * F
+			Pr / (rcp_arrhenius(k_inf, T) * Pr + 1.) * F
 		})
 	}
 }
 
-pub fn species_rates(f: &mut Block, reactions: &[Reaction], T: T, P0_RT: &Value, rcp_P0_RT: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value]) -> Box<Expression> {
-	let species_len = reactions[0].reactants.len();
+fn species_rates(reactions: &[Reaction], T: T, P0_RT: &Value, rcp_P0_RT: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Expression]> {
 	let rates = iter::map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
-		let efficiency = efficiency(model, rate_constant, T, concentrations, &f); // todo: CSE
+		let efficiency = efficiency(model, rate_constant, T, concentrations, f); // todo: CSE
 		let forward_rate = product_of_exponentiations(reactants, concentrations);
 		let rate = if let ReactionModel::Irreversible = model { forward_rate } else {
 			let rcp_equilibrium_constant = product_of_exponentiations(net, exp_Gibbs0_RT)
@@ -124,33 +124,34 @@ pub fn species_rates(f: &mut Block, reactions: &[Reaction], T: T, P0_RT: &Value,
 		};
 		f.def(efficiency * rate)
 	});
-	map(0..concentrations.len(), |specie| dot(reactions.iter().map(|Reaction{net, ..}| net[specie]).zip(&*rates)))
+	map(0..exp_Gibbs0_RT.len(), |specie| idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates)))
 }
 
 pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2, 1> {
 	let (parameters, [ref pressure_R], [ref total_amount, ref T], [ref active_amounts])
 		 = parameters!([ref pressure_R], [ref total_amount, ref T], [ref active_amounts]);
-	let ref mut f = Block::new(&parameters);
-	let ref log_T = f.def(f64::log2(*T));
+	let mut function = FunctionBuilder::new(&parameters);
+	let mut f = Block::new(&mut function);
+	let ref log_T = f.def(log2(T));
 	let ref T2 = f.def(T*T);
 	let ref T3 = f.def(T*T2);
 	let ref T4 = f.def(T*T3);
 	let ref rcp_T = f.def(1./T);
 	let ref rcp_T2 = f.def(rcp_T*rcp_T);
-	let rcp_P0_RT = (1./NASA7::reference_pressure) * T;
-	let P0_RT = NASA7::reference_pressure * rcp_T;
-	let total_concentration = f.def(pressure_R / T); // Constant pressure
-	let ref T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
-	let exp_Gibbs0_RT = eval(f, thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| Some(f.decl()))));
-	let density = f.def(total_concentration / total_amount);
-	let active_concentrations = map(active_amounts, |&n| f.def(density*max(0., n)));
-	let inert_concentration = total_concentration - active_concentrations.iter().sum::<Expression>();
-	let concentrations = [&active_concentrations as &[_],&[inert_concentration]].concat();
-	let rates = map(species_rates(f, reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations), |e| f.def(e));
-	let enthalpy_RT = eval(f, thermodynamics(active_species, enthalpy_RT, T, map(active_species, |_| Some(f.decl()))));
-	let energy_rate_RT = iter::dot(rates.iter(&*enthalpy_RT));
+	let ref rcp_P0_RT = f.def((1./NASA7::reference_pressure) * T);
+	let ref P0_RT = f.def(NASA7::reference_pressure * rcp_T);
+	let ref total_concentration = f.def(pressure_R / T); // Constant pressure
+	let T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
+	let ref exp_Gibbs0_RT = eval(thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| f.decl())), &mut f);
+	let ref density = f.def(total_concentration / total_amount);
+	let active_concentrations = map(0..active_species.len(), |i| f.def(density*max(0., index(active_amounts, i))));
+	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
+	let ref concentrations = iter::box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
+	//let concentrations = {let a = active_concentrations.into_vec(); a.push(inert_concentration)};
+	let rates = map(species_rates(reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations, &mut f).into_vec(), |e| f.def(e));
+	let enthalpy_RT = eval(thermodynamics(active_species, enthalpy_RT, T, map(active_species, |_| f.decl())), &mut f);
+	let energy_rate_RT : Expression = iter::dot(rates.iter().zip(&*enthalpy_RT));
 	f.push(output(0, energy_rate_RT));
-	f.extend(map(rates.enumerate(), output));
-	//f.extend(map(rates.enumerate(), |(slot, rate)| output(slot, rate)));
-	Function{parameters: parameters.into(), output: 1+rates.len(), statements: f.into()}
+	f.extend(rates.iter().enumerate().map(|(i, r)| output(i, r)));
+	Function::new(parameters, 1+rates.len(), f.into(), function)
 }

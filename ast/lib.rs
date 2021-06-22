@@ -1,17 +1,16 @@
-#![feature(unboxed_closures, default_free_fn, fn_traits, in_band_lifetimes)]
-//, associated_type_bounds, once_cell, , , in_band_lifetimes, array_methods, array_map, trait_alias)]
+#![feature(unboxed_closures, default_free_fn, fn_traits, in_band_lifetimes, associated_type_bounds)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! stringify{ [$($id:ident),*] => ([$(std::stringify!($id)),*]) }
 use std::default::default;
 
-#[derive(PartialEq, Eq)] pub struct Value(pub usize);
+#[derive(PartialEq, Eq, Debug)] pub struct Value(pub usize);
 impl Value {
 	pub const NONE: Value = Value(!0);
 }
 
-pub struct Variable(usize);
+#[derive(Debug)] pub struct Variable(usize);
 
-pub enum Expression {
+#[derive(Debug)] pub enum Expression {
 	Literal(f64),
 	Use(Value),
 	Load(Variable),
@@ -26,7 +25,7 @@ pub enum Expression {
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
 
-pub enum Statement {
+#[derive(Debug)] pub enum Statement {
 	Define { id: Value, value: Expression },
 	Store { id: Variable, value: Expression },
 	Output { index: usize, value: Expression },
@@ -45,8 +44,6 @@ pub fn less(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { 
 fn mul(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Mul(box_(a.into()), box_(b.into())) }
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Div(box_(a.into()), box_(b.into())) }
 
-//pub fn sq(x: Value) -> Expression { Expression::Mul(box_(r#use(x)), box_(r#use(x))) }
-
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 
 impl<E:Into<Expression>> std::ops::Add<E> for Expression { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
@@ -55,6 +52,7 @@ impl<E:Into<Expression>> std::ops::Mul<E> for Expression { type Output = Express
 impl<E:Into<Expression>> std::ops::Div<E> for Expression { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 
 impl From<&Value> for Expression { fn from(value: &Value) -> Expression { r#use(value) } }
+impl std::ops::Neg for &Value { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for &Value { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for &Value { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
 impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
@@ -65,10 +63,22 @@ impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, 
 impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
+impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
+impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
+impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
+impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
 #[must_use] fn define(id: Value, value: impl Into<Expression>) -> Statement { Statement::Define{ id, value: value.into() } }
 #[must_use] pub fn store(id: &Variable, value: impl Into<Expression>) -> Statement { Statement::Store{ id: Variable(id.0), value: value.into() } }
 #[must_use] pub fn output(index: usize, value: impl Into<Expression>) -> Statement { Statement::Output{ index, value: value.into() } }
+
+pub struct FunctionBuilder {
+	base: usize,
+	variables: usize,
+}
+impl FunctionBuilder {
+	pub fn new<const U: usize, const V: usize, const A: usize>(_: &Parameters<U,V,A>) -> Self { Self { base: U+V+A, variables: 0 } }
+}
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] pub struct Block<'t> {
 	base: usize,
@@ -76,7 +86,7 @@ impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, 
 	variables: &'t mut usize,
 }
 impl Block<'t> {
-	pub fn new<const U: usize, const V: usize, const A: usize>(f: &'t mut Function<U,V,A>) -> Self { Self { base: U+V+A, statements: vec![], variables: &mut f.variables } }
+	pub fn new(f: &'t mut FunctionBuilder) -> Self { Self { base: f.base, statements: vec![], variables: &mut f.variables } }
 	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ base: self.base+self.statements.len(), statements: vec![], variables: self.variables };
 		let result = build(&mut block);
@@ -107,8 +117,13 @@ pub struct Parameters<const U: usize, const V: usize, const A: usize> {
 pub struct Function<const U: usize, const V: usize, const A: usize> {
 	pub parameters: Parameters<U, V, A>,
 	pub output: usize,
-	pub statements: Box<[Statement]>,
 	pub variables: usize,
+	pub statements: Box<[Statement]>,
+}
+impl<const U: usize, const V: usize, const A: usize> Function<U,V,A> {
+	pub fn new(parameters: Parameters<U,V,A>, output: usize, statements: Box<[Statement]>, function_builder: FunctionBuilder) -> Self {
+		Function{parameters: parameters.into(), output, variables: function_builder.variables, statements}
+	}
 }
 
 impl<const U: usize, const V: usize, const A: usize> FnOnce<([f64; U], [f64; V], [&[f64]; A], &mut [f64])> for Function<U,V,A> {
@@ -137,6 +152,7 @@ impl<const U: usize, const V: usize, const A: usize> Fn<([f64; U], [f64; V], [&[
 						else if id.0 < self.value_arguments.len()+self.array_arguments.len() { unreachable!() }
 						else { self.definitions[&id] }
 					}
+					Load(variable) => { self.variables[variable.0].unwrap() }
 					Index { base, index } => {
 						assert!(base.0 >= self.value_arguments.len(), "{:?} {:?}", base.0, self.value_arguments);
 						let base = base.0 - self.value_arguments.len();
@@ -148,17 +164,20 @@ impl<const U: usize, const V: usize, const A: usize> Fn<([f64; U], [f64; V], [&[
 					Less(a, b) => if self.eval(a) < self.eval(b) { 1. } else { 0. },
 					Mul(a, b) => self.eval(a) * self.eval(b),
 					Div(a, b) => self.eval(a) / self.eval(b),
-					Call { function: "sq", arguments } => num::sq(self.eval(&arguments[0])),
-					Call { function: "sqrt", arguments } => f64::sqrt(self.eval(&arguments[0])),
-					Call { function: "exp2", arguments } => f64::exp2(self.eval(&arguments[0])),
-					Call { function: "log2", arguments } => f64::log2(self.eval(&arguments[0])),
+					Call { function, arguments } => match *function {
+						"max" => f64::max(self.eval(&arguments[0]), self.eval(&arguments[1])),
+						"sqrt" => f64::sqrt(self.eval(&arguments[0])),
+						"exp2" => f64::exp2(self.eval(&arguments[0])),
+						"log2" => f64::log2(self.eval(&arguments[0])),
+						function => panic!("{}", function)
+					},
 					Block { statements, result } => {
 						self.run(statements);
 						let result = self.eval(result);
 						for statement in statements.iter() { if let Statement::Define { id, .. } = statement { self.definitions.remove(id).unwrap(); } else { unreachable!() } }
 						result
-					}
-					_ => unimplemented!(),
+					},
+					//e => panic!("{:?}", e),
 				}
 			}
 			fn run(&mut self, statements: &[Statement]) {
@@ -191,15 +210,15 @@ pub fn wrap<const U: usize, const V: usize, const A: usize>(f: Function<U, V, A>
 }
 
 use iter::{ConstRange, ConstSizeIterator};
-pub fn parameters<const U: usize, const V: usize, const A: usize>(uniforms: [&'static str; U], values: [&'static str; V], arrays: [&'static str; A]) -> (Parameters<U, V, A>, [Value; V], [Value; A]) {
-	(Parameters{uniforms, values, arrays}, ConstRange.map(|id| Value(id)).collect(), ConstRange.map(|id| Value(V+id)).collect())
+pub fn parameters<const U: usize, const V: usize, const A: usize>(uniforms: [&'static str; U], values: [&'static str; V], arrays: [&'static str; A]) -> (Parameters<U, V, A>, [Value; U], [Value; V], [Value; A]) {
+	(Parameters{uniforms, values, arrays}, ConstRange.map(|id| Value(id)).collect(), ConstRange.map(|id| Value(U+id)).collect(), ConstRange.map(|id| Value(U+V+id)).collect())
 }
 #[macro_export] macro_rules! parameters { ($([$(ref $parameter:ident),*]),*) => ( $crate::parameters( $([$(std::stringify!($parameter)),*]),* ) ) }
 
-pub fn sum(iter: impl Iterator<Item=Expression>) -> Expression { iter.reduce(add).unwrap() }
+//pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() }
+impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
 
-pub fn max(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "max", arguments: box_([x.into()]) } }
-pub fn sq(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sq", arguments: box_([x.into()]) } }
+pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "max", arguments: box_([a.into(), b.into()]) } }
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sqrt", arguments: box_([x.into()]) } }
 pub fn exp2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp2", arguments: box_([x.into()]) } }
 pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log2", arguments: box_([x.into()]) } }

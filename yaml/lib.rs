@@ -17,9 +17,8 @@ impl std::fmt::Display for Pretty<&u8> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { self.0.fmt(fmt) }
 }
 
-use {fehler::throws, anyhow::Error};
 
-use chemical_model::*;
+use iter::map;
 
 extern crate pest;
 #[macro_use]
@@ -36,33 +35,29 @@ use pest::Parser;
 "#] struct EquationParser;
 fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 	use std::str::FromStr;
-	EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side|
+	map(EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner(), |side|
 		side.into_inner().map(|term|
-			match term.into_inner().collect::<Box<_>>().as_ref() {
+			match &*iter::box_(term.into_inner()) {
 				[specie] => (specie.as_str(), 1),
 				[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
 				_ => unreachable!(),
 			}
 		)
 		.fold(Map::new(), |mut map, (k, v)| { *map.entry(k).or_insert(0) += v; map })
-	).collect::<Vec<_>>().try_into().unwrap()
-}
-
-#[test] fn test() {
-	use std::iter::FromIterator;
-	assert_eq!(equation("CH2 + CH2 <=> H2 + C2H2"), [Map::from_iter([("CH2",2)].iter().copied()), Map::from_iter([("H2",1),("C2H2",1)].iter().copied())]);
+	).into_vec().try_into().unwrap()
 }
 
 pub use yaml_rust::YamlLoader as Loader;
+use chemical_model::*;
 
-#[throws] pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
-	use {std::convert::TryInto, std::str::FromStr};
+pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
+	use std::str::FromStr;
 	let data = &yaml[0];
 	let species: Map<&str, Specie> = data["species"].as_vec().unwrap().iter().map(|specie| (specie["name"].as_str().unwrap(), Specie{
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
 		thermodynamic: (|thermo:&yaml_rust::Yaml| NASA7{
-			temperature_ranges: thermo["temperature-ranges"].as_vec().unwrap().iter().map(|limit| limit.as_f64().unwrap()).collect(),
-			pieces: thermo["data"].as_vec().unwrap().iter().map(|piece| piece.as_vec().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Box<_>>().as_ref().try_into().unwrap()).collect()
+			temperature_ranges: map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap()),
+			pieces: map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap())
 		})(&specie["thermo"]),
 		transport: (|transport:&yaml_rust::Yaml| Transport{
 			well_depth_K: transport["well-depth"].as_f64().unwrap(),
@@ -82,8 +77,7 @@ pub use yaml_rust::YamlLoader as Loader;
 		}}
 		})(&specie["transport"])
 	})).collect();
-	//let species = {let mut species = species; species.insert("AR", species.remove("AR").unwrap()); species};
-	let reactions : Box<_> = data["reactions"].as_vec().unwrap().iter().map(|reaction| {
+	let reactions = map(data["reactions"].as_vec().unwrap().iter(), |reaction| {
 		let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 		let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 		let reactants = reactants + if let Some("three-body") = reaction["type"].as_str() {1} else {0};
@@ -117,9 +111,8 @@ pub use yaml_rust::YamlLoader as Loader;
 				}
 			}
 		}
-	}).collect();
-	let species_names : Box<_> = species.iter().map(|(name,_)| *name).collect();
-	let species = if species_names.iter().map(|s| reactions.iter().all(|Reaction{equation:[a,b],..}| *a.get(s).unwrap_or(&0) as i8 == *b.get(s).unwrap_or(&0) as i8))
+	});
+	let species = if species.iter().map(|(name, _)| reactions.iter().all(|Reaction{equation:[a,b],..}| *a.get(name).unwrap_or(&0) as i8 == *b.get(name).unwrap_or(&0) as i8))
 													.position(|inert| inert == true).filter(|&s| s == species.len()-1).is_some() { species } else {
 		let mut species = species;
 		species.insert("INERT", Specie{composition: default(), thermodynamic: NASA7{temperature_ranges: box_([]), pieces: box_([])},
@@ -134,7 +127,7 @@ pub use yaml_rust::YamlLoader as Loader;
 	}
 }
 
-#[throws(std::fmt::Error)] pub fn to_string(model: &Model) -> String {
+/*pub fn to_string(model: &Model) -> std::fmt::Result<String> {
 	let mut o = String::new();
 	use std::fmt::Write;
 	writeln!(o, "#![enable(unwrap_newtypes)]")?;
@@ -202,5 +195,5 @@ pub use yaml_rust::YamlLoader as Loader;
 	}
 	writeln!(o, "]")?;
 	write!(o, ")")?;
-	o
-}
+	Ok(o)
+}*/
