@@ -1,14 +1,9 @@
-[package]
-name= 'reaction'
-version= '0.0.0'
-edition= '2018'
-authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+cargo-features=['edition2021']
+package= { name= 'reaction', description= 'Chemical reaction kinetics', version= '0.0.0', edition= '2021' }
+lib = {path='lib.rs'}
 
 [dependencies]
-fehler= ''
-anyhow= ''
-combustion= {path='..', features=['cranelift']}
+chemistry= {path='../chemistry'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-
-[lib]
-path = 'lib.rs'
+linear-map='*'
+ast= {path='../ast'}

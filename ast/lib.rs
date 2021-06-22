@@ -1,8 +1,10 @@
+#![feature(unboxed_closures, default_free_fn, fn_traits)]
+//, associated_type_bounds, once_cell, , , in_band_lifetimes, array_methods, array_map, trait_alias)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! stringify{ [$($id:ident),*] => ([$(std::stringify!($id)),*]) }
 use std::default::default;
 
-#[derive(PartialEq, Eq)] pub struct Value(usize);
+#[derive(PartialEq, Eq)] pub struct Value(pub usize);
 impl Value {
 	pub const NONE: Value = Value(!0);
 }
@@ -167,82 +169,17 @@ impl<const V: usize, const A: usize> Fn<([f64; V], [&[f64]; A], &mut [f64])> for
 	}
 }
 
-pub fn wrap<const Arguments: usize, const Arrays: usize>(f: Subroutine<Arguments, Arrays>) -> impl Fn([f64; Arguments], [&[f64]; Arrays])->Vec<f64> {
-	move |arguments, arrays| { let mut output = vec![0.; f.output]; f(arguments, arrays, &mut output); output }
-}
-
-#[cfg(feature="debug")] use itertools::Itertools;
-
-#[cfg(feature="debug")] impl std::fmt::Debug for Expression {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		use Expression::*;
-		match self {
-			&Literal(v) => {
-				if v == f64::floor(v) {
-					if v >= 1e4 { write!(f, "{:e}", v) }
-					else { (v as i64).fmt(f) }
-				}
-				else { use std::fmt::Display; float_pretty_print::PrettyPrintFloat(v).fmt(f) }
-			}
-			Use(v) => write!(f, "#{}", v.0),
-			Index { base, index } => write!(f, "{}[{}]", base.0, index),
-			Neg(x) => write!(f, "-{:?}", x),
-			Add(a, b) => write!(f, "({:?} + {:?})", a, b),
-			Sub(a, b) => write!(f, "({:?} - {:?})", a, b),
-			Less(a, b) => write!(f, "{:?} < {:?}", a, b),
-			Mul(a, b) => write!(f, "({:?} * {:?})", a, b),
-			Div(a, b) => write!(f, "({:?} / {:?})", a, b),
-			Call { function, arguments } => write!(f, "{}({:?})", function, arguments.iter().format(", ")),
-			Block { statements, result } => write!(f, "{{ {:?}; {:?} }}", statements.iter().format(";\n"), result),
-		}
-	}
-}
-
-#[cfg(feature="debug")] impl std::fmt::Debug for Statement {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		use Statement::*;
-		match self {
-			Definition { id, value } => write!(f, "#{} = {:?}", id.0, value),
-			Output { index, value } => write!(f, "@{} = {:?}", index, value),
-			ConditionalStatement { condition, consequent, alternative } => write!(f, "if {:?} {{\n{:?}\n}} else {{\n{:?}\n}}", condition, consequent.iter().format("\n"), alternative.iter().format("\n")),
-		}
-	}
-}
-
-#[cfg(feature="debug")] impl<const V: usize, const A: usize> std::fmt::Debug for Subroutine<V, A> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "([{}], [{}]) -> {:?} {{\n{:?}\n}}", self.parameters.value.iter().format(", "), self.parameters.array.iter().format(", "), self.output, self.statements.iter().format("\n"))
-	}
+pub fn wrap<const V: usize, const A: usize>(f: Subroutine<V, A>) -> impl Fn([f64; V], [&[f64]; A])->Vec<f64> {
+	move |values, arrays| { let mut output = vec![0.; f.output]; f(values, arrays, &mut output); output }
 }
 
 use iter::{ConstRange, ConstSizeIterator};
 pub fn parameters<const V: usize, const A: usize>(value: [&'static str; V], array: [&'static str; A]) -> (Parameters<V, A>, [Value; V], [Value; A]) {
 	(Parameters{value, array}, ConstRange.map(|id| Value(id)).collect(), ConstRange.map(|id| Value(V+id)).collect())
 }
-#[macro_export] macro_rules! parameters { ($([$(ref $parameter:ident),*]),*) => ( $crate::program::parameters( $([$(std::stringify!($parameter)),*]),* ) ) }
+#[macro_export] macro_rules! parameters { ($([$(ref $parameter:ident),*]),*) => ( $crate::parameters( $([$(std::stringify!($parameter)),*]),* ) ) }
 
 pub fn sum(iter: impl Iterator<Item=Expression>) -> Expression { iter.reduce(add).unwrap() }
-
-pub fn dot(c: &[f64], v: &Value) -> Expression {
-	c.iter().enumerate().fold(None, |sum, (i,&c)|
-		if c == 0. { sum }
-		else if c == 1. { Some(match sum { Some(sum) => sum + index(v, i), None => index(v, i)}) }
-		else if c == -1. { Some(match sum { Some(sum) => sum - index(v, i), None => -index(v, i)}) } // fixme: reorder -a+b -> b-a to avoid neg
-		else { Some(match sum { Some(sum) => c * index(v, i) + sum, None => c * index(v, i) }) }
-	).unwrap()
-}
-
-pub fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expression {
-	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).enumerate().filter(|&(_,c)| c!=0).partition(|&(_,c)| c>0);
-	let num = num.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
-	let div = div.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..-c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
-	match (num, div) {
-		(None, None) => None,
-		(Some(num), None) => Some(num),
-		(None, Some(div)) => Some(1./div),
-		(Some(num), Some(div)) => Some(num/div)
-	}.unwrap()
-}
 
 pub fn sq(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sq", arguments: box_([x.into()]) } }
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sqrt", arguments: box_([x.into()]) } }

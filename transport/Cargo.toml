@@ -1,24 +1,10 @@
-[package]
-name= 'transport'
-version= '0.0.0'
-resolver = '2'
-edition= '2018'
-authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+cargo-features=['edition2021']
+package= { name= 'transport', description= 'Compound transport properties', version= '0.0.0', edition= '2021' }
+lib = {path='lib.rs'}
 
 [dependencies]
-fehler= ''
+chemistry= {path='../chemistry'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-combustion= {path='..', default-features=false, features=['transport']}
-rustacuda= ''
-yaml= {path='../yaml', package='combustion-yaml'}
-
-[build-dependencies]
-yaml= {path='../yaml', package='combustion-yaml'}
-
-[[bin]]
-name= 'transport'
-path= 'main.rs'
-
-[patch.crates-io]
-rustacuda_core= {git='https://github.com/Matthias-Fauconneau/RustaCUDA'}
+ast= {path='../ast'}
+nalgebra='*'

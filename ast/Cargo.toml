@@ -1,15 +1,15 @@
 cargo-features=['edition2021']
 [package]
-edition= '2021'
-name= 'cuda'
-description= 'Translate IR to CUDA'
+name= 'ast'
+description= 'AST'
 version= '0.0.0'
+edition= '2021'
 
 [dependencies]
-fehler= ''
+derive_more='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-cranelift-codegen= ''
-itertools= ''
+linear-map= '*'
+num= {git='https://github.com/Matthias-Fauconneau/num'}
 
 [lib]
 path= 'lib.rs'

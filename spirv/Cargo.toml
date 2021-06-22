@@ -1,0 +1,19 @@
+cargo-features=['edition2021']
+[package]
+edition= '2021'
+name= 'ast-spirv'
+description= 'Translate AST to SPIRV'
+version= '0.0.0'
+
+[dependencies]
+ast= {path='../ast'}
+#spirv= {package='spirv_headers', version=''}
+#rspirv=''
+naga= {features=['wgsl-in','spv-out'], version='*'}
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+itertools=''
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+float-pretty-print=''
+
+[lib]
+path= 'lib.rs'

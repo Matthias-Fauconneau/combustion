@@ -4,13 +4,35 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 	map
 }
 
-use std::f64::consts::LN_2;
-use super::{*, program::*};
+use ast::*;
 
+pub fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expression {
+	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).enumerate().filter(|&(_,c)| c!=0).partition(|&(_,c)| c>0);
+	let num = num.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
+	let div = div.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..-c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
+	match (num, div) {
+		(None, None) => None,
+		(Some(num), None) => Some(num),
+		(None, Some(div)) => Some(1./div),
+		(Some(num), Some(div)) => Some(num/div)
+	}.unwrap()
+}
+
+pub fn dot(c: &[f64], v: &Value) -> Expression {
+	c.iter().enumerate().fold(None, |sum, (i,&c)|
+		if c == 0. { sum }
+		else if c == 1. { Some(match sum { Some(sum) => sum + index(v, i), None => index(v, i)}) }
+		else if c == -1. { Some(match sum { Some(sum) => sum - index(v, i), None => -index(v, i)}) } // fixme: reorder -a+b -> b-a to avoid neg
+		else { Some(match sum { Some(sum) => c * index(v, i) + sum, None => c * index(v, i) }) }
+	).unwrap()
+}
+
+use std::f64::consts::LN_2;
 struct T<T> { log_T: T, T: T, T2: T, T3: T, T4: T, rcp_T: T, rcp_T2: T }
 macro_rules! T{ {$($field:ident),*} => (T{$($field: r#use($field)),*}) }
 impl From<&T<&Value>> for T<Expression> { fn from(T{log_T,T,T2,T3,T4,rcp_T,rcp_T2}:&T<&Value>) -> Self { T!{log_T,T,T2,T3,T4,rcp_T,rcp_T2} } }
 
+use super::*;
 fn thermodynamic_function(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<Expression>)->Expression) -> Subroutine<6, 0> {
 	let (parameters, [ref log_T,ref T, ref T2, ref T3, ref T4, ref rcp_T], _) = parameters(self::stringify![log_T,T,T2,T3,T4,rcp_T], []);
 	let ref Ts = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2:&Value::NONE};
@@ -123,5 +145,5 @@ pub fn rates(reactions: &[Reaction]) -> Subroutine<8, 2> {
 				}
 		}).unwrap())
 	));
-	Subroutine {parameters: parameters.into(), output: species_len-1/*+rates.len()*/, statements: f.into()}
+	Subroutine {parameters: parameters.into(), output: species_len-1, statements: f.into()}
 }

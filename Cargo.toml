@@ -1,29 +1,16 @@
-cargo-features=['edition2021']
-[package]
-name= 'combustion'
-description= 'Chemical reaction kinetics'
-version= '0.0.0'
-edition= '2021'
-
-[features]
-transport= ['nalgebra']
-jit= ['cranelift','cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
-tool= ['itertools']
-default= ['transport']
+cargo-features= ['edition2021']
+package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'combustion'}
+features= { gpu= ['spirv','ash'] }
+bin = [ { name= 'combustion', path= 'cpu.rs' }, { name= 'combustion-gpu', path= 'gpu.rs' } ]
 
 [dependencies]
-derive_more='*'
-strum='*'
-strum_macros='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-serde='*'
-ron='*'
-linear-map= {features= ['serde_impl'], version='*'}
-nalgebra= {optional=true, version='*'}
-cranelift= {optional=true, version='*'}
-cranelift-codegen= {optional=true, version='*'}
-cranelift-module= {optional=true, version='*'}
-cranelift-native= {optional=true, version='*'}
-cranelift-jit= {optional=true, version='*'}
-itertools= {optional=true, version='*'}
+ast= {path='ast'}
+yaml-model= {path='yaml'}
+chemistry= {path='chemistry'}
+reaction= {path='reaction'}
+transport= {path='transport'}
+itertools='*'
+spirv= { optional= true, path= 'spirv', package= 'ast-spirv', version='*' }
+ash= { optional= true, version='*'}

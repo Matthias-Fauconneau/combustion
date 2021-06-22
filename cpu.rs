@@ -1,14 +1,15 @@
 #![feature(array_methods, array_map, associated_type_bounds, format_args_capture)]#![allow(non_snake_case)]
 pub fn dot(a: &[f64], b: &[f64]) -> f64 { assert!(a.len()==b.len()); iter::dot(a.iter().copied().zip(b.iter().copied())) }
-use combustion::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = include_bytes!("../LiDryer.ron");
-	let model = model::Model::new(model)?;
+	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().next().unwrap())?)?)?;
+	let model = yaml_model::parse(&model)?;
+	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let ref state = initial_state(&model);
-	#[cfg(feature="itertools")] if true {
-		use {iter::map, itertools::Itertools, program::wrap, reaction::*};
+	use {iter::map, itertools::Itertools, ast::wrap};
+	if true {
+		use reaction::*;
 		let exp_Gibbs_RT = wrap(exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]));
 		let enthalpy_RT = wrap(enthalpy_RT(&species.thermodynamics[0..species.len()-1]));
 		let rates = wrap(rates(&iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
@@ -29,8 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let energy_rate_RT = dot(&rates, &enthalpy_RT);
 		eprintln!("{}, HRR: {:.3e}", rates.iter().zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
 	}
-	#[cfg(all(feature="transport",feature="itertools"))] {
-		use {iter::map, itertools::Itertools, program::wrap, transport::*};
+	#[cfg(all(feature="transport"))] {
+		use transport::*;
 		let ref transport_polynomials = species.transport_polynomials();
 		let viscosity_T_12 = wrap(viscosity_T_12(&species.molar_mass, &transport_polynomials.sqrt_viscosity_T_14));
 		let thermal_conductivity_T_12_2 = wrap(thermal_conductivity_T_12_2(&transport_polynomials.thermal_conductivity_T_12));

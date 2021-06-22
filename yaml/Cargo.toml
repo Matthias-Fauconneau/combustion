@@ -1,13 +1,14 @@
+cargo-features=['edition2021']
 [package]
-name= 'combustion-yaml'
+edition= '2021'
+name= 'yaml-model'
+description= 'Import YAML model'
 version= '0.0.0'
-authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
-edition= '2018'
 
 [dependencies]
 fehler=''
 anyhow=''
-combustion= {path="..", default-features= false}
+chemical-model= {path="../model"}
 ron=''
 yaml-rust=''
 pest_derive=''

@@ -1,0 +1,11 @@
+cargo-features=['edition2021']
+package= { name= 'chemistry', description= 'Chemical reaction kinetics and compound transport properties', version= '0.0.0', edition= '2021' }
+lib = {path='lib.rs'}
+features= { transport= ['nalgebra'], default= ['transport'] }
+
+[dependencies]
+model= {path='../model', package='chemical-model'}
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+linear-map='*'
+nalgebra= {optional=true, version='*'}

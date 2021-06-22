@@ -1,12 +1,11 @@
-#![feature(unboxed_closures, associated_type_bounds, once_cell, default_free_fn, fn_traits, in_band_lifetimes, array_methods, array_map, trait_alias)]
-#![allow(uncommon_codepoints, confusable_idents, non_upper_case_globals, non_snake_case)]
+#![feature(once_cell, in_band_lifetimes, array_map, array_methods)]
+//#![feature(unboxed_closures, associated_type_bounds, once_cell, default_free_fn, fn_traits, , trait_alias)]
+#![allow(non_upper_case_globals, non_snake_case)]
+//#![allow(uncommon_codepoints, confusable_idents, non_upper_case_globals, non_snake_case)]
 
 pub const kB : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
-
-pub mod model;
-use model::Element;
 
 #[derive(PartialEq, Debug)] pub struct NASA7 {
 	pub temperature_split : f64,
@@ -20,11 +19,10 @@ impl NASA7 {
 	pub fn enthalpy_RT(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]/2.*T + a[2]/3.*T*T + a[3]/4.*T*T*T + a[4]/5.*T*T*T*T + a[5]/T } // /RT
 }
 
-use {std::{convert::TryInto, lazy::SyncLazy}, linear_map::LinearMap as Map};
-static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(|| {
-	ron::de::from_str::<Map<Element, f64>>("#![enable(unwrap_newtypes)] {H: 1.008, C: 12.011, N: 14.0067, O: 15.999, Ar: 39.95}").unwrap()
-	.into_iter().map(|(e,g)| (e, g/1e3/*kg/g*/)).collect()
-});
+use {std::lazy::SyncLazy, linear_map::LinearMap as Map, model::Element};
+static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(||
+	{use Element::*; [(H, 1.008), (C, 12.011), (N, 14.0067), (O, 15.999), (Ar, 39.95)]}.map(|(e,g)| (e, g/1e3/*kg/g*/)).into_iter().collect()
+);
 
 #[derive(Debug)] pub struct Species {
 	pub molar_mass: Box<[f64]>,
@@ -95,7 +93,7 @@ impl From<&model::RateConstant> for RateConstant {
 	}
 }
 
-use model::Troe;
+pub use model::Troe;
 
 pub enum ReactionModel {
 	Elementary,
@@ -137,8 +135,3 @@ impl Reaction {
 		}
 	}
 }
-
-pub mod program;
-pub mod reaction;
-#[cfg(feature= "transport")] pub mod transport;
-#[cfg(feature= "cranelift")] pub mod cranelift;

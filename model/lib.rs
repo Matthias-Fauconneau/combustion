@@ -60,5 +60,3 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 	#[serde(borrow)] pub state: State<'t>,
 	pub time_step: f64,
 }
-
-impl<'t> Model<'t> { pub fn new(source: &'t [u8]) -> ron::Result<Self> { ron::de::from_bytes::<Self>(&source) } }

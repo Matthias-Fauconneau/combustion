@@ -1,9 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = combustion_yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read("/usr/share/cantera/data/LiDryer.yaml")?)?)?;
-	let model = combustion_yaml::parse(&model)?;
-	/*let Model{time_step, state, ..}  = ::ron::de::from_bytes(&std::fs::read("CH4.ron")?)?;
-	model.time_step = time_step;
-	model.state = state;*/
-	println!("{}", combustion_yaml::to_string(&model)?);
+	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args()[0])?)?)?;
+	let model = yaml_model::parse(&model)?;
+	println!("{}", yaml_model::to_string(&model)?);
 	Ok(())
 }

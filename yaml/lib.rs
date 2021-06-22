@@ -19,7 +19,7 @@ impl std::fmt::Display for Pretty<&u8> {
 
 use {fehler::throws, anyhow::Error};
 
-use combustion::model::*;
+use chemical_model::*;
 
 extern crate pest;
 #[macro_use]
@@ -35,7 +35,7 @@ use pest::Parser;
 	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
 "#] struct EquationParser;
 fn equation(equation: &str) -> [Map<&str, u8>; 2] {
-	use {std::convert::TryInto, std::str::FromStr};
+	use std::str::FromStr;
 	EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner().map(|side|
 		side.into_inner().map(|term|
 			match term.into_inner().collect::<Box<_>>().as_ref() {
