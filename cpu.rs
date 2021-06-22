@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	use {iter::map, itertools::Itertools, ast::wrap};
 	if true {
 		use reaction::*;
-		let rates = wrap(rates(species.thermodynamics, &iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
+		let rates = wrap(rates(species.thermodynamics[..species.len()-1], &iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let rates = rates([T, pressure_R],[amounts]);
