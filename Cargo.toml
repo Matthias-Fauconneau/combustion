@@ -10,7 +10,7 @@ ast= {path='ast'}
 yaml-model= {path='yaml'}
 chemistry= {path='chemistry'}
 reaction= {path='reaction'}
-transport= {path='transport'}
+transport= { optional=true, path='transport'}
 itertools='*'
-spirv= { optional= true, path= 'spirv', package= 'ast-spirv', version='*' }
-ash= { optional= true, version='*'}
+spirv= { optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
+ash= { optional=true, version='*' }

@@ -169,8 +169,8 @@ impl<const V: usize, const A: usize> Fn<([f64; V], [&[f64]; A], &mut [f64])> for
 	}
 }
 
-pub fn wrap<const V: usize, const A: usize>(f: Subroutine<V, A>) -> impl Fn([f64; V], [&[f64]; A])->Vec<f64> {
-	move |values, arrays| { let mut output = vec![0.; f.output]; f(values, arrays, &mut output); output }
+pub fn wrap<const V: usize, const A: usize>(f: Subroutine<V, A>) -> impl Fn([f64; V], [&[f64]; A]) -> Box<[f64]> {
+	move |values, arrays| { let mut output = vec![0.; f.output].into_boxed_slice(); f(values, arrays, &mut output); output }
 }
 
 use iter::{ConstRange, ConstSizeIterator};

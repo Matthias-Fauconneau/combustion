@@ -38,13 +38,6 @@ use std::lazy::SyncLazy;
 ///*const*/static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
 ///*const*/static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
 
-const D : usize = 4;
-#[derive(Debug)] pub struct TransportPolynomials {
-	pub sqrt_viscosity_T_14: Box<[[f64; D]]>,
-	pub thermal_conductivity_T_12: Box<[[f64; D]]>,
-	pub binary_thermal_diffusion_coefficients_T32: Box<[Box<[[f64; D]]>]>
-}
-
 use chemistry::{kB, NA, Species};
 struct Interactions<'t>(&'t chemistry::Species);
 impl Interactions<'t> {
@@ -108,16 +101,23 @@ impl Interactions<'t> {
 	}
 }
 
-pub fn transport_polynomials(species: &Species) -> TransportPolynomials {
-	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
-	const N : usize = /*D+2 FIXME: Remez*/50;
-	let T : [_; N] = ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
-	let s = Interactions(species);
-	TransportPolynomials{
-		sqrt_viscosity_T_14: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| sqrt(s.viscosity(a, T))/sqrt(sqrt(T)))).collect(),
-		thermal_conductivity_T_12: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.thermal_conductivity(a,T)/sqrt(T))).collect(),
-		binary_thermal_diffusion_coefficients_T32:
-			(0..species.len()).map(|a| (0..species.len()).map(|b| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.binary_thermal_diffusion_coefficient(a, b, T) / (T*sqrt(T)))).collect()).collect()
+pub struct Polynomials<const D: usize> {
+	pub sqrt_viscosity_T_14: Box<[[f64; D]]>,
+	pub thermal_conductivity_T_12: Box<[[f64; D]]>,
+	pub binary_thermal_diffusion_coefficients_T32: Box<[Box<[[f64; D]]>]>
+}
+impl<const D: usize> Polynomials<D> {
+	pub fn new(species: &Species) -> Self {
+		let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
+		const N : usize = /*D+2 FIXME: Remez*/50;
+		let T : [_; N] = ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
+		let s = Interactions(species);
+		Self{
+			sqrt_viscosity_T_14: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| sqrt(s.viscosity(a, T))/sqrt(sqrt(T)))).collect(),
+			thermal_conductivity_T_12: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.thermal_conductivity(a,T)/sqrt(T))).collect(),
+			binary_thermal_diffusion_coefficients_T32:
+				(0..species.len()).map(|a| (0..species.len()).map(|b| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.binary_thermal_diffusion_coefficient(a, b, T) / (T*sqrt(T)))).collect()).collect()
+		}
 	}
 }
 

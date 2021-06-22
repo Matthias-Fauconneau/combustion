@@ -6,7 +6,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 }
 
 use ast::*;
-pub fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expression {
+fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expression {
 	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).enumerate().filter(|&(_,c)| c!=0).partition(|&(_,c)| c>0);
 	let num = num.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
 	let div = div.into_iter().fold(None, |mut a, (i,c)|{ for _ in 0..-c { a = Some(match a { Some(a) => a*index(v,i), None => index(v,i) }); } a });
@@ -18,7 +18,7 @@ pub fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &Value) -> Expre
 	}.unwrap()
 }
 
-pub fn dot(c: &[f64], v: &Value) -> Expression {
+fn dot(c: &[f64], v: &Value) -> Expression {
 	c.iter().enumerate().fold(None, |sum, (i,&c)|
 		if c == 0. { sum }
 		else if c == 1. { Some(match sum { Some(sum) => sum + index(v, i), None => index(v, i)}) }
