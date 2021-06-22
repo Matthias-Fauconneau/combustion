@@ -10,24 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	use {iter::map, itertools::Itertools, ast::wrap};
 	if true {
 		use reaction::*;
-		let exp_Gibbs_RT = wrap(exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]));
-		let enthalpy_RT = wrap(enthalpy_RT(&species.thermodynamics[0..species.len()-1]));
-		let rates = wrap(rates(&iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
+		let rates = wrap(rates(species.thermodynamics, &iter::map(&*model.reactions, |r| Reaction::new(species_names, r))));
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
-		let log_T = f64::log2(*T);
-		let T2 = T*T;
-		let T3 = T*T2;
-		let T4 = T*T3;
-		let rcp_T = 1./T;
-		let exp_Gibbs0_RT = exp_Gibbs_RT([log_T,*T,T2,T3,T4,rcp_T],[]);
-		let P0_RT = NASA7::reference_pressure / T;
-		let total_amount = amounts.iter().sum::<f64>();
-		let total_concentration = pressure_R / T;
-		let concentrations = map(&**amounts, |n| n/total_amount*total_concentration);
-		let rates = rates([log_T,*T,T2,T4,rcp_T,num::sq(rcp_T),P0_RT,1./P0_RT], [&exp_Gibbs0_RT, &concentrations]);
-		let enthalpy_RT = enthalpy_RT([log_T,*T,T2,T3,T4,rcp_T],[]);
-		let energy_rate_RT = dot(&rates, &enthalpy_RT);
+		let rates = rates([T, pressure_R],[amounts]);
+		let (energy_rate_RT, rates) = (rates[0], rates[1..]);
 		eprintln!("{}, HRR: {:.3e}", rates.iter().zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
 	}
 	#[cfg(feature="transport")] {

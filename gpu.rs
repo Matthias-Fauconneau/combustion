@@ -20,11 +20,17 @@ mod vulkan;
 
 use reaction::Simulation;*/
 /*#[throws]*/ fn main() {
-	/*let model = std::fs::read("CH4+O2.ron")?;
-	let simulation = Simulation::new(&model)?;
-	let states_len = simulation.states_len();
-	let Simulation{species_names, function, states, rates, pressure_Pa_R, reference_temperature, mass_production_rate_factor, heat_release_rate_factor} = simulation;
-	let function = glsl(function)?;
+	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
+	let model = yaml_model::parse(&model)?;
+	use chemistry::*;
+	let (ref species_names, ref species) = Species::new(&model.species);
+	let ref state = initial_state(&model);
+	use {iter::map, itertools::Itertools, ast::wrap};
+	if true {
+		use reaction::*;
+		let exp_Gibbs_RT = exp_Gibbs_RT(&species.thermodynamics[0..species.len()-1]);
+	}
+		let function = glsl(function)?;
 	std::fs::write("/var/tmp/main.comp", &function)?;
   let main = shaderc::Compiler::new().unwrap().compile_into_spirv(&function, shaderc::ShaderKind::Compute, "main.comp", "main", None)?;
 

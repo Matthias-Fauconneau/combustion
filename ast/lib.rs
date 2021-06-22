@@ -12,6 +12,7 @@ impl Value {
 pub enum Expression {
 	Literal(f64),
 	Use(Value),
+	Load(Value),
 	Index { base: Value, index: usize },
 	Neg(Box<Expression>),
 	Add(Box<Expression>, Box<Expression>),
@@ -24,9 +25,10 @@ pub enum Expression {
 }
 
 pub enum Statement {
-	Definition { id: Value, value: Expression },
+	Define { id: Value, value: Expression },
+	Store { id: Variable, value: Expression },
 	Output { index: usize, value: Expression },
-	ConditionalStatement { condition: Expression, consequent: Vec<Statement>, alternative: Vec<Statement> },
+	Condition { condition: Expression, consequent: Vec<Statement>, alternative: Vec<Statement> },
 }
 
 pub fn r#use(index: &Value) -> Expression { Expression::Use(Value(index.0)) }
@@ -65,15 +67,19 @@ impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &
 impl std::ops::Div<f64> for Expression { type Output = Expression; fn div(self, b: f64) -> Self::Output { mul(1./b, self) } }
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 
-#[must_use] fn define(id: Value, value: impl Into<Expression>) -> Statement { Statement::Definition{ id, value: value.into() } }
+#[must_use] fn define(id: Value, value: impl Into<Expression>) -> Statement { Statement::Define{ id, value: value.into() } }
+#[must_use] fn store(id: Variable, value: impl Into<Expression>) -> Statement { Statement::Store{ id, value: value.into() } }
 #[must_use] pub fn output(index: usize, value: impl Into<Expression>) -> Statement { Statement::Output{ index, value: value.into() } }
+
+type Variable = usize;
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] pub struct Block {
 	base: usize,
 	#[deref]#[deref_mut] statements: Vec<Statement>,
+	types: &mut usize,
 }
 impl Block {
-	pub fn new<const V: usize, const A: usize>(_: &Parameters<V,A>) -> Self { Self { base: V+A, statements: vec![] } }
+	pub fn new<const V: usize, const A: usize>(f: &Function<V,A>) -> Self { Self { base: V+A, statements: vec![], types: f.types } }
 	pub fn block(&self, build: impl Fn(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ base: self.base+self.statements.len(), statements: vec![] };
 		let result = build(&mut block);
@@ -84,6 +90,12 @@ impl Block {
 		self.statements.push(define(Value(id.0), value));
 		id
 	}
+	pub fn decl(&mut self) -> Variable {
+		let id = Variable(self.types);
+		self.types += 1;
+		id
+	}
+	pub fn load(&mut self, variable: Variable) -> Value { self.def(Expression::Load(variable)) }
 }
 impl FnOnce<(Expression,)> for Block { type Output = Value; extern "rust-call" fn call_once(mut self, args: (Expression,)) -> Self::Output { self.call_mut(args) }}
 impl FnMut<(Expression,)> for Block { extern "rust-call" fn call_mut(&mut self, (value,): (Expression,)) -> Self::Output  { self.def(value) } }
@@ -93,20 +105,22 @@ pub struct Parameters<const V: usize, const A: usize> {
 	pub value: [&'static str; V],
 	pub array: [&'static str; A],
 }
-pub struct Subroutine<const V: usize, const A: usize> {
+
+pub struct Function<const V: usize, const A: usize> {
 	pub parameters: Parameters<V, A>,
 	pub output: usize,
 	pub statements: Box<[Statement]>
+	pub types: usize,
 }
 
-impl<const V: usize, const A: usize> FnOnce<([f64; V], [&[f64]; A], &mut [f64])> for Subroutine<V,A> {
+impl<const V: usize, const A: usize> FnOnce<([f64; V], [&[f64]; A], &mut [f64])> for Function<V,A> {
 	type Output = ();
 	extern "rust-call" fn call_once(mut self, args: ([f64; V], [&[f64]; A], &mut [f64])) -> Self::Output { self.call_mut(args) }
 }
-impl<const V: usize, const A: usize> FnMut<([f64; V], [&[f64]; A], &mut [f64])> for Subroutine<V,A> {
+impl<const V: usize, const A: usize> FnMut<([f64; V], [&[f64]; A], &mut [f64])> for Function<V,A> {
 	extern "rust-call" fn call_mut(&mut self, args: ([f64; V], [&[f64]; A], &mut [f64])) -> Self::Output { self.call(args) }
 }
-impl<const V: usize, const A: usize> Fn<([f64; V], [&[f64]; A], &mut [f64])> for Subroutine<V,A> {
+impl<const V: usize, const A: usize> Fn<([f64; V], [&[f64]; A], &mut [f64])> for Function<V,A> {
 	extern "rust-call" fn call(&self, (ref value_arguments, ref array_arguments, output): ([f64; V], [&[f64]; A], &mut [f64])) -> Self::Output {
 		struct State<'t> {
 			value_arguments: &'t [f64],
@@ -169,7 +183,7 @@ impl<const V: usize, const A: usize> Fn<([f64; V], [&[f64]; A], &mut [f64])> for
 	}
 }
 
-pub fn wrap<const V: usize, const A: usize>(f: Subroutine<V, A>) -> impl Fn([f64; V], [&[f64]; A]) -> Box<[f64]> {
+pub fn wrap<const V: usize, const A: usize>(f: Function<V, A>) -> impl Fn([f64; V], [&[f64]; A]) -> Box<[f64]> {
 	move |values, arrays| { let mut output = vec![0.; f.output].into_boxed_slice(); f(values, arrays, &mut output); output }
 }
 
