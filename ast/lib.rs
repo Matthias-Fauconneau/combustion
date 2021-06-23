@@ -3,10 +3,10 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 use std::default::default;
 
-#[derive(PartialEq, Eq)] pub struct Value(pub usize);
-#[derive(PartialEq, Eq)] pub struct Variable(pub usize);
+#[derive(PartialEq, Eq, Debug)] pub struct Value(pub usize);
+#[derive(PartialEq, Eq, Debug)] pub struct Variable(pub usize);
 
-pub enum Expression {
+#[derive(Debug)] pub enum Expression {
 	Literal(f64),
 	Use(Value),
 	Load(Variable),
@@ -20,9 +20,9 @@ pub enum Expression {
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
 
-pub enum Statement {
+#[derive(Debug)] pub enum Statement {
 	Define { id: Value, value: Expression },
-	Store { id: Variable, value: Expression },
+	Store { variable: Variable, value: Expression },
 	Output { index: usize, value: Expression },
 	Branch { condition: Expression, consequent: Box<[Statement]>, alternative: Box<[Statement]> },
 }
@@ -62,7 +62,7 @@ impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
 #[must_use] fn define(id: Value, value: impl Into<Expression>) -> Statement { Statement::Define{ id, value: value.into() } }
-#[must_use] pub fn store(id: &Variable, value: impl Into<Expression>) -> Statement { Statement::Store{ id: Variable(id.0), value: value.into() } }
+#[must_use] pub fn store(variable: &Variable, value: impl Into<Expression>) -> Statement { Statement::Store{ variable: Variable(variable.0), value: value.into() } }
 #[must_use] pub fn output(index: usize, value: impl Into<Expression>) -> Statement { Statement::Output{ index, value: value.into() } }
 
 pub struct FunctionBuilder {
@@ -83,6 +83,7 @@ impl Block<'t> {
 	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ base: self.base+self.statements.len(), statements: vec![], variables: self.variables };
 		let result = build(&mut block);
+		self.base += block.statements.len();
 		Expression::Block { statements: block.statements.into(), result: box_(result) }
 	}
 	pub fn def(&mut self, value: Expression) -> Value {
@@ -166,9 +167,9 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 							let value = self.eval(value);
 							assert!(self.definitions.insert(Value(id.0), value).is_none());
 						},
-						Store { id, value } => {
+						Store { variable, value } => {
 							let value = self.eval(value);
-							assert!(self.variables[id.0].replace(value).is_none());
+							assert!(self.variables[variable.0].replace(value).is_none());
 						}
 						Output { index, value } => self.output[*index] = self.eval(value),
 						Branch { condition, consequent, alternative } => {
