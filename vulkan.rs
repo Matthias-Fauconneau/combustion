@@ -18,7 +18,7 @@ impl std::ops::Deref for Device { type Target = ash::Device; fn deref(&self) -> 
 
 impl Device {
 	#[throws] pub fn new() -> Self {
-		let ref main = CStr::from_bytes_with_nul(b"main\0")?;
+		let ref main = CStr::from_bytes_with_nul(b"main\0").unwrap();
 		unsafe {
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(
@@ -63,25 +63,28 @@ impl Device {
 	}
 }
 
-pub struct Buffer {len: usize, buffer: vk::Buffer, memory: DeviceMemory}
+pub struct Buffer<T> {len: usize, buffer: vk::Buffer, memory: DeviceMemory, _type: std::marker::PhantomData<T>}
 pub struct Map<'t, T> {device: &'t ash::Device, memory: &'t DeviceMemory, map: &'t [T]}
 impl<T> Drop for Map<'_, T> { fn drop(&mut self) { unsafe { self.device.unmap_memory(*self.memory); } } }
-impl<T> core::ops::Deref for Map<'t, T> { type Target = &'t [T]; fn deref(&self) -> &Self::Target { &self.map } }
+impl<T> std::ops::Deref for Map<'t, T> { type Target = &'t [T]; fn deref(&self) -> &Self::Target { &self.map } }
 pub struct MapMut<'t, T> {device: &'t ash::Device, memory: &'t DeviceMemory, map: &'t mut [T]}
 impl<T> Drop for MapMut<'_, T> { fn drop(&mut self) { unsafe { self.device.unmap_memory(*self.memory); } } }
-impl<T> core::ops::Deref for MapMut<'t, T> { type Target = &'t mut [T]; fn deref(&self) -> &Self::Target { &self.map } }
-impl<T> core::ops::DerefMut for MapMut<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.map } }
+impl<T> std::ops::Deref for MapMut<'t, T> { type Target = &'t mut [T]; fn deref(&self) -> &Self::Target { &self.map } }
+impl<T> std::ops::DerefMut for MapMut<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.map } }
 
-impl Buffer {
-	#[throws] pub fn map<T>(&'t self, device: &'t Device) -> Map<T> {
+pub trait Plain {}
+impl Plain for f64 {}
+impl<T:Plain> Buffer<T> {
+	#[throws] pub fn map(&'t self, device: &'t Device) -> Map<T> {
 		Map{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts(device.map_memory(self.memory, 0, (self.len * size_of::<T>()) as u64, default())? as *const T, self.len)} }
 	}
 
-	#[throws] pub fn map_mut<T>(&'t mut self, device: &'t Device) -> MapMut<T> {
+	#[throws] pub fn map_mut(&'t mut self, device: &'t Device) -> MapMut<T> {
 		MapMut{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts_mut(device.map_memory(self.memory, 0, (self.len * size_of::<T>())as u64, default())? as *mut T, self.len)} }
 	}
 
-	#[throws] pub fn new<I: ExactSizeIterator+Iterator<Item=f64/*Prevent &f64 by mistake*/>>(device: &Device, iter: I) -> Self {
+	#[throws] pub fn new<I: IntoIterator<IntoIter:ExactSizeIterator,Item=T>>(device: &Device, iter: I) -> Self {
+		let iter = iter.into_iter();
 		let len = iter.len();
 		let mut buffer = unsafe {
 			let buffer = device.create_buffer(&BufferCreateInfo{size: (len * size_of::<I::Item>()) as u64,
@@ -90,7 +93,7 @@ impl Buffer {
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index: 0, ..default()}, None)?;
 			device.bind_buffer_memory(buffer, memory, 0)?;
-			Self{len, buffer, memory}
+			Self{len, buffer, memory, _type: default()}
 		};
 		for (item, cell) in iter.zip(buffer.map_mut(device)?.into_iter()) { *cell = item; }
 		buffer
@@ -101,20 +104,20 @@ pub struct Pipeline {
 	_module: ShaderModule,
 	_descriptor_pool: DescriptorPool,
 	layout: PipelineLayout,
-	pipeline: ash::vk::Pipeline,uniforms
+	pipeline: ash::vk::Pipeline,
 	pub descriptor_set: DescriptorSet,
 }
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
 impl Device {
-	#[fehler::throws(Result)] pub fn pipeline/*<T>*/(&self, code: &[u32], constants: &[u8], buffers: &[&[&Buffer]]) -> Pipeline {
+	#[throws] pub fn pipeline<T>(&self, code: &[u32], constants: &[u8], buffers: &[&Buffer<T>]) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
-		let bindings = buffers.iter().enumerate().map(|(binding, buffers)| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: buffers.len() as u32, stage_flags, ..default()}).collect::<Box<_>>();
+		let bindings = (0..buffers.len()).map(|binding| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: 1, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{device, ..} = self;
 		unsafe {
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
-			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.iter().map(|b| b.len()).sum::<usize>() as u32}]).max_sets(1), None)?;
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.len() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts)
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
@@ -128,18 +131,19 @@ impl Device {
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
 		}
 	}
-	#[fehler::throws(Result)] pub fn bind(&self, descriptor_set: DescriptorSet, buffers: &[&[&Buffer]]) {
+	#[throws] pub fn bind<T>(&self, descriptor_set: DescriptorSet, buffers: &[&Buffer<T>]) {
 		let descriptor_type = DescriptorType::STORAGE_BUFFER;
 		let Self{device, ..} = self;
-		unsafe {
-			for (binding, buffers) in buffers.iter().enumerate() {
-				device.update_descriptor_sets(&[WriteDescriptorSet::builder()
-					.dst_set(descriptor_set).dst_binding(binding as u32).descriptor_type(descriptor_type).buffer_info(&buffers.iter().map(|buffer| DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}).collect::<Box<_>>())
-					.build()], &[]);
+		for (binding, buffer) in buffers.iter().enumerate() {
+			unsafe{ device.update_descriptor_sets(&[WriteDescriptorSet::builder()
+				.dst_set(descriptor_set)
+				.dst_binding(binding as u32)
+				.descriptor_type(descriptor_type)
+				.buffer_info(&[DescriptorBufferInfo{buffer: buffer.buffer, offset: 0, range: WHOLE_SIZE}]) .build()], &[]);
 			}
 		}
 	}
-	#[fehler::throws(Result)] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[u8], stride: usize, len: usize) -> CommandBuffer {
+	#[throws] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[u8], stride: usize, len: usize) -> CommandBuffer {
 		let Self{device, command_pool, query_pool, ..} = self;
 		let Pipeline{descriptor_set, layout, pipeline, ..} = pipeline;
 		unsafe {
@@ -158,7 +162,7 @@ impl Device {
 			command_buffer
 		}
 	}
-	#[fehler::throws(Result)] pub fn submit_and_wait(&self, command_buffer: CommandBuffer) -> f32 {
+	#[throws] pub fn submit_and_wait(&self, command_buffer: CommandBuffer) -> f32 {
 		let Self{device, queue, fence, query_pool, ..} = self;
 		unsafe {
 			device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], *fence)?;

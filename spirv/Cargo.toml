@@ -14,6 +14,7 @@ iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 itertools=''
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 float-pretty-print=''
+anyhow=''
 
 [lib]
 path= 'lib.rs'

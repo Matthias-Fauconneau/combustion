@@ -1,9 +1,11 @@
 cargo-features= ['edition2021']
 package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'combustion'}
-features= { gpu= ['spirv','ash'] }
+features= { gpu= ['spirv','ash','fehler','anyhow'] }
 bin = [ { name= 'combustion', path= 'cpu.rs' }, { name= 'combustion-gpu', path= 'gpu.rs' } ]
 
 [dependencies]
+fehler={ optional=true, version='*' }
+anyhow={ optional=true, version='*' }
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 ast= {path='ast'}
