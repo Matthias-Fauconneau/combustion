@@ -112,13 +112,18 @@ fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations:
 	}
 }
 
-fn species_rates(reactions: &[Reaction], T: T, P0_RT: &Value, rcp_P0_RT: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Expression]> {
+fn species_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Expression]> {
 	let rates = iter::map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let efficiency = efficiency(model, rate_constant, T, concentrations, f); // todo: CSE
 		let forward_rate = product_of_exponentiations(reactants, concentrations);
 		let rate = if let ReactionModel::Irreversible = model { forward_rate } else {
-			let rcp_equilibrium_constant = product_of_exponentiations(net, exp_Gibbs0_RT)
-																											* match -Σnet { 0=>(1.).into(), 1=>r#use(P0_RT), -1=>r#use(rcp_P0_RT), _ => unreachable!()};
+			let rcp_equilibrium_constant_0 = product_of_exponentiations(net, exp_Gibbs0_RT);
+			let rcp_equilibrium_constant = match -Σnet {
+				0 => rcp_equilibrium_constant_0,
+				1 => C0 * rcp_equilibrium_constant_0,
+				-1 => rcp_C0 * rcp_equilibrium_constant_0,
+				_ => unreachable!()
+			};
 			let reverse_rate = rcp_equilibrium_constant * product_of_exponentiations(products, concentrations);
 			forward_rate - reverse_rate
 		};
@@ -137,7 +142,7 @@ pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2,
 	let ref T3 = f.def(T*T2);
 	let ref T4 = f.def(T*T3);
 	let ref rcp_T = f.def(1./T);
-	let ref rcp_T2 = f.def(rcp_T*rcp_T);
+	let ref rcp_T2 = f.def(num::sq(rcp_T));
 	let ref rcp_P0_RT = f.def((1./NASA7::reference_pressure) * T);
 	let ref P0_RT = f.def(NASA7::reference_pressure * rcp_T);
 	let ref total_concentration = f.def(pressure_R / T); // Constant pressure
@@ -147,11 +152,10 @@ pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2,
 	let active_concentrations = map(0..active_species.len(), |i| f.def(density*max(0., index(active_amounts, i))));
 	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
 	let ref concentrations = iter::box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
-	//let concentrations = {let a = active_concentrations.into_vec(); a.push(inert_concentration)};
 	let rates = map(species_rates(reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations, &mut f).into_vec(), |e| f.def(e));
 	let enthalpy_RT = eval(thermodynamics(active_species, enthalpy_RT, T, map(active_species, |_| f.decl())), &mut f);
 	let energy_rate_RT : Expression = iter::dot(rates.iter().zip(&*enthalpy_RT));
 	f.push(output(0, energy_rate_RT));
-	f.extend(rates.iter().enumerate().map(|(i, r)| output(i, r)));
+	f.extend(rates.iter().enumerate().map(|(i, r)| output(1+i, r)));
 	Function::new(parameters, 1+rates.len(), f.into(), function)
 }

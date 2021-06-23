@@ -1,5 +1,4 @@
 #![feature(array_methods, array_map, associated_type_bounds, format_args_capture)]#![allow(non_snake_case)]
-pub fn dot(a: &[f64], b: &[f64]) -> f64 { assert!(a.len()==b.len()); iter::dot(a.iter().copied().zip(b.iter().copied())) }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
@@ -32,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let ln_T_3 = ln_T_2*ln_T;
 		let total_amount = amounts.iter().sum::<f64>();
 		let mole_fractions = map(&**amounts, |n| n / total_amount);
+		pub fn dot(a: &[f64], b: &[f64]) -> f64 { assert!(a.len()==b.len()); iter::dot(a.iter().copied().zip(b.iter().copied())) }
 		let molar_mass = dot(&mole_fractions, &species.molar_mass);
 		let viscosity = T_12*viscosity_T_12([ln_T, ln_T_2, ln_T_3], [&mole_fractions])[0];
 		let thermal_conductivity = (T_12/2.)*thermal_conductivity_T_12_2([ln_T, ln_T_2, ln_T_3], [&mole_fractions])[0];

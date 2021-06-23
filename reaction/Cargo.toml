@@ -4,6 +4,7 @@ lib = {path='lib.rs'}
 
 [dependencies]
 chemistry= {path='../chemistry'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map='*'
 ast= {path='../ast'}

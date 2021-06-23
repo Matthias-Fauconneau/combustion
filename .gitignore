@@ -1,9 +1,1 @@
-CH4+O2.ron
-.vscode
 Cargo.lock
-num
-image
-ui
-iter
-wasmtime
-**/target
