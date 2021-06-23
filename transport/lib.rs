@@ -145,7 +145,7 @@ pub fn viscosity_T_12<const D: usize>(molar_mass: &[f64], sqrt_viscosity_T_14: &
 }
 
 pub fn P_T_32_mixture_diffusion_coefficients<'t, const D: usize>(binary_thermal_diffusion_coefficients_T32: &[[f64; D]], [log_T, log_T_2, log_T_3]: &[Value; 3], mole_fractions: &'t [Value], mass_fractions: impl 't+IntoIterator<Item=Expression>, f: &mut Block) -> impl 't+Iterator<Item=Expression> {
-	let K = binary_thermal_diffusion_coefficients_T32.len();
+	let K = mole_fractions.len();
 	let binary_thermal_diffusion_coefficients_T32 = map(0..K, |k| map(0..K, |j|
 		if k>j { Some({let P = binary_thermal_diffusion_coefficients_T32[k*K+j]; f.def(P[0] + P[1]*log_T + P[2]*log_T_2 + P[3]*log_T_3)}) } else { None }
 	));
