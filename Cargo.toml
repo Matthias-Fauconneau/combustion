@@ -14,3 +14,6 @@ transport= { optional=true, path='transport'}
 itertools='*'
 spirv= { optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
 ash= { optional=true, version='*' }
+
+[patch.'https://github.com/Matthias-Fauconneau/num']
+num={path='../Code/num'}

@@ -6,5 +6,5 @@ lib = {path='lib.rs'}
 chemistry= {path='../chemistry'}
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
-ast= {path='../ast'}
+ast= {features=['num'], path='../ast'}
 nalgebra='*'

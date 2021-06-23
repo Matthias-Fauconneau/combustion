@@ -209,16 +209,29 @@ pub fn wrap<const U: usize, const V: usize, const A: usize>(f: Function<U, V, A>
 	move |uniforms, values, arrays| { let mut output = vec![0.; f.output].into_boxed_slice(); f(uniforms, values, arrays, &mut output); output }
 }
 
-use iter::{ConstRange, ConstSizeIterator};
+use iter::{ConstRange, IntoConstSizeIterator};
 pub fn parameters<const U: usize, const V: usize, const A: usize>(uniforms: [&'static str; U], values: [&'static str; V], arrays: [&'static str; A]) -> (Parameters<U, V, A>, [Value; U], [Value; V], [Value; A]) {
 	(Parameters{uniforms, values, arrays}, ConstRange.map(|id| Value(id)).collect(), ConstRange.map(|id| Value(U+id)).collect(), ConstRange.map(|id| Value(U+V+id)).collect())
 }
 #[macro_export] macro_rules! parameters { ($([$(ref $parameter:ident),*]),*) => ( $crate::parameters( $([$(std::stringify!($parameter)),*]),* ) ) }
 
-//pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() }
 impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
+pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }
 
 pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "max", arguments: box_([a.into(), b.into()]) } }
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sqrt", arguments: box_([x.into()]) } }
 pub fn exp2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp2", arguments: box_([x.into()]) } }
 pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log2", arguments: box_([x.into()]) } }
+
+#[cfg(feature="num")] impl num::Sqrt for Expression { fn sqrt(self) -> Self { sqrt(self) } }
+#[cfg(feature="num")] impl num::Log for Expression { fn log2(self) -> Self { log2(self) } }
+
+pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
+	iter.into_iter().fold(None, |sum, (c, e)|
+		if c == 0. { sum }
+		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
+		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => -e }) } // fixme: reorder -a+b -> b-a to avoid neg
+		else { Some(match sum { Some(sum) => c * e + sum, None => c * e }) }
+	).unwrap()
+}
+pub fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }

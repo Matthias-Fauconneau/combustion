@@ -6,15 +6,6 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 }
 
 use ast::*;
-fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
-	iter.into_iter().fold(None, |sum, (c, e)|
-		if c == 0. { sum }
-		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
-		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => -e }) } // fixme: reorder -a+b -> b-a to avoid neg
-		else { Some(match sum { Some(sum) => c * e + sum, None => c * e }) }
-	).unwrap()
-}
-fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
 
 fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &[Value]) -> Expression {
 	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).zip(v).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0);
@@ -149,7 +140,7 @@ pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2,
 	let T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
 	let ref exp_Gibbs0_RT = eval(thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| f.decl())), &mut f);
 	let ref density = f.def(total_concentration / total_amount);
-	let active_concentrations = map(0..active_species.len(), |i| f.def(density*max(0., index(active_amounts, i))));
+	let active_concentrations = map(0..active_species.len(), |k| f.def(density*max(0., index(active_amounts, k))));
 	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
 	let ref concentrations = iter::box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
 	let rates = map(species_rates(reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations, &mut f).into_vec(), |e| f.def(e));

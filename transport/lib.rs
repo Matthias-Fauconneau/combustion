@@ -5,10 +5,10 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 }
 
 mod polynomial {
-use {std::convert::TryInto, num::sq, iter::{IntoIterator, ConstRange, ConstSizeIterator, into::IntoMap, Dot}};
+use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, Dot}};
 pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { Dot::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
 
-pub trait Vector<const N: usize> = ConstSizeIterator<N>+IntoIterator<Item=f64>;
+pub trait Vector<const N: usize> = IntoConstSizeIterator<N>+IntoIterator<Item=f64>;
 pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
 	use nalgebra::{DMatrix, DVector, SVD};
 	let ref w = DVector::from_iterator(N, w.into_iter());
@@ -23,7 +23,7 @@ pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vec
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
 
-use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}, iter::{ConstSizeIterator, ConstRange, into::IntoCopied, map}};
+use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log2, ln, pow}, iter::{IntoConstSizeIterator, ConstRange, into::IntoCopied, box_, map}};
 
 const light_speed : f64 = 299_792_458.;
 const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
@@ -79,83 +79,106 @@ impl Interactions<'t> {
 		image
 	}
 	pub fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral(&Ω⃰22, a, b, T) }
-	pub fn viscosity(&self, a: usize, T: f64) -> f64 {
+	pub fn viscosity(&self, k: usize, T: f64) -> f64 {
 		let Species{molar_mass, diameter, ..} = &self.0;
-		5./16. * sqrt(π * molar_mass[a]/NA * kB*T) / (self.Ω⃰22(a, a, T) * π * sq(diameter[a]))
+		5./16. * sqrt(π * molar_mass[k]/NA * kB*T) / (self.Ω⃰22(k, k, T) * π * sq(diameter[k]))
 	}
 	fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral(&A⃰, a, b, T) }
 	fn binary_thermal_diffusion_coefficient(&self, a: usize, b: usize, T: f64) -> f64 {
 		3./16. * sqrt(2.*π/self.reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
-	fn thermal_conductivity(&self, a: usize, T: f64) -> f64 {
+	fn thermal_conductivity(&self, k: usize, T: f64) -> f64 {
 		let Species{molar_mass, thermodynamics, well_depth_J, rotational_relaxation, internal_degrees_of_freedom, ..} = &self.0;
-		let f_internal = molar_mass[a]/NA/(kB * T) * self.binary_thermal_diffusion_coefficient(a,a,T) / self.viscosity(a, T);
-		let T⃰ = self.T⃰ (a, a, T);
+		let f_internal = molar_mass[k]/NA/(kB * T) * self.binary_thermal_diffusion_coefficient(k,k,T) / self.viscosity(k, T);
+		let T⃰ = self.T⃰ (k, k, T);
 		let fz = |T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
 		// Scaling factor for temperature dependence of rotational relaxation: Kee, Coltrin [2003:12.112, 2017:11.115]
-		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[a] * fz(298.*kB / well_depth_J[a]) / fz(T⃰) + 2./π * (5./3. * internal_degrees_of_freedom[a] + f_internal));
-		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[a]/(3./2.));
+		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[k] * fz(298.*kB / well_depth_J[k]) / fz(T⃰) + 2./π * (5./3. * internal_degrees_of_freedom[k] + f_internal));
+		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[k]/(3./2.));
 		let f_rotation = f_internal * (1. + c1);
-		let Cv_internal = thermodynamics[a].molar_heat_capacity_at_constant_pressure_R(T) - 5./2. - internal_degrees_of_freedom[a];
-		(self.viscosity(a, T)/(molar_mass[a]/NA))*kB*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[a] + f_internal * Cv_internal)
+		let Cv_internal = thermodynamics[k].molar_heat_capacity_at_constant_pressure_R(T) - 5./2. - internal_degrees_of_freedom[k];
+		(self.viscosity(k, T)/(molar_mass[k]/NA))*kB*(f_translation * 3./2. + f_rotation * internal_degrees_of_freedom[k] + f_internal * Cv_internal)
 	}
 }
 
 pub struct Polynomials<const D: usize> {
 	pub sqrt_viscosity_T_14: Box<[[f64; D]]>,
 	pub thermal_conductivity_T_12: Box<[[f64; D]]>,
-	pub binary_thermal_diffusion_coefficients_T32: Box<[Box<[[f64; D]]>]>
+	pub binary_thermal_diffusion_coefficients_T32: Box<[[f64; D]]>
 }
 impl<const D: usize> Polynomials<D> {
-	pub fn new(species: &Species) -> Self {
-		let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
-		const N : usize = /*D+2 FIXME: Remez*/50;
-		let T : [_; N] = ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
-		let s = Interactions(species);
-		Self{
-			sqrt_viscosity_T_14: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| sqrt(s.viscosity(a, T))/sqrt(sqrt(T)))).collect(),
-			thermal_conductivity_T_12: (0..species.len()).map(|a| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.thermal_conductivity(a,T)/sqrt(T))).collect(),
-			binary_thermal_diffusion_coefficients_T32:
-				(0..species.len()).map(|a| (0..species.len()).map(|b| polynomial::fit::<_,_,_,D,N>(T, ln, |T| s.binary_thermal_diffusion_coefficient(a, b, T) / (T*sqrt(T)))).collect()).collect()
-		}
+pub fn new(species: &Species) -> Self {
+	let K = species.len();
+	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
+	const N : usize = /*D+2 FIXME: Remez*/50;
+	let T : [_; N] = ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
+	let ref s = Interactions(species);
+	Self{
+		sqrt_viscosity_T_14: map(0..K, |k| polynomial::fit(T, log2, |T| sqrt(s.viscosity(k, T))/sqrt(sqrt(T)))),
+		thermal_conductivity_T_12: map(0..K, |k| polynomial::fit(T, log2, |T| s.thermal_conductivity(k,T)/sqrt(T))),
+		binary_thermal_diffusion_coefficients_T32: box_((0..K).map(|k| (0..K).map(move |j|
+			polynomial::fit(T, log2, |T| s.binary_thermal_diffusion_coefficient(k, j, T) / (T*sqrt(T)))
+		)).flatten())
 	}
+}
 }
 
 use ast::*;
-pub fn viscosity_T_12<const D: usize>(molar_mass: &[f64], sqrt_viscosity_T_14: &[[f64; D]]) -> Subroutine<3, 1> {
-	let len = molar_mass.len();
-	let (parameters, [ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions])
-		 = parameters!([ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions]);
-	let mut f = Block::new(&parameters);
-	let ref sqrt_viscosity_T_14 = map(sqrt_viscosity_T_14, |P| f.def(P[0] + P[1]*ln_T + P[2]*ln_T_2 + P[3]*ln_T_3));
-	use ast::sq;
-	f.push(output(0, sum((0..len).map(|k|
-		index(mole_fractions, k) * sq(&sqrt_viscosity_T_14[k]) / sum((0..len).map(|j| {
-			let sqrt_a = num::sqrt(1./num::sqrt(8.) * 1./num::sqrt(1. + molar_mass[k]/molar_mass[j]));
-			index(mole_fractions, j) * sq(sqrt_a + (sqrt_a*num::sqrt(num::sqrt(molar_mass[j]/molar_mass[k]))) * &sqrt_viscosity_T_14[k]/&sqrt_viscosity_T_14[j])
+
+pub fn thermal_conductivity_T_12_2<const D: usize>(thermal_conductivity_T_12: &[[f64; D]], [log_T, log_T_2, log_T_3]: &[Value; 3], mole_fractions: &[Value], f: &mut Block) -> Expression  {
+	let K = thermal_conductivity_T_12.len();
+	let ref thermal_conductivity_T_12 = map(thermal_conductivity_T_12, |P| f.def(P[0] + P[1]*log_T + P[2]*log_T_2 + P[3]*log_T_3));
+	      (0..K).map(|k| &mole_fractions[k] * &thermal_conductivity_T_12[k]).sum::<Expression>() +
+	1. / (0..K).map(|k| &mole_fractions[k] / &thermal_conductivity_T_12[k]).sum::<Expression>()
+}
+
+pub fn viscosity_T_12<const D: usize>(molar_mass: &[f64], sqrt_viscosity_T_14: &[[f64; D]], [log_T, log_T_2, log_T_3]: &[Value; 3], mole_fractions: &[Value], f: &mut Block) -> Expression {
+	let K = sqrt_viscosity_T_14.len();
+	let ref sqrt_viscosity_T_14 = map(sqrt_viscosity_T_14, |P| f.def(P[0] + P[1]*log_T + P[2]*log_T_2 + P[3]*log_T_3));
+	sum((0..K).map(|k|
+		&mole_fractions[k] * sq(&sqrt_viscosity_T_14[k]) / sum((0..K).map(|j| {
+			let sqrt_a = sqrt(1./sqrt(8.) * 1./sqrt(1. + molar_mass[k]/molar_mass[j]));
+			let mut sq = |x| { let x=f.def(x); &x*&x };
+			&mole_fractions[j] * sq(sqrt_a + (sqrt_a*sqrt(sqrt(molar_mass[j]/molar_mass[k]))) * &sqrt_viscosity_T_14[k]/&sqrt_viscosity_T_14[j])
 		}))
-	))));
-	Subroutine {parameters: parameters.into(), output: 1, statements: f.into()}
+	))
 }
 
-pub fn thermal_conductivity_T_12_2<const D: usize>(thermal_conductivity_T_12: &[[f64; D]]) -> Subroutine<3, 1> {
-	let len = thermal_conductivity_T_12.len();
-	let (parameters, [ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions])
-	   = parameters!([ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions]);
-	let mut f = Block::new(&parameters);
-	let ref thermal_conductivity_T_12 = iter::map(thermal_conductivity_T_12, |P| f.def(P[0] + P[1]*ln_T + P[2]*ln_T_2 + P[3]*ln_T_3));
-	f.push(output(0,
-					sum((0..len).map(|k| index(mole_fractions, k) * &thermal_conductivity_T_12[k])) +
-		1. / sum((0..len).map(|k| index(mole_fractions, k) / &thermal_conductivity_T_12[k])) ));
-	Subroutine {parameters: parameters.into(), output: 1, statements: f.into()}
-}
-
-pub fn P_T_32_mixture_diffusion_coefficients<const D: usize>(binary_thermal_diffusion_coefficients_T32: &[&[[f64; D]]]) -> Subroutine<3, 2> {
+pub fn P_T_32_mixture_diffusion_coefficients<'t, const D: usize>(binary_thermal_diffusion_coefficients_T32: &[[f64; D]], [log_T, log_T_2, log_T_3]: &[Value; 3], mole_fractions: &'t [Value], mass_fractions: impl 't+IntoIterator<Item=Expression>, f: &mut Block) -> impl 't+Iterator<Item=Expression> {
 	let K = binary_thermal_diffusion_coefficients_T32.len();
-	let (parameters, [ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions, ref mass_fractions])
-	   = parameters!([ref ln_T, ref ln_T_2, ref ln_T_3], [ref mole_fractions, ref mass_fractions]);
-	let statements = map(0..K, |k| output(k, (1. - index(mass_fractions, k)) / sum((0..K).filter(|&j| j != k).map(|j|
-		index(mole_fractions, j) / (|P:&[f64]| P[0] + P[1]*ln_T + P[2]*ln_T_2 + P[3]*ln_T_3)(&binary_thermal_diffusion_coefficients_T32[if k>j {k} else {j}][if k>j {j} else {k}])
-	))));
-	Subroutine {parameters: parameters.into(), output: K, statements}
+	let binary_thermal_diffusion_coefficients_T32 = map(0..K, |k| map(0..K, |j|
+		if k>j { Some({let P = binary_thermal_diffusion_coefficients_T32[k*K+j]; f.def(P[0] + P[1]*log_T + P[2]*log_T_2 + P[3]*log_T_3)}) } else { None }
+	));
+	mass_fractions.into_iter().enumerate().map(move |(k, mass_fraction)| (1. - mass_fraction) / (0..K).filter(|&j| j != k).map(|j|
+		&mole_fractions[j] / binary_thermal_diffusion_coefficients_T32[if k>j {k} else {j}][if k>j {j} else{k}].as_ref().unwrap()
+	).sum::<Expression>())
 }
+
+pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials<D>) -> Function<1, 2, 1> {
+	let K = molar_mass.len();
+	let (parameters, [ref pressure_R], [ref total_amount, ref T], [ref active_amounts])
+		 = parameters!([ref pressure_R], [ref total_amount, ref T], [ref active_amounts]);
+	let mut function = FunctionBuilder::new(&parameters);
+	let mut f = Block::new(&mut function);
+	let log_T = f.def(log2(r#use(T)));
+	let log_T_2 = f.def(sq(&log_T));
+	let log_T_3 = f.def(&log_T_2*&log_T);
+	let ref log_T = [log_T, log_T_2, log_T_3];
+	let ref rcp_amount = f.def(1./total_amount);
+	let active_fractions= map(0..K-1, |k| f.def(rcp_amount*max(0., index(active_amounts, k))));
+	let inert_fraction= f.def(1. - active_fractions.iter().sum::<Expression>());
+	let ref mole_fractions = box_(active_fractions.into_vec().into_iter().chain(std::iter::once(inert_fraction)));
+	let ref rcp_mean_molar_mass = f.def(1./dot(&molar_mass, &mole_fractions));
+	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
+	let ref T_12 = f.def(sqrt(r#use(T)));
+	let push= |v,f: &mut Block| f.push(v);
+	push(output(0, T_12*viscosity_T_12(molar_mass, &polynomials.sqrt_viscosity_T_14, log_T, mole_fractions, &mut f)), &mut f);
+	push(output(1, (T_12/2.)*thermal_conductivity_T_12_2(&polynomials.thermal_conductivity_T_12, log_T, mole_fractions, &mut f)), &mut f);
+	let ref T_32_P = f.def(T*T_12/(pressure_R*NA*kB));
+	for (k, P_T_32_D) in P_T_32_mixture_diffusion_coefficients(&polynomials.binary_thermal_diffusion_coefficients_T32, log_T, mole_fractions, mass_fractions, &mut f).enumerate() {
+		f.push(output(2+k, T_32_P*P_T_32_D))
+	}
+	Function::new(parameters, 2+K, f.into(), function)
+}
+
+pub fn properties<const D: usize>(species: &Species) -> Function<1, 2, 1> { properties_(&species.molar_mass, &Polynomials::<D>::new(&species)) }

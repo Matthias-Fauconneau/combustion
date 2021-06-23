@@ -9,7 +9,7 @@ edition= '2021'
 derive_more='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map= '*'
-num= {git='https://github.com/Matthias-Fauconneau/num'}
+num= {optional=true, git='https://github.com/Matthias-Fauconneau/num'}
 
 [lib]
 path= 'lib.rs'
