@@ -1,4 +1,4 @@
-#![feature(trait_alias,once_cell,array_methods,array_map,in_band_lifetimes)]#![allow(uncommon_codepoints,non_upper_case_globals,non_snake_case)]
+#![feature(trait_alias,once_cell,array_methods,array_map,in_band_lifetimes,bindings_after_at)]#![allow(uncommon_codepoints,non_upper_case_globals,non_snake_case)]
 fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
@@ -154,18 +154,17 @@ pub fn P_T_32_mixture_diffusion_coefficients<'t, const D: usize>(binary_thermal_
 	).sum::<Expression>())
 }
 
-pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials<D>) -> Function<1, 2, 1> {
+pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials<D>) -> Function {
 	let K = molar_mass.len();
-	let (parameters, [ref pressure_R], [ref total_amount, ref T], [ref active_amounts])
-		 = parameters!([ref pressure_R], [ref total_amount, ref T], [ref active_amounts]);
-	let mut function = FunctionBuilder::new(&parameters);
+	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+K-1), Value) => {
+	let mut function = FunctionBuilder::new(&input);
 	let mut f = Block::new(&mut function);
 	let log_T = f.def(log2(r#use(T)));
 	let log_T_2 = f.def(sq(&log_T));
 	let log_T_3 = f.def(&log_T_2*&log_T);
 	let ref log_T = [log_T, log_T_2, log_T_3];
 	let ref rcp_amount = f.def(1./total_amount);
-	let active_fractions= map(0..K-1, |k| f.def(rcp_amount*max(0., index(active_amounts, k))));
+	let active_fractions= map(0..K-1, |k| f.def(rcp_amount*max(0., &active_amounts[k])));
 	let inert_fraction= f.def(1. - active_fractions.iter().sum::<Expression>());
 	let ref mole_fractions = box_(active_fractions.into_vec().into_iter().chain(std::iter::once(inert_fraction)));
 	let ref rcp_mean_molar_mass = f.def(1./dot(&molar_mass, &mole_fractions));
@@ -178,7 +177,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials
 	for (k, P_T_32_D) in P_T_32_mixture_diffusion_coefficients(&polynomials.binary_thermal_diffusion_coefficients_T32, log_T, mole_fractions, mass_fractions, &mut f).enumerate() {
 		f.push(output(2+k, T_32_P*P_T_32_D))
 	}
-	Function::new(parameters, 2+K, f.into(), function)
-}
+	Function::new(2+K, f.into(), function)
+}}}
 
-pub fn properties<const D: usize>(species: &Species) -> Function<1, 2, 1> { properties_(&species.molar_mass, &Polynomials::<D>::new(&species)) }
+pub fn properties<const D: usize>(species: &Species) -> Function { properties_(&species.molar_mass, &Polynomials::<D>::new(&species)) }

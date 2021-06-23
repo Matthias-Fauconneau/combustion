@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
-		if let [energy_rate_RT, rates @ ..] = &*rates([*pressure_R], [[total_amount, *T] as &[_], active_amounts].concat()) {
+		if let [energy_rate_RT, rates @ ..] = &*rates(&[&[*pressure_R, total_amount, *T], active_amounts].concat()) {
 			eprintln!("{}, HRR: {:.3e}", rates.iter().zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
 		} else { unreachable!() }
 	}
@@ -21,7 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let transport = wrap(transport::properties::<4>(&species));
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
-		if let [viscosity, thermal_conductivity, mixture_diffusion_coefficients @ ..] = &*transport([*pressure_R],[[total_amount, *T] as &[_], amounts].concat()) {
+		let active_amounts = &amounts[0..amounts.len()-1];
+		if let [viscosity, thermal_conductivity, mixture_diffusion_coefficients @ ..] = &*transport(&[&[*pressure_R,total_amount, *T], active_amounts].concat()) {
 			eprintln!("μ: {viscosity:.4e}, λ: {thermal_conductivity:.4}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
 		} else { unreachable!() }
 	}

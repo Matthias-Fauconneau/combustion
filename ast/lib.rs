@@ -1,6 +1,6 @@
 #![feature(unboxed_closures, default_free_fn, fn_traits, in_band_lifetimes, associated_type_bounds)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
-#[macro_export] macro_rules! stringify{ [$($id:ident),*] => ([$(std::stringify!($id)),*]) }
+#[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 use std::default::default;
 
 #[derive(PartialEq, Eq)] pub struct Value(pub usize);
@@ -10,7 +10,6 @@ pub enum Expression {
 	Literal(f64),
 	Use(Value),
 	Load(Variable),
-	Index { base: Value, index: usize },
 	Neg(Box<Expression>),
 	Add(Box<Expression>, Box<Expression>),
 	Sub(Box<Expression>, Box<Expression>),
@@ -28,9 +27,7 @@ pub enum Statement {
 	Branch { condition: Expression, consequent: Box<[Statement]>, alternative: Box<[Statement]> },
 }
 
-pub fn r#use(index: &Value) -> Expression { Expression::Use(Value(index.0)) }
-
-pub fn index(base: &Value, index: usize) -> Expression { Expression::Index { base: Value(base.0), index } }
+pub fn r#use(value: &Value) -> Expression { Expression::Use(Value(value.0)) }
 
 fn neg(x: impl Into<Expression>) -> Expression { Expression::Neg(box_(x.into())) }
 
@@ -69,11 +66,11 @@ impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &
 #[must_use] pub fn output(index: usize, value: impl Into<Expression>) -> Statement { Statement::Output{ index, value: value.into() } }
 
 pub struct FunctionBuilder {
-	base: usize,
+	input: usize,
 	variables: usize,
 }
 impl FunctionBuilder {
-	pub fn new<const U: usize, const V: usize, const A: usize>(_: &Parameters<U,V,A>) -> Self { Self { base: U+V+A, variables: 0 } }
+	pub fn new(input: &[Value]) -> Self { Self { input: input.len(), variables: 0 } }
 }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] pub struct Block<'t> {
@@ -82,7 +79,7 @@ impl FunctionBuilder {
 	variables: &'t mut usize,
 }
 impl Block<'t> {
-	pub fn new(f: &'t mut FunctionBuilder) -> Self { Self { base: f.base, statements: vec![], variables: &mut f.variables } }
+	pub fn new(f: &'t mut FunctionBuilder) -> Self { Self { base: f.input, statements: vec![], variables: &mut f.variables } }
 	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ base: self.base+self.statements.len(), statements: vec![], variables: self.variables };
 		let result = build(&mut block);
@@ -104,39 +101,30 @@ impl FnOnce<(Expression,)> for Block<'_> { type Output = Value; extern "rust-cal
 impl FnMut<(Expression,)> for Block<'_> { extern "rust-call" fn call_mut(&mut self, (value,): (Expression,)) -> Self::Output  { self.def(value) } }
 impl From<Block<'_>> for Box<[Statement]> { fn from(b: Block) -> Self { b.statements.into() } }
 
-pub struct Parameters<const U: usize, const V: usize, const A: usize> {
-	pub uniforms: [&'static str; U],
-	pub values: [&'static str; V],
-	pub arrays: [&'static str; A],
-}
-
-pub struct Function<const U: usize, const V: usize, const A: usize> {
-	pub parameters: Parameters<U, V, A>,
+pub struct Function {
+	pub input: usize,
 	pub output: usize,
 	pub variables: usize,
 	pub statements: Box<[Statement]>,
 }
-impl<const U: usize, const V: usize, const A: usize> Function<U,V,A> {
-	pub fn new(parameters: Parameters<U,V,A>, output: usize, statements: Box<[Statement]>, function_builder: FunctionBuilder) -> Self {
-		Function{parameters: parameters.into(), output, variables: function_builder.variables, statements}
-	}
+impl Function {
+	pub fn new(output: usize, statements: Box<[Statement]>, FunctionBuilder{input, variables}: FunctionBuilder) -> Self { Function{input, output, variables, statements} }
 }
 
-impl<const U: usize, const V: usize, const A: usize> FnOnce<([f64; U], [f64; V], [&[f64]; A], &mut [f64])> for Function<U,V,A> {
+impl FnOnce<(&[f64], &mut [f64])> for Function {
 	type Output = ();
-	extern "rust-call" fn call_once(mut self, args: ([f64; U], [f64; V], [&[f64]; A], &mut [f64])) -> Self::Output { self.call_mut(args) }
+	extern "rust-call" fn call_once(mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call_mut(args) }
 }
-impl<const U: usize, const V: usize, const A: usize> FnMut<([f64; U], [f64; V], [&[f64]; A], &mut [f64])> for Function<U,V,A> {
-	extern "rust-call" fn call_mut(&mut self, args: ([f64; U], [f64; V], [&[f64]; A], &mut [f64])) -> Self::Output { self.call(args) }
+impl FnMut<(&[f64], &mut [f64])> for Function {
+	extern "rust-call" fn call_mut(&mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call(args) }
 }
-impl<const U: usize, const V: usize, const A: usize> Fn<([f64; U], [f64; V], [&[f64]; A], &mut [f64])> for Function<U,V,A> {
-	extern "rust-call" fn call(&self, (ref uniform_arguments, ref value_arguments, ref array_arguments, output): ([f64; U], [f64; V], [&[f64]; A], &mut [f64])) -> Self::Output {
+impl Fn<(&[f64], &mut [f64])> for Function {
+	extern "rust-call" fn call(&self, (input, output): (&[f64], &mut [f64])) -> Self::Output {
 		struct State<'t> {
-			value_arguments: &'t [f64],
-			array_arguments: &'t [&'t [f64]],
+			input: &'t [f64],
+			output: &'t mut [f64],
 			definitions: linear_map::LinearMap<Value, f64>,
 			variables: Box<[Option<f64>]>,
-			output: &'t mut [f64]
 		}
 		impl State<'_> {
 			fn eval(&mut self, expression: &Expression) -> f64 {
@@ -144,16 +132,10 @@ impl<const U: usize, const V: usize, const A: usize> Fn<([f64; U], [f64; V], [&[
 				match expression {
 					&Literal(value) => value,
 					Use(id) => {
-						if id.0 < self.value_arguments.len() { self.value_arguments[id.0] }
-						else if id.0 < self.value_arguments.len()+self.array_arguments.len() { unreachable!() }
+						if id.0 < self.input.len() { self.input[id.0] }
 						else { self.definitions[&id] }
 					}
 					Load(variable) => { self.variables[variable.0].unwrap() }
-					Index { base, index } => {
-						assert!(base.0 >= self.value_arguments.len(), "{:?} {:?}", base.0, self.value_arguments);
-						let base = base.0 - self.value_arguments.len();
-						self.array_arguments[base][*index]
-					}
 					Neg(x) => -self.eval(x),
 					Add(a, b) => self.eval(a) + self.eval(b),
 					Sub(a, b) => self.eval(a) - self.eval(b),
@@ -196,20 +178,13 @@ impl<const U: usize, const V: usize, const A: usize> Fn<([f64; U], [f64; V], [&[
 				}
 			}
 		}
-		let mut state = State{value_arguments: &[uniform_arguments as &[_], value_arguments].concat(), array_arguments, definitions: default(), variables: vec![None; self.variables].into(), output};
+		assert!(input.len() == self.input);
+		let mut state = State{input, output, definitions: default(), variables: vec![None; self.variables].into()};
 		state.run(&self.statements);
 	}
 }
 
-pub fn wrap<const U: usize, const V: usize, const A: usize>(f: Function<U, V, A>) -> impl Fn([f64; U], [f64; V], [&[f64]; A]) -> Box<[f64]> {
-	move |uniforms, values, arrays| { let mut output = vec![0.; f.output].into_boxed_slice(); f(uniforms, values, arrays, &mut output); output }
-}
-
-use iter::{ConstRange, IntoConstSizeIterator};
-pub fn parameters<const U: usize, const V: usize, const A: usize>(uniforms: [&'static str; U], values: [&'static str; V], arrays: [&'static str; A]) -> (Parameters<U, V, A>, [Value; U], [Value; V], [Value; A]) {
-	(Parameters{uniforms, values, arrays}, ConstRange.map(|id| Value(id)).collect(), ConstRange.map(|id| Value(U+id)).collect(), ConstRange.map(|id| Value(U+V+id)).collect())
-}
-#[macro_export] macro_rules! parameters { ($([$(ref $parameter:ident),*]),*) => ( $crate::parameters( $([$(std::stringify!($parameter)),*]),* ) ) }
+pub fn wrap(f: Function) -> impl Fn(&[f64]) -> Box<[f64]> { move |input| { let mut output = vec![0.; f.output].into_boxed_slice(); f(input, &mut output); output } }
 
 impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }

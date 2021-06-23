@@ -10,7 +10,7 @@ fn wrap<const U: usize, const V: usize, const A: usize>(f: Function<U, V, A>) ->
 	let command_buffer = device.command_buffer(&pipeline, as_bytes(&uniforms), /*width*/1, states_len)?;
 	let _time = device.submit_and_wait(command_buffer)?;
 	store.map(device).unwrap()
-}/*
+}*/
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	/*let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;

@@ -1,4 +1,4 @@
-#![feature(associated_type_bounds)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
+#![feature(associated_type_bounds,bindings_after_at)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
 fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, Vec<usize>)> {
 	let mut map = linear_map::LinearMap::<_, Vec<_>>::new();
 	for (index, key) in iter.into_iter().enumerate() { map.entry(key).or_insert(Default::default()).push(index) }
@@ -123,10 +123,9 @@ fn species_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_G
 	map(0..exp_Gibbs0_RT.len(), |specie| idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates)))
 }
 
-pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2, 1> {
-	let (parameters, [ref pressure_R], [ref total_amount, ref T], [ref active_amounts])
-		 = parameters!([ref pressure_R], [ref total_amount, ref T], [ref active_amounts]);
-	let mut function = FunctionBuilder::new(&parameters);
+pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function {
+	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+active_species.len()), Value) => {
+	let mut function = FunctionBuilder::new(input);
 	let mut f = Block::new(&mut function);
 	let ref log_T = f.def(log2(T));
 	let ref T2 = f.def(T*T);
@@ -140,7 +139,7 @@ pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2,
 	let T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
 	let ref exp_Gibbs0_RT = eval(thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| f.decl())), &mut f);
 	let ref density = f.def(total_concentration / total_amount);
-	let active_concentrations = map(0..active_species.len(), |k| f.def(density*max(0., index(active_amounts, k))));
+	let active_concentrations = map(0..active_species.len(), |k| f.def(density*max(0., &active_amounts[k])));
 	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
 	let ref concentrations = iter::box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
 	let rates = map(species_rates(reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations, &mut f).into_vec(), |e| f.def(e));
@@ -148,5 +147,6 @@ pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function<1, 2,
 	let energy_rate_RT : Expression = iter::dot(rates.iter().zip(&*enthalpy_RT));
 	f.push(output(0, energy_rate_RT));
 	f.extend(rates.iter().enumerate().map(|(i, r)| output(1+i, r)));
-	Function::new(parameters, 1+rates.len(), f.into(), function)
+	Function::new(1+rates.len(), f.into(), function)
+	}}
 }
