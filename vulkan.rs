@@ -101,7 +101,7 @@ pub struct Pipeline {
 	_module: ShaderModule,
 	_descriptor_pool: DescriptorPool,
 	layout: PipelineLayout,
-	pipeline: ash::vk::Pipeline,
+	pipeline: ash::vk::Pipeline,uniforms
 	pub descriptor_set: DescriptorSet,
 }
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }

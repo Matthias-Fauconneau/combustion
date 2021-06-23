@@ -5,6 +5,9 @@ use itertools::Itertools;
 
 struct WGSL {
 	instructions: Vec<String>,
+	definitions: Vec<Value>,
+	variables: Vec<Variable>,
+	results: usize,
 }
 
 impl WGSL {
@@ -18,7 +21,8 @@ fn expr(&mut self, e: &Expression) -> String {
 			}
 			else { float_pretty_print::PrettyPrintFloat(v).to_string() }
 		}
-		Use(v) => format!("_{}", v.0),
+		Use(v) => { assert!(self.definitions.contains(v)); format!("_{}", v.0) },
+		Load(v) => { assert!(self.variables.contains(v)); format!("__[{}]", v.0) },
 		Index { base, index } => format!("arrays[{}][{index}]", base.0),
 		Neg(x) => format!("-{}", self.expr(x)),
 		Add(a, b) => format!("({} + {})", self.expr(a), self.expr(b)),
@@ -30,29 +34,35 @@ fn expr(&mut self, e: &Expression) -> String {
 		Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			let result = self.expr(result);
-			let value = self.instructions.len();
-			self.instructions.push(format!("_{value}_ = {result};"));
-			"_{value}_".into()
+			let id = {let id = self.results; self.results += 1; id};
+			self.instructions.push(format!("let _{id} = {result};"));
+			"_{id}".into()
 		}
 	}
 }
 fn push(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
-		Definition { id, value } => { let value = self.expr(value); self.instructions.push(format!("let _{} = {value};", id.0)) }
+		Define { id, value } => {
+			let value = self.expr(value);
+			self.instructions.push(format!("let _{} = {value};", id.0));
+			assert!(!self.definitions.contains(id));
+			self.definitions.push(Value(id.0));
+		}
+		Store { id, value } => { let value = self.expr(value); self.instructions.push(format!("__[{}] = {value};", id.0)) }
 		Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("_[{index}] = {value};")) }
-		ConditionalStatement { condition, consequent, alternative } => {
+		Branch { condition, consequent, alternative } => {
 			let condition = self.expr(condition);
 			self.instructions.push(format!("if ({condition}) {{"));
-			for s in consequent { self.push(s) }
+			for s in &**consequent { self.push(s) }
 			self.instructions.push("} else {".into());
-			for s in alternative { self.push(s) }
+			for s in &**alternative { self.push(s) }
 		}
 	}
 }
 }
 
-pub fn lower<const V: usize, const A: usize>(subroutine: &Subroutine<V,A>) -> Result<Box<[u32]>, Box<dyn std::error::Error>> {
+pub fn from<const U: usize, const V: usize, const A: usize>(function: &Function<U,V,A>) -> Result<Box<[u32]>, Box<dyn std::error::Error>> {
 	use naga::{front::wgsl::parse_str, valid::{Validator, Capabilities}, back::spv::{write_vec, Options, WriterFlags}};
 	let module = parse_str(&format!(r#"
 		[[set(0), binding(0)]] var<push_constant> parameters : array<f64, {V}>;
@@ -60,8 +70,16 @@ pub fn lower<const V: usize, const A: usize>(subroutine: &Subroutine<V,A>) -> Re
 		[[set(2), binding(2)]] var<storage,writeonly> _: array<f64>
 		[[stage(compute), workgroup_size(1)]]
 		fn main([[builtin(global_invocation_id)]] id: vec3<u32>) {{
+			var _[{}];
+			var __[{}];
 			{}
-		}}"#, {let mut wgsl = WGSL{instructions: vec![]}; for s in &*subroutine.statements { wgsl.push(s); } wgsl.instructions.join("\n")}))?;
+			return _;
+		}}"#, function.output, function.variables, {
+			let mut wgsl = WGSL{instructions: vec![], definitions: vec![], variables: vec![], results: 0};
+			for s in &*function.statements { wgsl.push(s); }
+			wgsl.instructions.join("\n")
+		}
+	))?;
 	Ok(write_vec(&module, &Validator::new(default(), Capabilities::all()).validate(&module)?, &Options{lang_version: (1, 6), flags: WriterFlags::DEBUG, ..default()})?.into())
 	/*use {spirv::*, rspirv::dr::*}
 	let mut b = Builder::new();

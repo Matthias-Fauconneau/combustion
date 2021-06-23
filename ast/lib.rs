@@ -3,14 +3,10 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! stringify{ [$($id:ident),*] => ([$(std::stringify!($id)),*]) }
 use std::default::default;
 
-#[derive(PartialEq, Eq, Debug)] pub struct Value(pub usize);
-impl Value {
-	pub const NONE: Value = Value(!0);
-}
+#[derive(PartialEq, Eq)] pub struct Value(pub usize);
+#[derive(PartialEq, Eq)] pub struct Variable(pub usize);
 
-#[derive(Debug)] pub struct Variable(usize);
-
-#[derive(Debug)] pub enum Expression {
+pub enum Expression {
 	Literal(f64),
 	Use(Value),
 	Load(Variable),
@@ -25,7 +21,7 @@ impl Value {
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
 
-#[derive(Debug)] pub enum Statement {
+pub enum Statement {
 	Define { id: Value, value: Expression },
 	Store { id: Variable, value: Expression },
 	Output { index: usize, value: Expression },
