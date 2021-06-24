@@ -2,6 +2,8 @@
 use {std::default::default, ast::*, itertools::Itertools, anyhow::Result};
 
 struct WGSL {
+	uniform:usize,
+	input: usize,
 	instructions: Vec<String>,
 	definitions: Vec<Value>,
 	variables: Vec<Variable>,
@@ -19,7 +21,11 @@ fn expr(&mut self, e: &Expression) -> String {
 			}
 			else { float_pretty_print::PrettyPrintFloat(v).to_string() }
 		}
-		Use(v) => { assert!(self.definitions.contains(v), "{:?}", self.instructions); format!("_{}", v.0) },
+		Use(v) => {
+			if v.0 < self.uniform{ format!("uniform[{}]", v.0) }
+			else if v.0 < self.input { format!("input{}[id]", v.0) }
+			else { assert!(self.definitions.contains(v), "{:?}", self.instructions); format!("_{}", v.0) }
+		},
 		Load(v) => { assert!(self.variables.contains(v)); format!("_[{}]", v.0) },
 		Neg(x) => format!("-{}", self.expr(x)),
 		Add(a, b) => format!("({} + {})", self.expr(a), self.expr(b)),
@@ -33,7 +39,7 @@ fn expr(&mut self, e: &Expression) -> String {
 			let result = self.expr(result);
 			let id = {let id = self.results; self.results += 1; id};
 			self.instructions.push(format!("let _{id} = {result};"));
-			"_{id}".into()
+			format!("_{id}")
 		}
 	}
 }
@@ -52,28 +58,35 @@ fn push(&mut self, s: &Statement) {
 			//assert!(!self.variables.contains(variable));
 			self.variables.push(Variable(variable.0));
 		}
-		Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("output[{index}][id] = {value};")) }
+		Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("output{index}[id] = {value};")) }
 		Branch { condition, consequent, alternative } => {
 			let condition = self.expr(condition);
 			self.instructions.push(format!("if ({condition}) {{"));
 			for s in &**consequent { self.push(s) }
 			self.instructions.push("} else {".into());
 			for s in &**alternative { self.push(s) }
+			self.instructions.push("}".into());
 		}
 	}
 }
 }
 
-pub fn from(uniform: usize, function: &Function) -> Result<Box<[u32]>> {
-	let mut bindings = vec![format!("[[group(0), binding(0)]] var<push_constant> uniforms : array<f64, {uniform}>;")];
-	bindings.extend((0..function.input-uniform).map(|i| { let binding = 1+i; format!("[[group(0), binding({binding})]] var<storage,readonly> input: array<f64>") }));
-	bindings.extend((0..function.output).map(|i| { let binding = 1+function.input-uniform+i; format!("[[group(0), binding({binding})]] var<storage,writeonly> output: array<f64>") }));
-	let module = [bindings, vec![format!("[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id: vec3<u32>) {{ var _[{}]: <f64>;", function.variables)], {
-		let mut wgsl = WGSL{instructions: vec![], definitions: (0..function.input).map(Value).collect(), variables: vec![], results: 0};
-		for s in &*function.statements { println!("{s:?}"); wgsl.push(s); }
-		wgsl.instructions
-	}].concat().join("\n");
+pub fn from(uniform: usize, Function{input, output, variables, statements}: &Function) -> Result<Box<[u32]>> {
+	let mut bindings = vec![format!("[[group(0), binding(0)]] var<push_constant> uniform : array<f64, {uniform}>;")];
+	bindings.extend((uniform..*input).map(|i| { let binding = 1+i-uniform; format!("[[group(0), binding({binding})]] var<storage> input{i}: [[access(read)]] array<f64>;") }));
+	bindings.extend((0..*output).map(|i| { let binding = 1+input-uniform+i; format!("[[group(0), binding({binding})]] var<storage> output{i}: [[access(write)]] array<f64>;") }));
+	let module = [
+		bindings,
+		vec![format!("[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id: vec3<u32>) {{ var _: array<f64, {}>;", variables)],
+		{
+			let mut wgsl = WGSL{uniform, input: *input, instructions: vec![], definitions: vec![], variables: vec![], results: 0};
+			for s in &**statements { println!("{s:?}"); wgsl.push(s); }
+			wgsl.instructions
+		},
+		vec!["}".into()]
+	].concat().join("\n");
 	use naga::{front::wgsl::parse_str, valid::{Validator, Capabilities}, back::spv::{write_vec, Options, WriterFlags}};
+	std::fs::write("/var/tmp/wgsl", &module)?;
 	let module = parse_str(&module)?;
 	Ok(write_vec(&module, &Validator::new(default(), Capabilities::all()).validate(&module)?, &Options{lang_version: (1, 6), flags: WriterFlags::DEBUG, ..default()})?.into())
 	/*use {spirv::*, rspirv::dr::*}

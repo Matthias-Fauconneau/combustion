@@ -1,1 +1,1 @@
-Chemical reaction kinetics (adiabatic ideal gas batch reactor)
+Reaction rates and transport properties
