@@ -85,31 +85,21 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		Elementary|Irreversible => arrhenius(k_inf, T),
 		ThreeBody{efficiencies} => arrhenius(k_inf, T) * dot(efficiencies, concentrations),
 		PressureModification{efficiencies, k0} => f.block(|def|{
-			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T) / arrhenius(k_inf, T));
-			arrhenius(k_inf, T) * Pr / (Pr + 1.)
+			let ref C_k0 = def(dot(efficiencies, concentrations) * arrhenius(k0, T));
+			let ref k_inf = def(arrhenius(k_inf, T));
+			(C_k0 * k_inf) / (C_k0 + k_inf)
 		}),
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|def|{
-			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T) / arrhenius(k_inf, T));
-			let F = if true {
-				let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
-				let ref logFcent = def(log2(Fcent));
-				let c =-0.67*logFcent - 0.4*f64::log2(10.);
-				let N = -1.27*logFcent + 0.75*f64::log2(10.);
-				let ref logPr𐊛c = def(log2(Pr) + c);
-				let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
-				exp2(logFcent/(f1*f1+1.))
-			} else {
-				pub fn exp(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp", arguments: box_([x.into()]) } }
-				pub fn log10(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log10", arguments: box_([x.into()]) } }
-				pub fn pow(x: impl Into<Expression>, y: impl Into<Expression>) -> Expression { Expression::Call{ function: "pow", arguments: box_([x.into(), y.into()]) } }
-				let Fcent = {let T{T,..}=T; (1.-A) * exp(-r#use(T)/T3) + A * exp(-r#use(T)/T1) + exp(-T2/T)};
-				let ref log10Fcent = def(log10(Fcent));
-				let ref C = def(-0.4 - 0.67*log10Fcent);
-				let N = 0.75 - 1.27*log10Fcent;
-				let ref f1 = def((log10(Pr)+C)/(N-0.14*(log10(Pr) + C)));
-				pow(10., log10Fcent/(1.+num::sq(f1)))
-			};
-			arrhenius(k_inf, T) * Pr / (Pr + 1.) * F
+			let ref k_inf = def(arrhenius(k_inf, T));
+			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T) / k_inf);
+			let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
+			let ref logFcent = def(log2(Fcent));
+			let c =-0.67*logFcent - 0.4*f64::log2(10.);
+			let N = -1.27*logFcent + 0.75*f64::log2(10.);
+			let ref logPr𐊛c = def(log2(Pr) + c);
+			let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
+			let F = exp2(logFcent/(f1*f1+1.));
+			k_inf * Pr / (Pr + 1.) * F
 		})}
 	}
 }
