@@ -88,9 +88,8 @@ fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations:
 			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T));
 			Pr / (rcp_arrhenius(k_inf, T) * Pr + 1.)
 		}),
-		Falloff{efficiencies, k0, troe} => f.block(|def|{
+		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|def|{
 			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T));
-			let Troe{A, T3, T1, T2} = *troe;
 			let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
 			let ref logFcent = def(log2(Fcent));
 			let c =-0.67*logFcent - 0.4*f64::log2(10.);
@@ -99,7 +98,7 @@ fn efficiency(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations:
 			let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
 			let F = exp2(logFcent/(f1*f1+1.));
 			Pr / (rcp_arrhenius(k_inf, T) * Pr + 1.) * F
-		})
+		})}
 	}
 }
 
