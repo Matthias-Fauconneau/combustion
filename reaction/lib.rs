@@ -65,7 +65,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 	}
 }
 
-/*fn rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{log_T,T,T2,rcp_T,rcp_T2,..}: T<'_>) -> Expression {
+fn _rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{log_T,T,T2,rcp_T,rcp_T2,..}: T<'_>) -> Expression {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
 		if temperature_exponent == 0. { (1./A).into() }
 		else if temperature_exponent == -1. { T / A }
@@ -78,7 +78,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 		let m_log_arrhenius = if activation_temperature == 0. { m_βlogT𐊛logA } else { activation_temperature/LN_2 * rcp_T + m_βlogT𐊛logA };
 		exp2(m_log_arrhenius)
 	}
-}*/
+}
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
@@ -86,29 +86,30 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		ThreeBody{efficiencies} => arrhenius(k_inf, T) * dot(efficiencies, concentrations),
 		PressureModification{efficiencies, k0} => f.block(|def|{
 			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T) / arrhenius(k_inf, T));
-			Pr / (Pr + 1.)
+			arrhenius(k_inf, T) * Pr / (Pr + 1.)
 		}),
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|def|{
 			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T) / arrhenius(k_inf, T));
-			/*let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
-			let ref logFcent = def(log2(Fcent));
-			let c =-0.67*logFcent - 0.4*f64::log2(10.);
-			let N = -1.27*logFcent + 0.75*f64::log2(10.);
-			let ref logPr𐊛c = def(log2(Pr) + c);
-			let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
-			let F = exp2(logFcent/(f1*f1+1.));
-			Pr / (rcp_arrhenius(k_inf, T) * Pr + 1.) * F*/
-			pub fn exp(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp", arguments: box_([x.into()]) } }
-			pub fn log10(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log10", arguments: box_([x.into()]) } }
-			pub fn pow(x: impl Into<Expression>, y: impl Into<Expression>) -> Expression { Expression::Call{ function: "pow", arguments: box_([x.into(), y.into()]) } }
-
-			let Fcent = {let T{T,..}=T; (1.-A) * exp(-r#use(T)/T3) + A * exp(-r#use(T)/T1) + exp(-T2/T)};
-			let ref log10Fcent = def(log10(Fcent));
-			let ref C = def(-0.4 - 0.67*log10Fcent);
-			let N = 0.75 - 1.27*log10Fcent;
-			let ref f1 = def((log10(Pr)+C)/(N-0.14*(log10(Pr) + C)));
-			let F = pow(10., log10Fcent/(1.+num::sq(f1)));
-			arrhenius(k_inf, T) * (Pr / (1. + Pr)) * F
+			let F = if true {
+				let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp2(r#use(T)/(-LN_2*T3)) + A * exp2(r#use(T)/(-LN_2*T1)) + exp2((-T2/LN_2)*r#use(rcp_T))};
+				let ref logFcent = def(log2(Fcent));
+				let c =-0.67*logFcent - 0.4*f64::log2(10.);
+				let N = -1.27*logFcent + 0.75*f64::log2(10.);
+				let ref logPr𐊛c = def(log2(Pr) + c);
+				let ref f1 = def(logPr𐊛c / (-0.14*logPr𐊛c+N));
+				exp2(logFcent/(f1*f1+1.))
+			} else {
+				pub fn exp(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp", arguments: box_([x.into()]) } }
+				pub fn log10(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log10", arguments: box_([x.into()]) } }
+				pub fn pow(x: impl Into<Expression>, y: impl Into<Expression>) -> Expression { Expression::Call{ function: "pow", arguments: box_([x.into(), y.into()]) } }
+				let Fcent = {let T{T,..}=T; (1.-A) * exp(-r#use(T)/T3) + A * exp(-r#use(T)/T1) + exp(-T2/T)};
+				let ref log10Fcent = def(log10(Fcent));
+				let ref C = def(-0.4 - 0.67*log10Fcent);
+				let N = 0.75 - 1.27*log10Fcent;
+				let ref f1 = def((log10(Pr)+C)/(N-0.14*(log10(Pr) + C)));
+				pow(10., log10Fcent/(1.+num::sq(f1)))
+			};
+			arrhenius(k_inf, T) * Pr / (Pr + 1.) * F
 		})}
 	}
 }
