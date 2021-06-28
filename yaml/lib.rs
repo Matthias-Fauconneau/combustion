@@ -1,4 +1,4 @@
-#![feature(default_free_fn,array_map)]#![allow(non_snake_case)]
+#![feature(default_free_fn,array_map)]#![allow(non_snake_case, non_upper_case_globals)]
 use std::default::default;
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 
@@ -53,6 +53,8 @@ use chemical_model::*;
 pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 	use std::str::FromStr;
 	let data = &yaml[0];
+	let units = &data["units"];
+	assert!(units["length"].as_str()==Some("cm") && units["time"].as_str()==Some("s") && units["quantity"].as_str()==Some("mol"));
 	let species: Map<&str, Specie> = data["species"].as_vec().unwrap().iter().map(|specie| (specie["name"].as_str().unwrap(), Specie{
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
 		thermodynamic: (|thermo:&yaml_rust::Yaml| NASA7{
@@ -84,7 +86,17 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 		let rate_constant = |rate_constant:&yaml_rust::Yaml, concentration_cm3_unit_conversion_factor_exponent: u8| RateConstant{
 			preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, concentration_cm3_unit_conversion_factor_exponent as f64),
 			temperature_exponent: rate_constant["b"].as_f64().unwrap(),
-			activation_energy: rate_constant["Ea"].as_f64().unwrap(),
+			activation_temperature: {
+				let Ea = rate_constant["Ea"].as_f64().unwrap();
+				match units["activation-energy"].as_str().unwrap() {
+					"K" => Ea,
+					"cal/mol" => {
+						const J_per_cal: f64 = 4.184;
+						Ea*J_per_cal/(kB*NA)
+					},
+					_ => unimplemented!(),
+				}
+			}
 		};
 		Reaction{
 			equation,

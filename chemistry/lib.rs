@@ -1,10 +1,6 @@
 #![feature(once_cell, in_band_lifetimes, array_map, array_methods)]
-//#![feature(unboxed_closures, associated_type_bounds, once_cell, default_free_fn, fn_traits, , trait_alias)]
 #![allow(non_upper_case_globals, non_snake_case)]
-//#![allow(uncommon_codepoints, confusable_idents, non_upper_case_globals, non_snake_case)]
-
-pub const kB : f64 = 1.380649e-23; // J / K
-pub const NA : f64 = 6.02214076e23;
+pub use model::{kB, NA};
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 
 #[derive(PartialEq, Debug)] pub struct NASA7 {
@@ -80,20 +76,7 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> Sta
 	State{temperature, pressure_R, volume: *volume, amounts}
 }
 
-#[derive(Clone, Copy)] pub struct RateConstant {
-	pub preexponential_factor: f64,
-	pub temperature_exponent: f64,
-	pub activation_temperature: f64
-}
-
-impl From<&model::RateConstant> for RateConstant {
-	fn from(model::RateConstant{preexponential_factor, temperature_exponent, activation_energy}: &model::RateConstant) -> Self {
-		const J_per_cal: f64 = 4.184;
-		Self{preexponential_factor: *preexponential_factor, temperature_exponent: *temperature_exponent, activation_temperature: activation_energy*J_per_cal/(kB*NA)}
-	}
-}
-
-pub use model::Troe;
+pub use model::{RateConstant, Troe};
 
 pub enum ReactionModel {
 	Elementary,
@@ -115,7 +98,7 @@ pub struct Reaction {
 }
 
 impl Reaction {
-	pub fn new(species_names: &[&str], model::Reaction{ref equation, rate_constant, model}: &model::Reaction) -> Self {
+	pub fn new(species_names: &[&str], model::Reaction{equation, rate_constant, model}: &model::Reaction) -> Self {
 		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
 		let [reactants, products] = equation.each_ref().map(|e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
 		let net = products.into_iter().zip(reactants.into_iter()).take(species_names.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
@@ -124,13 +107,13 @@ impl Reaction {
 		let from = |efficiencies:&Map<_,_>| map(species_names, |&specie| *efficiencies.get(specie).unwrap_or(&1.));
 		Reaction{
 			reactants, products, net, Σreactants, Σproducts, Σnet,
-			rate_constant: rate_constant.into(),
+			rate_constant: *rate_constant,
 			model: {use model::ReactionModel::*; match model {
 				Elementary => ReactionModel::Elementary,
 				Irreversible => ReactionModel::Irreversible,
 				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
-				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: k0.into()},
-				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: k0.into(), troe: *troe},
+				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: *k0},
+				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: *k0, troe: *troe},
 			}}
 		}
 	}

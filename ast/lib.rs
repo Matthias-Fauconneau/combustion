@@ -148,6 +148,9 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 						"sqrt" => f64::sqrt(self.eval(&arguments[0])),
 						"exp2" => f64::exp2(self.eval(&arguments[0])),
 						"log2" => f64::log2(self.eval(&arguments[0])),
+						"exp" => f64::exp(self.eval(&arguments[0])),
+						"log10" => f64::log10(self.eval(&arguments[0])),
+						"pow" => f64::powf(self.eval(&arguments[0]), self.eval(&arguments[1])),
 						function => panic!("{}", function)
 					},
 					Block { statements, result } => {
