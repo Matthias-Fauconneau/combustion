@@ -201,7 +201,7 @@ pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Call{ function
 #[cfg(feature="num")] impl num::Sqrt for Expression { fn sqrt(self) -> Self { sqrt(self) } }
 #[cfg(feature="num")] impl num::Log for Expression { fn log2(self) -> Self { log2(self) } }
 
-pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
+#[track_caller] pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
 	iter.into_iter().fold(None, |sum, (c, e)|
 		if c == 0. { sum }
 		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }

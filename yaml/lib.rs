@@ -1,6 +1,4 @@
-#![feature(default_free_fn,array_map)]#![allow(non_snake_case, non_upper_case_globals)]
-use std::default::default;
-fn box_<T>(t: T) -> Box<T> { Box::new(t) }
+#![feature(array_map)]#![allow(non_snake_case,non_upper_case_globals)]
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -124,13 +122,6 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 			}
 		}
 	});
-	let species = if species.iter().map(|(name, _)| reactions.iter().all(|Reaction{equation:[a,b],..}| *a.get(name).unwrap_or(&0) as i8 == *b.get(name).unwrap_or(&0) as i8))
-													.position(|inert| inert == true).filter(|&s| s == species.len()-1).is_some() { species } else {
-		let mut species = species;
-		species.insert("INERT", Specie{composition: default(), thermodynamic: NASA7{temperature_ranges: box_([]), pieces: box_([])},
-		                                                     transport: Transport{well_depth_K: 0., diameter_Å: 0.,geometry: Geometry::Atom}});
-		species
-	};
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: species.iter().map(|(&name,_)| (name, 1.)).collect()},
 		species,

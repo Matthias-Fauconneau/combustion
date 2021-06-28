@@ -1,4 +1,4 @@
-#![feature(once_cell, in_band_lifetimes, array_map, array_methods)]
+#![feature(once_cell, in_band_lifetimes, array_map, array_methods,format_args_capture)]
 #![allow(non_upper_case_globals, non_snake_case)]
 pub use model::{kB, NA};
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
@@ -40,7 +40,7 @@ impl Species {
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
 			[_, _] => NASA7{temperature_split: f64::INFINITY, pieces: [pieces[0]; 2]},
-			ref ranges => panic!("{:?}", ranges),
+			ref ranges => panic!("{ranges:?}, {species:?}"),
 		});
 		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);
 		let well_depth_J = map(species, |(_,s)| s.transport.well_depth_K * kB);

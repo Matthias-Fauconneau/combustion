@@ -65,21 +65,6 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 	}
 }
 
-fn _rcp_arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{log_T,T,T2,rcp_T,rcp_T2,..}: T<'_>) -> Expression {
-	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		if temperature_exponent == 0. { (1./A).into() }
-		else if temperature_exponent == -1. { T / A }
-		else if temperature_exponent == 1. { rcp_T / A }
-		else if temperature_exponent == 2. { rcp_T2 / A }
-		else if temperature_exponent == -2. { T2 / A }
-		else { unimplemented!() }
-	} else {
-		let m_βlogT𐊛logA = if temperature_exponent == 0. { (-f64::log2(A)).into() } else { - temperature_exponent * log_T - f64::log2(A) };
-		let m_log_arrhenius = if activation_temperature == 0. { m_βlogT𐊛logA } else { activation_temperature/LN_2 * rcp_T + m_βlogT𐊛logA };
-		exp2(m_log_arrhenius)
-	}
-}
-
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => arrhenius(k_inf, T),
@@ -123,8 +108,8 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 	})
 }
 
-pub fn rates(active_species: &[NASA7], reactions: &[Reaction]) -> Function {
-	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+active_species.len()), Value) => {
+pub fn rates(species_len: usize, active_species: &[NASA7], reactions: &[Reaction]) -> Function {
+	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species_len-1), Value) => {
 	let mut function = FunctionBuilder::new(input);
 	let mut f = Block::new(&mut function);
 	let ref log_T = f.def(log2(T));
