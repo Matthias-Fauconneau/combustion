@@ -28,7 +28,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>)->
 	(map(bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())).into_iter(), |(temperature_split, ref species)| {
 		let slots = map(species, |&specie| slots[specie].take().unwrap());
 		let spline = Statement::Branch{
-			condition: less(r#use(T.T), f64::from_bits(temperature_split)),
+			condition: less_or_equal(r#use(T.T), f64::from_bits(temperature_split)),
 			consequent: map(species.iter().zip(&*slots), |(&specie, slot)| store(slot, expression(&thermodynamics[specie].pieces[0], T))),
 			alternative: map(species.iter().zip(&*slots), |(&specie, slot)| store(slot, expression(&thermodynamics[specie].pieces[1], T)))
 		};

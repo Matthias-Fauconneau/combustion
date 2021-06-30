@@ -13,7 +13,7 @@ use std::default::default;
 	Neg(Box<Expression>),
 	Add(Box<Expression>, Box<Expression>),
 	Sub(Box<Expression>, Box<Expression>),
-	Less(Box<Expression>, Box<Expression>),
+	LessOrEqual(Box<Expression>, Box<Expression>),
 	Mul(Box<Expression>, Box<Expression>),
 	Div(Box<Expression>, Box<Expression>),
 	Call { function: &'static str, arguments: Box<[Expression]> },
@@ -33,7 +33,7 @@ fn neg(x: impl Into<Expression>) -> Expression { Expression::Neg(box_(x.into()))
 
 fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Add(box_(a.into()), box_(b.into())) }
 fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Sub(box_(a.into()), box_(b.into())) }
-pub fn less(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Less(box_(a.into()), box_(b.into())) }
+pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::LessOrEqual(box_(a.into()), box_(b.into())) }
 fn mul(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Mul(box_(a.into()), box_(b.into())) }
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Div(box_(a.into()), box_(b.into())) }
 
@@ -140,7 +140,7 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 					Neg(x) => -self.eval(x),
 					Add(a, b) => self.eval(a) + self.eval(b),
 					Sub(a, b) => self.eval(a) - self.eval(b),
-					Less(a, b) => if self.eval(a) < self.eval(b) { 1. } else { 0. },
+					LessOrEqual(a, b) => if self.eval(a) <= self.eval(b) { 1. } else { 0. },
 					Mul(a, b) => self.eval(a) * self.eval(b),
 					Div(a, b) => self.eval(a) / self.eval(b),
 					Call { function, arguments } => match *function {
