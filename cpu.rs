@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
 		assert!(active.iter().is_partitioned(|&active| active),
 								"Species must be partionned with all active species first and all inert species last so that the state only consists of active species when solving kinetics: {active:?}");
-		active.iter().position(|active| !active).unwrap()
+		active.iter().position(|active| !active).unwrap_or(species.len()-1)
 	};
 	let ref state = initial_state(&model);
 	use {iter::map, itertools::Itertools, ast::{wrap, let_}};

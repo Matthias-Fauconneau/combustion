@@ -68,11 +68,11 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> Sta
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
 	let species_names = map(species, |(name,_)| *name);
 	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
-	let amount_proportions = map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
 	let pressure_R = pressure/(kB*NA);
-	let temperature = *temperature; //K*: K->J
+	let temperature = *temperature;
 	let amount = pressure_R * volume / temperature;
-	let amounts = amount_proportions.iter().map(|amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>()).collect();
+	let amount_proportions = map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
+	let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 	State{temperature, pressure_R, volume: *volume, amounts}
 }
 
