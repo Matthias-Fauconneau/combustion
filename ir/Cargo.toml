@@ -1,20 +1,14 @@
 cargo-features=['edition2021']
-[package]
-name= 'ir'
-description= 'Generate IR from AST'
-version= '0.0.0'
-edition= '2021'
-
-[features]
-jit= ['cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit']
+package= { name= 'ir', description= 'Generate IR from AST', version= '0.0.0', edition= '2021' }
+features= { jit= ['cranelift-native', 'cranelift-codegen', 'cranelift-module', 'cranelift-jit'], default=['jit'] }
+lib = { path= 'lib.rs' }
 
 [dependencies]
+derive_more='*'
 ast= {path='../ast', version='*'}
+linear-map='*'
 cranelift='*'
 cranelift-codegen= {optional=true, version='*'}
 cranelift-module= {optional=true, version='*'}
 cranelift-native= {optional=true, version='*'}
 cranelift-jit= {optional=true, version='*'}
-
-[lib]
-path= 'lib.rs'

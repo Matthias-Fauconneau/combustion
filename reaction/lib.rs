@@ -1,4 +1,4 @@
-#![feature(associated_type_bounds,bindings_after_at)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
+#![feature(associated_type_bounds,bindings_after_at,iter_is_partitioned)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
 fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, Vec<usize>)> {
 	let mut map = linear_map::LinearMap::<_, Vec<_>>::new();
 	for (index, key) in iter.into_iter().enumerate() { map.entry(key).or_insert(Default::default()).push(index) }
@@ -108,7 +108,12 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 	})
 }
 
-pub fn rates(active: usize, species: &[NASA7], reactions: &[Reaction]) -> Function {
+pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
+	let active = {
+		let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
+		assert!(active.iter().is_partitioned(|&active| active));
+		active.iter().position(|active| !active).unwrap_or(species.len()-1)
+	};
 	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut function = FunctionBuilder::new(input);
 	let mut f = Block::new(&mut function);

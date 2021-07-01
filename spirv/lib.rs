@@ -1,7 +1,7 @@
 #![feature(format_args_capture, default_free_fn)]
 use {std::default::default, ast::*, itertools::Itertools, anyhow::Result};
 
-struct WGSL {
+struct FunctionBuilder {
 	uniform:usize,
 	input: usize,
 	instructions: Vec<String>,
@@ -10,7 +10,7 @@ struct WGSL {
 	results: usize,
 }
 
-impl WGSL {
+impl FunctionBuilder {
 fn expr(&mut self, e: &Expression) -> String {
 	use Expression::*;
 	match e {
@@ -79,9 +79,9 @@ pub fn from(uniform: usize, Function{input, output, variables, statements}: &Fun
 		bindings,
 		vec![format!("[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id: vec3<u32>) {{ var _: array<f64, {}>;", variables)],
 		{
-			let mut wgsl = WGSL{uniform, input: *input, instructions: vec![], definitions: vec![], variables: vec![], results: 0};
-			for s in &**statements { println!("{s:?}"); wgsl.push(s); }
-			wgsl.instructions
+			let mut f = FunctionBuilder{uniform, input: *input, instructions: vec![], definitions: vec![], variables: vec![], results: 0};
+			for s in &**statements { println!("{s:?}"); f.push(s); }
+			f.instructions
 		},
 		vec!["}".into()]
 	].concat().join("\n");
