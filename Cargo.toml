@@ -1,7 +1,12 @@
 cargo-features= ['edition2021']
 package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'combustion'}
-features= { gpu= ['spirv','ash','fehler','anyhow'] }
-bin=[{name='combustion', path='cpu.rs'}, {name='cantera', path= 'cantera.rs', required-features=['rand']}, {name='combustion-gpu', path= 'gpu.rs', required-features=['gpu']}]
+features= { gpu=['spirv','ash','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow'] }
+bin=[
+	{name='ir', path='ir.rs', required-features=['ir']},
+	{name='cantera', path='cantera.rs', required-features=['rand']},
+	{name='gpu', path='gpu.rs', required-features=['gpu']},
+	{name='plot', path='plot.rs', required-features=['plot']}
+]
 
 [dependencies]
 fehler={ optional=true, version='*' }
@@ -13,7 +18,12 @@ yaml-model= {path='yaml'}
 chemistry= {path='chemistry'}
 reaction= {path='reaction'}
 transport= { optional=true, path='transport'}
+ir= { optional=true, path='ir'}
 itertools='*'
 spirv= { optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
 ash= { optional=true, version='*' }
 rand= { optional=true, version='*' }
+cvode= { optional=true, path='cvode'}
+ui= { optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
+image= { optional=true, git='https://github.com/Matthias-Fauconneau/image'}
+png= { optional=true, package= 'image', version='', default-features=false, features= ['png']}

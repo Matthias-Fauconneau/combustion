@@ -30,7 +30,7 @@ fn expr(&mut self, e: &Expression) -> String {
 		Neg(x) => format!("-{}", self.expr(x)),
 		Add(a, b) => format!("({} + {})", self.expr(a), self.expr(b)),
 		Sub(a, b) => format!("({} - {})", self.expr(a), self.expr(b)),
-		Less(a, b) => format!("{} < {}", self.expr(a), self.expr(b)),
+		LessOrEqual(a, b) => format!("{} <= {}", self.expr(a), self.expr(b)),
 		Mul(a, b) => format!("({} * {})", self.expr(a), self.expr(b)),
 		Div(a, b) => format!("({} / {})", self.expr(a), self.expr(b)),
 		Call { function, arguments } => format!("{function}({})", arguments.iter().map(|e| self.expr(e)).format(", ")),

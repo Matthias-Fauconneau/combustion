@@ -1,4 +1,4 @@
-#![feature(array_map)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(array_map,iter_partition_in_place)]#![allow(non_snake_case,non_upper_case_globals)]
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -53,7 +53,7 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 	let data = &yaml[0];
 	let units = &data["units"];
 	assert!(units["length"].as_str()==Some("cm") && units["time"].as_str()==Some("s") && units["quantity"].as_str()==Some("mol"));
-	let species: Map<&str, Specie> = data["species"].as_vec().unwrap().iter().map(|specie| (specie["name"].as_str().unwrap(), Specie{
+	let species = map(data["species"].as_vec().unwrap(), |specie| (specie["name"].as_str().unwrap(), Specie{
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
 		thermodynamic: (|thermo:&yaml_rust::Yaml| NASA7{
 			temperature_ranges: map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap()),
@@ -76,7 +76,7 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 				_ => unimplemented!()
 		}}
 		})(&specie["transport"])
-	})).collect();
+	}));
 	let reactions = map(data["reactions"].as_vec().unwrap().iter(), |reaction| {
 		let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 		let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
@@ -122,11 +122,13 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 			}
 		}
 	});
+	let mut species = species;
+	species.iter_mut().partition_in_place(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 	Model{
-		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: species.iter().map(|(&name,_)| (name, 1.)).collect()},
+		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
 		species,
 		reactions,
-		time_step: 1e-8,
+		time_step: 1e-3,
 	}
 }
 

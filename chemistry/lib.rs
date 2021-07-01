@@ -35,7 +35,7 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(||
 use iter::map;
 
 impl Species {
-	pub fn new(species: &Map<&'t str, model::Specie>) -> (Box<[&'t str]>, Self) {
+	pub fn new(species: &[(&'t str, model::Specie)]) -> (Box<[&'t str]>, Self) {
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
@@ -66,12 +66,12 @@ pub struct State {
 
 pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> State {
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
-	let species_names = map(species, |(name,_)| *name);
-	for (specie,_) in amount_proportions { assert!(species_names.contains(specie)); }
+	let species_names = map(&**species, |(name,_)| *name);
+	for (specie,_) in &**amount_proportions { assert!(species_names.contains(specie)); }
 	let pressure_R = pressure/(kB*NA);
 	let temperature = *temperature;
 	let amount = pressure_R * volume / temperature;
-	let amount_proportions = map(&*species_names, |specie| *amount_proportions.get(specie).unwrap_or(&0.));
+	let amount_proportions = map(&*species_names, |specie| *amount_proportions.iter().find(|(s,_)| s==specie).map(|(_,s)| s).unwrap_or(&0.));
 	let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 	State{temperature, pressure_R, volume: *volume, amounts}
 }

@@ -41,7 +41,7 @@ fn eval((algorithm, results): (Box<[Statement]>, Box<[Variable]>), f: &mut Block
 	map(results.into_vec(), |v| f.load(v))
 }
 
-//fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T) -> Expression { a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 }
+fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T) -> Expression { a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 }
 fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>) -> Expression { a[0]+a[1]/2.*T+a[2]/3.*T2+a[3]/4.*T3+a[4]/5.*T4+a[5]*rcp_T }
 use std::f64::consts::LN_2;
 fn exp_Gibbs_RT(a: &[f64], T{log_T,T,T2,T3,T4,rcp_T,..}: T<'_>) -> Expression {
@@ -108,8 +108,8 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 	})
 }
 
-pub fn rates(species_len: usize, active_species: &[NASA7], reactions: &[Reaction]) -> Function {
-	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species_len-1), Value) => {
+pub fn rates(active: usize, species: &[NASA7], reactions: &[Reaction]) -> Function {
+	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut function = FunctionBuilder::new(input);
 	let mut f = Block::new(&mut function);
 	let ref log_T = f.def(log2(T));
@@ -122,42 +122,21 @@ pub fn rates(species_len: usize, active_species: &[NASA7], reactions: &[Reaction
 	let ref C0 = f.def(NASA7::reference_pressure * rcp_T);
 	let ref total_concentration = f.def(pressure_R / T); // Constant pressure
 	let T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
-	let ref exp_Gibbs0_RT = eval(thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| f.decl())), &mut f);
+	let ref exp_Gibbs0_RT = eval(thermodynamics(&species[0..active], exp_Gibbs_RT, T, map(0..active, |_| f.decl())), &mut f);
 	let ref density = f.def(total_concentration / total_amount);
-	let active_concentrations = map(0..active_species.len(), |k| f.def(density*max(0., &active_amounts[k])));
+	let active_concentrations = map(0..active, |k| f.def(density*max(0., &active_amounts[k])));
 	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
-	let ref concentrations = box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
-	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, concentrations, &mut f);
+	let concentrations = box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
+	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, &mut f);
 	let rates = map(0..exp_Gibbs0_RT.len(), |specie| f.def(idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
-	let enthalpy_RT = eval(thermodynamics(active_species, enthalpy_RT, T, map(active_species, |_| f.decl())), &mut f);
-	let energy_rate_RT : Expression = iter::dot(rates.iter().zip(&*enthalpy_RT));
-	f.push(output(0, energy_rate_RT));
+	let enthalpy_RT = eval(thermodynamics(&species[0..active], enthalpy_RT, T, map(0..active, |_| f.decl())), &mut f);
+	let dot = |a:&[Value], b:&[Value]| iter::dot(a.iter().zip(b.iter()));
+	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
+	//f.push(output(0, energy_rate_RT));
+	let Cp : Expression = dot(&concentrations, &eval(thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, map(species, |_| f.decl())), &mut f));
+	let dtT_T = - energy_rate_RT / Cp;
+	f.push(output(0, T.T * dtT_T));
 	f.extend(rates.iter().enumerate().map(|(i, r)| output(1+i, r)));
 	Function::new(1+rates.len(), f.into(), function)
-	}}
-}
-
-pub fn reaction_rates_function(active_species: &[NASA7], reactions: &[Reaction]) -> Function {
-	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+active_species.len()), Value) => {
-	let mut function = FunctionBuilder::new(input);
-	let mut f = Block::new(&mut function);
-	let ref log_T = f.def(log2(T));
-	let ref T2 = f.def(T*T);
-	let ref T3 = f.def(T*T2);
-	let ref T4 = f.def(T*T3);
-	let ref rcp_T = f.def(1./T);
-	let ref rcp_T2 = f.def(num::sq(rcp_T));
-	let ref rcp_P0_RT = f.def((1./NASA7::reference_pressure) * T);
-	let ref P0_RT = f.def(NASA7::reference_pressure * rcp_T);
-	let ref total_concentration = f.def(pressure_R / T); // Constant pressure
-	let T = T{log_T,T,T2,T3,T4,rcp_T,rcp_T2};
-	let ref exp_Gibbs0_RT = eval(thermodynamics(active_species, exp_Gibbs_RT, T, map(active_species, |_| f.decl())), &mut f);
-	let ref density = f.def(total_concentration / total_amount);
-	let active_concentrations = map(0..active_species.len(), |k| f.def(density*max(0., &active_amounts[k])));
-	let inert_concentration = f.def(total_concentration - active_concentrations.iter().sum::<Expression>());
-	let ref concentrations = box_(active_concentrations.into_vec().into_iter().chain(std::iter::once(inert_concentration)));
-	let reaction_rates = reaction_rates(reactions, T, P0_RT, rcp_P0_RT, exp_Gibbs0_RT, concentrations, &mut f);
-	f.extend(reaction_rates.iter().enumerate().map(|(i, r)| output(i, r)));
-	Function::new(reaction_rates.len(), f.into(), function)
 	}}
 }

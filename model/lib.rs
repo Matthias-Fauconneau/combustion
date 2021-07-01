@@ -54,11 +54,11 @@ pub const NA : f64 = 6.02214076e23;
 	pub temperature: f64,
 	pub pressure: f64,
 	pub volume: f64,
-	#[serde(borrow)] pub amount_proportions: Map<&'t str, f64>
+	#[serde(borrow)] pub amount_proportions: Box<[(&'t str, f64)]>
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)] pub struct Model<'t> {
-	#[serde(borrow)] pub species: Map<&'t str, Specie>,
+	#[serde(borrow)] pub species: Box<[(&'t str, Specie)]>,
 	#[serde(borrow)] pub reactions: Box<[Reaction<'t>]>,
 	#[serde(borrow)] pub state: State<'t>,
 	pub time_step: f64,

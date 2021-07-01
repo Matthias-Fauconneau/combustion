@@ -39,16 +39,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 
 	let ref state = initial_state(&model);
-	use {iter::map, ast::{wrap, let_}, itertools::Itertools};
-	let rates = wrap(reaction::rates(species.len(), &species.thermodynamics[0..active], &reactions));
+	use {iter::map, ast::{wrap, let_}};
+	let rates = wrap(reaction::rates(active, &species.thermodynamics, &reactions));
 	assert!(state.volume == 1.);
 	let test = |state: &State| {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
 		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[&[*pressure_R, total_amount, *temperature], active_amounts].concat()) => {
-		//println!("{}, HRR: {:.3e}", rates.iter().zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
-
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
@@ -58,44 +56,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let order = |o: &[f64]| map(&species_names[0..species.len()-1], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			order(&map(rates, |c| c*1000.)) // kmol -> mol
 		};
-		//let mole_fractions= map(&**amounts, |amount| amount/amounts.iter().sum::<f64>());
-		//eprintln!("Rust: {:.7} {temperature:.3} {:.5e}", cantera_species_names.iter().map(|specie| mole_fractions[species_names.iter().position(|s| s==specie).unwrap()]).format(" "), pressure_R*(kB*NA));
+		/*use itertools::Itertools;
 		let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
 		let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
-		//eprintln!("nekRK: {}", std::str::from_utf8(&nekrk.stderr).unwrap());
 		let nekrk = nekrk.stdout;
 		let nekrk = std::str::from_utf8(&nekrk).unwrap();
-		/*let [_reactions, nekrk] = {let b:Box<[_;2]> = nekrk.split("\n").collect::<Box<_>>().try_into().unwrap(); *b};
-		/let reaction_rates = wrap(reaction::reaction_rates_function(&species.thermodynamics[..species.len()-1], &map(&*model.reactions, |r| Reaction::new(species_names, r))));
-		let reaction_rates = &*reaction_rates(&[&[*pressure_R, total_amount, *temperature], active_amounts].concat());
-		//println!("{}", reaction_rates.iter().zip(reactions.split(" ").map(|s| s.parse::<f64>().unwrap())).enumerate().map(|(i, (a,b))| format!("{i} {a:.0} {b:.0}")).format("\n"));
-		println!("{}", reaction_rates.iter().zip(reactions.split(" ").map(|s| s.parse::<f64>().unwrap())).enumerate().map(|(i, (a,b))| format!("{i} {:.0}", num::relative_error(*a,b))).format("\n"));*/
-		//eprintln!("nekRK: {}", nekrk);
 		let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
 			let entry:Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
 			let [key, value]:[&str;2] = *entry;
 			(key, value.trim().parse().expect(value))
 		}).collect();
 		let nekrk = map(&species_names[0..species.len()-1], |specie| nekrk[specie]); // Already in mol
-		//eprintln!("{:?}", rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| (a,b,c)).format(" "));
-		rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()
+		rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()*/
+		rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap()
 	}}};
 	let mut random= rand::thread_rng();
 	let mut max = 0.;
 	for i in 0.. {
 		let volume = 1.;
 		use rand::Rng;
-		let temperature = random.gen_range(800. .. 1200.);
+		let temperature = random.gen_range(200. .. 1200.);
+		println!("{temperature}");
 		let pressure_R = random.gen_range(0. .. 10e6)/(kB*NA);
-		//println!("{temperature} {}", pressure_R*(kB*NA));
 		let amount = pressure_R * volume / temperature;
 		let amount_proportions = map(0..species.len(), |_| random.gen());
-		//let amount_proportions = map(0..species.len(), |_| random.gen_range(1./(species.len() as f64) .. 1./(species.len() as f64-1.)));
-		//let amount_proportions = map(0..species.len(), |_| 1./(species.len() as f64));
 		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 		let e = test(&State{temperature, pressure_R, volume, amounts});
 		if e > max { max = e; println!("{i} {e:.0e}"); }
 	}
-	//println!("{}", species_names.iter().zip(rates.iter().zip(&cantera_rates[0..species.len()-1])).format_with(", ", |(name, (&a,&b)), f| f(&format!("{name}: {:.0e}", num::relative_error(a,b)).to_string())));
 	Ok(())
 }

@@ -1,4 +1,4 @@
-#![feature(unboxed_closures, default_free_fn, fn_traits, in_band_lifetimes, associated_type_bounds)]
+#![feature(unboxed_closures,default_free_fn,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 use std::default::default;
@@ -128,14 +128,24 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 			variables: Box<[Option<f64>]>,
 		}
 		impl State<'_> {
-			fn eval(&mut self, expression: &Expression) -> f64 {
+			fn debug(&mut self, expression: &Expression) -> String {
 				use Expression::*;
 				match expression {
-					&Literal(value) => value,
-					Use(id) => {
-						if id.0 < self.input.len() { self.input[id.0] }
-						else { self.definitions[&id] }
+					Use(id) => format!("{}", if id.0 < self.input.len() { self.input[id.0] } else { self.definitions[&id] }),
+					Add(a, b) => format!("{} + {}", self.eval(a), self.eval(b)),
+					Mul(a, b) => format!("{} * {}", self.eval(a), self.eval(b)),
+					Call { function, arguments } => match *function {
+						"exp2" => format!("exp2({})",self.debug(&arguments[0])),
+						function => panic!("{}", function)
 					}
+					e => panic!("{:?}", e),
+				}
+			}
+			fn eval(&mut self, expression: &Expression) -> f64 {
+				use Expression::*;
+				let result = match expression {
+					&Literal(value) => value,
+					Use(id) => if id.0 < self.input.len() { self.input[id.0] } else { self.definitions[&id] },
 					Load(variable) => { self.variables[variable.0].unwrap() }
 					Neg(x) => -self.eval(x),
 					Add(a, b) => self.eval(a) + self.eval(b),
@@ -160,7 +170,9 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 						result
 					},
 					//e => panic!("{:?}", e),
-				}
+				};
+				assert!(result.is_finite(), "{result}: {expression:?} {}", self.debug(expression));
+				result
 			}
 			fn run(&mut self, statements: &[Statement]) {
 				for statement in statements {
