@@ -14,16 +14,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	};
 	let ref state = initial_state(&model);
 	use {iter::map, itertools::Itertools, ast::{wrap, let_}};
-	/*if true {
-		let reaction_rates = wrap(reaction::reaction_rates_function(&species.thermodynamics[..species.len()-1], &map(&*model.reactions, |r| Reaction::new(species_names, r))));
-		assert!(state.volume == 1.);
-		let State{temperature: T, pressure_R, amounts, ..} = state;
-		assert!(*T == 1000. && *pressure_R == 101325./(kB*NA),  "{T} {pressure_R}");
-		let total_amount = amounts.iter().sum::<f64>();
-		let active_amounts = &amounts[0..amounts.len()-1];
-		let reaction_rates = &*reaction_rates(&[&[*pressure_R, total_amount, *T], active_amounts].concat());
-		println!("{:.0}", reaction_rates.iter().format(" "))
-	}*/
 	if true {
 		let rates = wrap(reaction::rates(species.len(), &species.thermodynamics[0..active], &reactions));
 		assert!(state.volume == 1.);

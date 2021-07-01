@@ -137,7 +137,7 @@ pub fn rates(species_len: usize, active_species: &[NASA7], reactions: &[Reaction
 	}}
 }
 
-/*pub fn reaction_rates_function(active_species: &[NASA7], reactions: &[Reaction]) -> Function {
+pub fn reaction_rates_function(active_species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+active_species.len()), Value) => {
 	let mut function = FunctionBuilder::new(input);
 	let mut f = Block::new(&mut function);
@@ -160,4 +160,4 @@ pub fn rates(species_len: usize, active_species: &[NASA7], reactions: &[Reaction
 	f.extend(reaction_rates.iter().enumerate().map(|(i, r)| output(i, r)));
 	Function::new(reaction_rates.len(), f.into(), function)
 	}}
-}*/
+}
