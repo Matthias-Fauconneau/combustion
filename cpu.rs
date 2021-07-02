@@ -1,9 +1,4 @@
 #![feature(format_args_capture,iter_is_partitioned)]#![allow(non_snake_case)]
-pub fn compile(f: &ast::Function) -> impl Fn(&[f32]) -> Box<[f32]> {
-	let output = f.output.len();
-	let f = ir::assemble({let clif = ir::compile(&f); std::fs::write("/var/tmp/clif", &clif.to_string()).unwrap(); clif});
-	move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
@@ -13,6 +8,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let ref state = initial_state(&model);
 	use {iter::map, itertools::Itertools, ast::let_};
+	pub fn compile(f: &ast::Function) -> impl Fn(&[f32]) -> Box<[f64]> {
+		let output = f.output.len();
+		let f = ir::assemble(ir::compile(&f));
+		move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
+	}
 	if true {
 		let rates = compile(&reaction::rates(&species.thermodynamics, &reactions));
 		assert!(state.volume == 1.);
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}}
 	}
 	#[cfg(feature="transport")] {
-		let transport = wrap(transport::properties::<4>(&species));
+		let transport = compile(transport::properties::<4>(&species));
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];

@@ -1,6 +1,6 @@
 #![feature(default_free_fn,format_args_capture,in_band_lifetimes,array_map)]
 use {std::default::default, iter::map};
-pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32}, condcodes::FloatCC};
+pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32, F64}, condcodes::FloatCC};
 use cranelift::{
 	frontend::{self, FunctionBuilderContext},
 	codegen::{ir::{InstBuilder, AbiParam, entities::Value, MemFlags}, }, //types::Type,
@@ -51,9 +51,10 @@ fn mul(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fmul(a, b
 fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { add(mul(a, b, f), c, f) }
 fn div(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fdiv(a, b) }
 fn sqrt(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().sqrt(x) }
+fn fpromote(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fpromote(F64, x) }
 fn fcvt_to_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_to_sint(I32, x) }
 fn fcvt_from_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_from_sint(F32, x) }
-fn store(value: Value, base: Value, index: usize, f: &mut FunctionBuilder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f32>()) as i32); }
+fn store(value: Value, base: Value, index: usize, f: &mut FunctionBuilder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct AstFunctionBuilder<'t> {
 	#[deref]#[deref_mut] builder: FunctionBuilder<'t>,
@@ -173,12 +174,12 @@ pub fn compile(ast: &ast::Function) -> Function {
 	let ref mut f = AstFunctionBuilder{builder: f, values};
 	for statement in &*ast.statements { f.load_statement(statement); }
 	for statement in &*ast.statements { f.push(statement); }
-	for (i, e) in ast.output.iter().enumerate() { store(f.expr(e), output, i, f); }
+	for (i, e) in ast.output.iter().enumerate() { store(fpromote(f.expr(e), f), output, i, f); }
 	f.ins().return_(&[]);
 	function
 }}}
 
-#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f32], &mut [f32]) {
+#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f32], &mut [f64]) {
 	let mut module = cranelift_jit::JITModule::new({
 		let flag_builder = cranelift_codegen::settings::builder();
 		use cranelift_codegen::settings::Configurable;
@@ -194,6 +195,6 @@ pub fn compile(ast: &ast::Function) -> Function {
   module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(*const f32, *mut f32)>(function)};
+	let function = unsafe{std::mem::transmute::<_,extern fn(*const f32, *mut f64)>(function)};
 	move |input, output| function(input.as_ptr(), output.as_mut_ptr())
 }

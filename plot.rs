@@ -1,5 +1,4 @@
-#![feature(destructuring_assignment,iter_is_partitioned)]
-#![allow(non_snake_case)]
+#![feature(destructuring_assignment)]#![allow(non_snake_case)]
 
 fn main() -> anyhow::Result<()> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
@@ -7,12 +6,7 @@ fn main() -> anyhow::Result<()> {
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
-	let active = {
-		let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
-		assert!(active.iter().is_partitioned(|&active| active));
-		active.iter().position(|active| !active).unwrap_or(species.len()-1)
-	};
-	let rates = reaction::rates(active, &species.thermodynamics, &reactions);
+	let rates = ir::assemble(ir::compile(&reaction::rates(&species.thermodynamics, &reactions)));
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -20,18 +14,20 @@ fn main() -> anyhow::Result<()> {
 	}
 	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
-	let f = |u: &[f64], f_u: &mut [f64]| {
+	let mut input = iter::box_([pressure_R as f32, total_amount as f32, temperature as f32].into_iter().chain(amounts.iter().map(|&v| v as f32)));
+	let f = move |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
-		rates(&[&[pressure_R, total_amount], u].concat(), f_u);
+		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u as f32; }
+		rates(&input, f_u);
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true
 	};
 
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
 
-	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-3, /*absolute_tolerance:*/ 1e-4, &state);
+	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-5, &state);
 	let plot_min_time = 0.4;
 	let (mut time, mut state) = (0., &*state);
 	while time < plot_min_time {
@@ -49,6 +45,7 @@ fn main() -> anyhow::Result<()> {
 		value
 	} else { unreachable!() });
 	println!("{:.0e}", min);
+	let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0)).iter().position(|active| !active).unwrap_or(species.len()-1);
 	let key = map((0..active).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
 	let mut s = map(0..active, |i| i);
 	let (_, _, select) = s.select_nth_unstable_by(species.len()-6, |&a,&b| key[a].partial_cmp(&key[b]).unwrap());
