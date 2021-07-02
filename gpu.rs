@@ -27,17 +27,11 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
-	let active = {
-		let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
-		assert!(active.iter().is_partitioned(|&active| active));
-		active.iter().position(|active| !active).unwrap_or(species.len()-1)
-	};
-
 	let ref state = initial_state(&model);
 	use itertools::Itertools;
 	let ref device = Device::new()?;
 	if true {
-		let rates = wrap(device, &reaction::rates(active, &species.thermodynamics, &reactions))?;
+		let rates = wrap(device, &reaction::rates(&species.thermodynamics, &reactions))?;
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();

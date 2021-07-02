@@ -5,8 +5,8 @@ struct FunctionBuilder {
 	uniform:usize,
 	input: usize,
 	instructions: Vec<String>,
-	definitions: Vec<Value>,
-	variables: Vec<Variable>,
+	values: Vec<Value>,
+	//variables: Vec<Variable>,
 	results: usize,
 }
 
@@ -17,16 +17,16 @@ fn expr(&mut self, e: &Expression) -> String {
 		&Literal(v) => {
 			if v == f64::floor(v) {
 				if v >= 1e4 { format!("{:e}", v) }
-				else { (v as i64).to_string() }
+				else { (v as i64).to_string()+"." }
 			}
 			else { float_pretty_print::PrettyPrintFloat(v).to_string() }
 		}
 		Use(v) => {
 			if v.0 < self.uniform{ format!("uniform[{}]", v.0) }
 			else if v.0 < self.input { format!("input{}[id]", v.0) }
-			else { assert!(self.definitions.contains(v), "{:?}", self.instructions); format!("_{}", v.0) }
+			else { assert!(self.values.contains(v), "{} {:?} {:?}", self.instructions.iter().format("\n"), self.values, v); format!("_{}", v.0) }
 		},
-		Load(v) => { assert!(self.variables.contains(v)); format!("_[{}]", v.0) },
+		//Load(v) => { assert!(self.variables.contains(v)); format!("_[{}]", v.0) },
 		Neg(x) => format!("-{}", self.expr(x)),
 		Add(a, b) => format!("({} + {})", self.expr(a), self.expr(b)),
 		Sub(a, b) => format!("({} - {})", self.expr(a), self.expr(b)),
@@ -46,40 +46,48 @@ fn expr(&mut self, e: &Expression) -> String {
 fn push(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
-		Define { id, value } => {
+		Value { id, value } => {
 			let value = self.expr(value);
 			self.instructions.push(format!("let _{} = {value};", id.0));
-			assert!(!self.definitions.contains(id));
-			self.definitions.push(Value(id.0));
+			assert!(!self.values.contains(id));
+			self.values.push(id.clone());
 		}
-		Store { variable, value } => {
+		/*Store { variable, value } => {
 			let value = self.expr(value);
 			self.instructions.push(format!("_[{}] = {value};", variable.0));
 			//assert!(!self.variables.contains(variable));
 			self.variables.push(Variable(variable.0));
-		}
+		}*/
 		Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("output{index}[id] = {value};")) }
-		Branch { condition, consequent, alternative } => {
+		Branch { condition, consequent, alternative, results } => {
+			self.instructions.extend(results.iter().map(|id| format!("var _{}: f64;", id.0)));
+			self.values.extend(results.iter().cloned());
 			let condition = self.expr(condition);
 			self.instructions.push(format!("if ({condition}) {{"));
-			for s in &**consequent { self.push(s) }
+			for (id, value) in results.iter().zip(&**consequent) {
+				let value = self.expr(value);
+				self.instructions.push(format!("_{} = {value};", id.0));
+			}
 			self.instructions.push("} else {".into());
-			for s in &**alternative { self.push(s) }
+			for (id, value) in results.iter().zip(&**alternative) {
+				let value = self.expr(value);
+				self.instructions.push(format!("_{} = {value};", id.0));
+			}
 			self.instructions.push("}".into());
 		}
 	}
 }
 }
 
-pub fn from(uniform: usize, Function{input, output, variables, statements}: &Function) -> Result<Box<[u32]>> {
+pub fn from(uniform: usize, Function{input, output, /*variables,*/ statements}: &Function) -> Result<Box<[u32]>> {
 	let mut bindings = vec![format!("[[group(0), binding(0)]] var<push_constant> uniform : array<f64, {uniform}>;")];
 	bindings.extend((uniform..*input).map(|i| { let binding = 1+i-uniform; format!("[[group(0), binding({binding})]] var<storage> input{i}: [[access(read)]] array<f64>;") }));
 	bindings.extend((0..*output).map(|i| { let binding = 1+input-uniform+i; format!("[[group(0), binding({binding})]] var<storage> output{i}: [[access(write)]] array<f64>;") }));
 	let module = [
 		bindings,
-		vec![format!("[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id: vec3<u32>) {{ var _: array<f64, {}>;", variables)],
+		vec!["[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id3: vec3<u32>) { let id = id3.x;".to_string()],// var _: array<f64, {}>;", variables)],
 		{
-			let mut f = FunctionBuilder{uniform, input: *input, instructions: vec![], definitions: vec![], variables: vec![], results: 0};
+			let mut f = FunctionBuilder{uniform, input: *input, instructions: vec![], values: vec![], /*variables: vec![],*/ results: 0};
 			for s in &**statements { println!("{s:?}"); f.push(s); }
 			f.instructions
 		},

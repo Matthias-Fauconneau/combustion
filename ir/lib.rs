@@ -1,6 +1,6 @@
 #![feature(default_free_fn,format_args_capture,in_band_lifetimes,array_map)]
-use std::default::default;
-pub use cranelift::codegen::ir::{function::Function, types::{I32, I64, F32}};
+use {std::default::default, iter::map};
+pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32}, condcodes::FloatCC};
 use cranelift::{
 	frontend::{self, FunctionBuilderContext},
 	codegen::{ir::{InstBuilder, AbiParam, entities::Value, MemFlags}, }, //types::Type,
@@ -34,81 +34,129 @@ impl FunctionBuilder<'t> {
 }
 
 fn load(base: Value, index: usize, f: &mut FunctionBuilder) -> Value { f.ins().load(F32, MemFlags::trusted(), base, (index*std::mem::size_of::<f32>()) as i32) }
-/*fn store(&mut self, value: Value, base: Value, index: usize) { self.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
-fn neg(&mut self, x: Value) -> Value { self.ins().fneg(x) }
-fn min(&mut self, a: Value, b: Value) -> Value { self.ins().fmin(a, b) }*/
+fn cast(to: Type, x: Value, f: &mut FunctionBuilder) -> Value { f.ins().bitcast(to, x) }
+fn and(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().band(a, b) }
+fn or(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().bor(a, b) }
+fn ishl_imm(x: Value, imm: u8, f: &mut FunctionBuilder) -> Value { f.ins().ishl_imm(x, imm as i64) }
+fn ushr_imm(x: Value, imm: u8, f: &mut FunctionBuilder) -> Value { f.ins().ushr_imm(x, imm as i64) }
+fn iadd(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().iadd(a, b) }
+fn isub(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().isub(a, b) }
+fn neg(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fneg(x) }
+//fn min(&mut self, a: Value, b: Value) -> Value { self.ins().fmin(a, b) }
 fn max(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fmax(a, b) }
 fn add(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fadd(a, b) }
 fn sub(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fsub(a, b) }
 fn mul(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fmul(a, b) }
+//fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { f.ins().fma(a,b,c) }
+fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { add(mul(a, b, f), c, f) }
 fn div(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fdiv(a, b) }
-fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { f.ins().fma(a,b,c) } //let mul = self.mul(a, b); self.add(mul, c) }
-
-macro_rules! f {
-	[$f:ident $function:ident($arg0:expr)] => {{let arg0 = $arg0; $f.ins().$function(arg0)}};
-	[$f:ident $function:ident($arg0:expr, $arg1:expr)] => {{let arg0 = $arg0; let arg1 = $arg1; $f.ins().$function(arg0, arg1)}};
-}
-
-fn exp2(x: Value, f: &mut FunctionBuilder) -> Value {
-	//let x = f.ins().fdemote(F32, x);
-	let x = max(x, f.f32(-126.99999), f);
-	let ipart = f![f fcvt_to_sint(I32, sub(x, f.f32(1./2.), f))];
-	let fpart = sub(x, f.ins().fcvt_from_sint(F32, ipart), f);
-	let expipart = f![f bitcast(F32, f![f ishl_imm(f![f iadd(ipart, f.u32(127))], 23)])];
-	let exp = [0.99999994f32, 0.69315308, 0.24015361, 0.055826318, 0.0089893397, 0.0018775767].map(|c| f.f32(c));
-	let expfpart = fma(fma(fma(fma(fma(exp[5], fpart, exp[4], f), fpart, exp[3], f), fpart, exp[2], f), fpart, exp[1], f), fpart, exp[0], f);
-	mul(expipart, expfpart, f)
-	//f![f fpromote(F64, f.mul(expipart, expfpart))]
-}
-fn log2(x: Value, f: &mut FunctionBuilder) -> Value {
-	//let x = f.ins().fdemote(F32, x);
-	let i = f.ins().bitcast(I32, x);
-	let e = f![f fcvt_from_sint(F32, f![f isub(f![f ushr_imm(f![f band(i, f.u32(0x7F800000))], 23)], f.u32(127))])];
-	let m = f![f bitcast(F32, f![f bor(f![f band(i, f.u32(0x007FFFFF))], f.u32(1f32.to_bits()))])];
-	let log = [3.1157899f32, -3.3241990, 2.5988452, -1.2315303,  0.31821337, -0.034436006].map(|c| f.f32(c));
-	let p = fma(fma(fma(fma(fma(log[5], m, log[4], f), m, log[3], f), m, log[2], f), m, log[1], f), m, log[0], f);
-	let p = mul(p, sub(m, f.f32(1.), f), f); //?
-	//f![f fpromote(F64, f.add(p, e))]
-	add(p, e, f)
-}
+fn sqrt(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().sqrt(x) }
+fn fcvt_to_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_to_sint(I32, x) }
+fn fcvt_from_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_from_sint(F32, x) }
+fn store(value: Value, base: Value, index: usize, f: &mut FunctionBuilder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f32>()) as i32); }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct AstFunctionBuilder<'t> {
 	#[deref]#[deref_mut] builder: FunctionBuilder<'t>,
-	definitions: linear_map::LinearMap<ast::Value, Value>,
+	values: linear_map::LinearMap<ast::Value, Value>,
 }
 
 use ast::*;
-impl AstFunctionBuilder {
+impl AstFunctionBuilder<'_> {
 fn expr(&mut self, e: &Expression) -> Value {
 	use Expression::*;
 	match e {
-		&Literal(v) => self.f32(v as f32),
-		Use(v) => *self.definitions.get(v).unwrap_or_else(|| panic!("{v:?}")),
+		Value(v) => *self.values.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.values)),
+		&Float(v) => self.constants_f32[&(v as f32).to_bits()], //self.f32(v as f32), //self.constants_f32[&(v as f32).to_bits()],
+		Integer(v) => self.constants_u32[v],
+		Cast(to, x) => cast(match to {ast::Type::F32=>F32,ast::Type::I32=>I32}, self.expr(x), self),
+		And(a, b) => and(self.expr(a), self.expr(b), self),
+		Or(a, b)  => or(self.expr(a), self.expr(b), self),
+		IShLImm(x, imm) => ishl_imm(self.expr(x), *imm, self),
+		UShRImm(x, imm) => ushr_imm(self.expr(x), *imm, self),
+		IAdd(a, b) => iadd(self.expr(a), self.expr(b), self),
+		ISub(a, b) => isub(self.expr(a), self.expr(b), self),
+		Neg(x) => neg(self.expr(x), self),
+		Max(a, b) => max(self.expr(a), self.expr(b), self),
+		LessOrEqual(a, b) => { let (a, b) = (self.expr(a), self.expr(b)); self.ins().fcmp(FloatCC::LessThanOrEqual, a, b) },
+		Add(a, b) => add(self.expr(a), self.expr(b), self),
+		Sub(a, b) => sub(self.expr(a), self.expr(b), self),
 		Mul(a, b) => mul(self.expr(a), self.expr(b), self),
+		MulAdd(a, b, c) => fma(self.expr(a), self.expr(b), self.expr(c), self),
 		Div(a, b) => div(self.expr(a), self.expr(b), self),
-		Call { function, arguments } => match *function {
-			"exp2" => exp2(self.expr(&arguments[0]), self),
-			"log2" => log2(self.expr(&arguments[0]), self),
-			function => panic!("{}", function)
-		},
-		_ => panic!("{e:?}")
+		Sqrt(x) => sqrt(self.expr(x), self),
+		FCvtToSInt(x) => fcvt_to_sint(self.expr(x), self),
+		FCvtFromSInt(x) => fcvt_from_sint(self.expr(x), self),
+		Block { statements, result } => {
+			for s in &**statements { self.push(s) }
+			self.expr(result)
+		}
+	}
+}
+fn load(&mut self, e: &Expression) {
+	use Expression::*;
+	match e {
+		&Float(v) => { self.f32(v as f32); },
+		&Integer(v) => { self.u32(v); },
+		Value(_) => {},
+		Cast(_,x)|Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x)|FCvtToSInt(x)|FCvtFromSInt(x) => self.load(x),
+		And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { (self.load(a), self.load(b)); },
+		MulAdd(a,b,c) => { (self.load(a), self.load(b), self.load(c)); },
+		Block { statements, result } => { for s in &**statements { self.load_statement(s) } self.load(result) }
+	}
+}
+fn load_statement(&mut self, statement: &Statement) {
+	use Statement::*;
+	match statement {
+		Value { id: _, value } => { self.load(value); },
+		Branch { condition, consequent, alternative, results: _ } => {
+			self.load(condition);
+			// Always load constants of both branches in root block so that they are always available for all later uses
+			for e in &**consequent { self.load(e) }
+			for e in &**alternative { self.load(e) }
+		}
 	}
 }
 fn push(&mut self, statement: &Statement) {
 	use Statement::*;
 	match statement {
-		Define { id, value } => { let value = expr(f, value); self.definitions.insert(ast::Value(id.0), value); },
-		Branch { condition, consequent, alternative } => {
+		Value { id, value } => { let value = self.expr(value); assert!(!self.values.contains_key(id)); self.values.insert(id.clone(), value); },
+		Branch { condition, consequent, alternative, results } => {
 			let condition = self.expr(condition);
+			/*// Always load constants of both branches in root block so that they are always available for all later uses (already done for non-root branches (in load_statement))
+			for e in &**consequent { self.load(e) }
+			for e in &**alternative { self.load(e) }*/
+			let alternative_block = self.create_block();
+			self.ins().brz(condition, alternative_block, &[]);
+			self.seal_block(alternative_block);
 			let consequent_block = self.create_block();
-			self.ins().brnz(condition, consequent_block, &[]);
-			for s in &**consequent { f.push(s) }
-			self.instructions.push("} else {".into());
-			for s in &**alternative { f.push(s) }
-			self.instructions.push("}".into());
+			self.ins().jump(consequent_block, &[]);
+			self.seal_block(consequent_block);
+			let join = self.create_block();
+			for _ in 0..results.len() { self.append_block_param(join, F32); }
+
+			let scope = self.values.clone();
+			self.switch_to_block(consequent_block);
+			let consequent = map(&**consequent, |e| self.expr(e));
+			self.values = scope;
+			assert!(results.len() == consequent.len(), "{results:?} {consequent:?}");
+			self.ins().jump(join, &consequent);
+
+			let scope = self.values.clone();
+			self.switch_to_block(alternative_block);
+			let alternative = map(&**alternative, |e| self.expr(e));
+			self.values = scope;
+			assert!(results.len() == alternative.len(), "{results:?} {alternative:?}");
+			self.ins().jump(join, &alternative);
+
+			self.seal_block(join);
+			self.switch_to_block(join);
+			let params = self.builder.block_params(join);
+			assert!(results.len() == params.len(), "{results:?} {params:?}");
+			for id in &**results { assert!(!self.values.contains_key(id)); }
+			self.values.extend(results.iter().zip(params).map(|(id, &value)| (id.clone(), value)));
 		}
-		_ => panic!("{statement:?}")
 	}
+}
 }
 
 pub fn compile(ast: &ast::Function) -> Function {
@@ -120,11 +168,12 @@ pub fn compile(ast: &ast::Function) -> Function {
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let_!{ [input, _output] = f.block_params(entry_block) => {
-	let input = *input;
-	let definitions = (0..ast.input).map(|i| (Value(i), load(input, i, &mut f))).collect();
-	let ref mut f = AstFunctionBuilder{builder: f, definitions};
+	let_!{ &[input, output] = f.block_params(entry_block) => {
+	let values = (0..ast.input).map(|i| (Value(i), load(input, i, &mut f))).collect();
+	let ref mut f = AstFunctionBuilder{builder: f, values};
+	for statement in &*ast.statements { f.load_statement(statement); }
 	for statement in &*ast.statements { f.push(statement); }
+	for (i, e) in ast.output.iter().enumerate() { store(f.expr(e), output, i, f); }
 	f.ins().return_(&[]);
 	function
 }}}

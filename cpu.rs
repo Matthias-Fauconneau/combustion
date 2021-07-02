@@ -1,7 +1,7 @@
 #![feature(format_args_capture,iter_is_partitioned)]#![allow(non_snake_case)]
 pub fn compile(f: &ast::Function) -> impl Fn(&[f32]) -> Box<[f32]> {
-	let output = f.output;
-	let f = ir::assemble(ir::compile(&f));
+	let output = f.output.len();
+	let f = ir::assemble({let clif = ir::compile(&f); std::fs::write("/var/tmp/clif", &clif.to_string()).unwrap(); clif});
 	move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
 }
 
