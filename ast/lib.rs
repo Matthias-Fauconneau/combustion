@@ -5,10 +5,11 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[derive(PartialEq, Eq, Debug, Clone)] pub struct Value(pub usize);
 //#[derive(PartialEq, Eq, Debug)] pub struct Variable(pub usize);
 
-#[derive(Debug)] pub enum Type { I32, F32 }
+#[derive(Debug, PartialEq, Eq, Clone, Copy)] pub enum Type { I32, F32, F64 }
 
 #[derive(Debug)] pub enum Expression {
-	Float(f64),
+	F32(f32),
+	F64(f64),
 	Integer(u32),
 	Value(Value),
 	Cast(Type, Box<Expression>),
@@ -27,6 +28,8 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	Mul(Box<Expression>, Box<Expression>),
 	MulAdd(Box<Expression>, Box<Expression>, Box<Expression>),
 	Div(Box<Expression>, Box<Expression>),
+	FPromote(Box<Expression>),
+	FDemote(Box<Expression>),
 	FCvtToSInt(Box<Expression>),
 	FCvtFromSInt(Box<Expression>),
 	Sqrt(Box<Expression>),
@@ -58,6 +61,8 @@ fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expre
 pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::LessOrEqual(box_(a.into()), box_(b.into())) }
 fn mul(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Mul(box_(a.into()), box_(b.into())) }
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Div(box_(a.into()), box_(b.into())) }
+pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
+pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
 pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Sqrt(box_(x.into())) }
@@ -77,7 +82,8 @@ impl<E:Into<Expression>> std::ops::Sub<E> for &Value { type Output = Expression;
 impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl<E:Into<Expression>> std::ops::Div<E> for &Value { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 
-impl From<f64> for Expression { fn from(v: f64) -> Self { Self::Float(v) } }
+impl From<f32> for Expression { fn from(v: f32) -> Self { Self::F32(v) } }
+impl From<f64> for Expression { fn from(v: f64) -> Self { Self::F64(v) } }
 impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }
@@ -189,8 +195,9 @@ impl Fn<(&[f64], &mut [f64])> for Function {
 		fn eval(state: &mut State, expression: &Expression) -> f64 {
 			use Expression::*;
 			let result = match expression {
-				&Float(value) => value,
-				&Integer(_)|Cast(_,_)|And(_,_)|Or(_,_)|IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!(),
+				&F64(value) => value,
+				&F32(value) => value as f64,
+				&Integer(_)|Cast(_,_)|And(_,_)|Or(_,_)|IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FPromote(_)|FDemote(_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!(),
 				Value(id) => { assert!(state[id.0].is_finite()); state[id.0] }, //if id.0 < self.input.len() { self.input[id.0] } else { self.values[&id] },
 				//Load(variable) => { self.variables[variable.0].unwrap() }
 				Neg(x) => -eval(state, x),
