@@ -10,9 +10,10 @@ const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 
 impl NASA7 {
 	pub const reference_pressure : f64 = 101325. / (kB*NA);
-	pub fn piece(&self, T: f64) -> &[f64; 7] { &self.pieces[if T < self.temperature_split { 0 } else { 1 }] }
+	pub fn piece(&self, T: f64) -> &[f64; 7] { &self.pieces[if T <= self.temperature_split { 0 } else { 1 }] }
 	pub fn molar_heat_capacity_at_constant_pressure_R(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
 	pub fn enthalpy_RT(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]/2.*T + a[2]/3.*T*T + a[3]/4.*T*T*T + a[4]/5.*T*T*T*T + a[5]/T } // /RT
+	pub fn gibbs_RT(&self, T: f64) -> f64 { let a = self.piece(T); a[0]-a[6]-a[0]*f64::ln(T)-a[1]/2.*T+(1./3.-1./2.)*a[2]*T*T+(1./4.-1./3.)*a[3]*T*T*T+(1./5.-1./4.)*a[4]*T*T*T*T+a[5]/T }
 }
 
 use {std::lazy::SyncLazy, linear_map::LinearMap as Map, model::Element};

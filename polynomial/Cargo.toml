@@ -1,0 +1,8 @@
+cargo-features=['edition2021']
+package= { name= 'polynomial', description= 'Polynomial fit', version= '0.0.0', edition= '2021' }
+lib = {path='lib.rs'}
+
+[dependencies]
+iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+nalgebra='*'

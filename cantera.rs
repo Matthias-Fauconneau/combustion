@@ -30,22 +30,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	});
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
-	let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 
 	let ref state = initial_state(&model);
 	use {iter::map, ast::let_};
-	pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> {
+	/*pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> + '_ {
 		let output = f.output.len();
-		let f = ir::assemble(ir::compile(&f));
+		//let f = ir::assemble(ir::compile(&f));
 		move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
-	}
-	let rates = compile(&reaction::rates(&species.thermodynamics, &reactions));
+	}*/
+	let rates = reaction::rates(&species.thermodynamics, &reactions);
+	//let rates = compile(&rates);
 	assert!(state.volume == 1.);
-	let test = |state: &State| {
+	let mut range = [f64::INFINITY, -f64::INFINITY];
+	let mut test = move |state: &State| {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&iter::box_([*pressure_R, total_amount, *temperature].iter().chain(active_amounts).copied())) => {
+		let input = iter::box_([*pressure_R, total_amount, *temperature].iter().chain(active_amounts).copied());
+		let mut output = vec![0.; rates.output.len()].into_boxed_slice();
+		let trace = ast::interpret::call(&rates, &input, &mut output);
+		range[0] = f64::min(range[0], trace.iter().copied().reduce(f64::min).unwrap_or(f64::INFINITY));
+		range[1] = f64::max(range[1], trace.iter().copied().reduce(f64::max).unwrap_or(-f64::INFINITY));
+		if range[0]<range[1] { println!("{} {}", range[0], range[1]); }
+
+		let_!{ [_energy_rate_RT, rates @ ..] = &*output => { //&*rates(&input) => {
+		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
@@ -81,8 +90,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let amount_proportions = map(0..species.len(), |_| random.gen());
 		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 		let e = test(&State{temperature, pressure_R, volume, amounts});
-		println!("{temperature} {pressure} {e}");
-		assert!(e < 1e-2, "{temperature} {pressure} {max}");
+		//println!("{temperature} {pressure} {e}");
+		assert!(e < 1e-2, "{temperature} {pressure} {e} {max}");
 		if e > max { max = e; println!("{i} {e:.0e}"); }
 	}
 	Ok(())

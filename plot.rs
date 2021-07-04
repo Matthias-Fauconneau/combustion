@@ -6,7 +6,8 @@ fn main() -> anyhow::Result<()> {
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
-	let rates = ir::assemble(ir::compile(&reaction::rates(&species.thermodynamics, &reactions)));
+	let rates = reaction::rates(&species.thermodynamics, &reactions);
+	//let rates = ir::assemble(ir::compile(&rates));
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -14,26 +15,30 @@ fn main() -> anyhow::Result<()> {
 	}
 	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
-	let mut input = iter::box_([pressure_R as f32, total_amount as f32, temperature as f32].into_iter().chain(amounts.iter().map(|&v| v as f32)));
+	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
+	let mut input = iter::box_([pressure_R, total_amount].into_iter().chain(state.iter().map(|&v| v)));
+	let mut range = [f64::INFINITY, -f64::INFINITY];
 	let f = move |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
-		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u as f32; }
-		rates(&input, f_u);
+		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u; }
+		//rates(&input, f_u);
+		let trace = ast::interpret::call(&rates, &input ,f_u);
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
+		range[0] = f64::min(range[0], trace.iter().copied().reduce(f64::min).unwrap());
+		range[1] = f64::max(range[1], trace.iter().copied().reduce(f64::max).unwrap());
+		println!("{} {}", range[0], range[1]);
 		true
 	};
 
-	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
-
-	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-5, &state);
+	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
 	let plot_min_time = 0.4;
 	let (mut time, mut state) = (0., &*state);
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
-		dbg!(time/plot_min_time, time, state[0]);
+		//dbg!(time/plot_min_time, time, state[0]);
 	}
 	let mut min = 0f64;
 	use iter::map;

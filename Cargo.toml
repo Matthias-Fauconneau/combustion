@@ -1,8 +1,8 @@
 cargo-features=['edition2021']
 package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'cpu' }
-features= { gpu=['spirv','ash','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow'], default=['ir'] }
+features= { gpu=['spirv','ash','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow']}#, default=['ir'] }
 bin=[
-	{name='cpu', path='cpu.rs', required-features=['ir','ir/jit']},
+	{name='cpu', path='cpu.rs'},# required-features=['ir','ir/jit']},
 	{name='cantera', path='cantera.rs', required-features=['rand']},
 	{name='gpu', path='gpu.rs', required-features=['gpu']},
 	{name='plot', path='plot.rs', required-features=['plot']}
@@ -18,7 +18,7 @@ yaml-model= {path='yaml'}
 chemistry= {path='chemistry'}
 reaction= {path='reaction'}
 transport= { optional=true, path='transport'}
-ir= { optional=true, path='ir', features=['jit']}
+#ir= { optional=true, path='ir', features=['jit']}
 itertools='*'
 spirv= { optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
 ash= { optional=true, version='*' }

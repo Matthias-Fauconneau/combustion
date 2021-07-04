@@ -1,4 +1,4 @@
-#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture)]
+#![allow(incomplete_features)]#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
@@ -8,9 +8,9 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[derive(Debug, PartialEq, Eq, Clone, Copy)] pub enum Type { I32, F32, F64 }
 
 #[derive(Debug)] pub enum Expression {
+	I32(u32),
 	F32(f32),
 	F64(f64),
-	Integer(u32),
 	Value(Value),
 	Cast(Type, Box<Expression>),
 	And(Box<Expression>, Box<Expression>),
@@ -33,6 +33,8 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	FCvtToSInt(Box<Expression>),
 	FCvtFromSInt(Box<Expression>),
 	Sqrt(Box<Expression>),
+	Exp(Box<Expression>),
+	Log2(Box<Expression>),
 	//Call { function: &'static str, arguments: Box<[Expression]> },
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
@@ -41,9 +43,10 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	Value { id: Value, value: Expression },
 	//Store { variable: Variable, value: Expression },
 	Branch { condition: Expression, consequent: Box<[Expression]>, alternative: Box<[Expression]>, results: Box<[Value]> },
+	Trace { id: Value },
 }
 
-pub fn u32(integer: u32) -> Expression { Expression::Integer(integer) }
+pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
 
 //pub fn r#use(value: &Value) -> Expression { Expression::Value(Value(value.0)) }
 
@@ -65,8 +68,10 @@ pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(b
 pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
 pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
-pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Sqrt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }
+pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Sqrt(box_(x.into())) }
+//pub fn exp2(x: impl Into<Expression>) -> Expression { Expression::Exp2(box_(x.into())) }
+//pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Log2(box_(x.into())) }
 
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 
@@ -75,7 +80,7 @@ impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Express
 impl<E:Into<Expression>> std::ops::Mul<E> for Expression { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl<E:Into<Expression>> std::ops::Div<E> for Expression { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 
-impl From<&Value> for Expression { fn from(value: &Value) -> Expression { Expression::Value(Value(value.0)) } }
+impl From<&Value> for Expression { fn from(value: &Value) -> Expression { Expression::Value(value.clone()) } }
 impl std::ops::Neg for &Value { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for &Value { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for &Value { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
@@ -106,21 +111,16 @@ impl FunctionBuilder {
 	pub fn new(input: &[Value]) -> Self { Self { /*input: input.len(),*/ values: input.len()/*, variables: 0*/ } }
 }
 
-//#[derive(derive_more::Deref,derive_more::DerefMut)]
 pub struct Block<'t> {
-	//base: usize,
-	//#[deref]#[deref_mut]
 	statements: Vec<Statement>,
 	values: &'t mut usize,
-	//variables: &'t mut usize,
 }
 pub fn push(s: Statement, block: &mut Block) { block.statements.push(s) }
 impl Block<'t> {
 	pub fn new(f: &'t mut FunctionBuilder) -> Self { Self { /*base: f.input,*/ statements: vec![], values: &mut f.values/*variables: &mut f.variables*/ } }
 	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
-		let mut block = Block{ /*base: self.base+self.statements.len(),*/ statements: vec![], values: &mut self.values/*variables: self.variables*/ };
+		let mut block = Block{ statements: vec![], values: &mut self.values };
 		let result = build(&mut block);
-		//self.base += block.statements.len();
 		Expression::Block { statements: block.statements.into(), result: box_(result) }
 	}
 	pub fn value(&mut self) -> Value {
@@ -128,17 +128,6 @@ impl Block<'t> {
 		*self.values += 1;
 		id
 	}
-	/*pub fn def(&mut self, value: Expression) -> Value {
-		let id = Value(self.base+self.statements.len());
-		self.statements.push(define(id.clone(), value));
-		id
-	}*/
-	/*pub fn decl(&mut self) -> Variable {
-		let id = Variable(*self.variables);
-		*self.variables += 1;
-		id
-	}
-	pub fn load(&mut self, variable: Variable) -> Value { self.def(Expression::Load(variable)) }*/
 }
 pub fn def(value: impl Into<Expression>, block: &mut Block) -> Value {
 	let id = block.value();
@@ -151,126 +140,24 @@ impl<E:Into<Expression>> FnMut<(E,)> for Block<'_> { extern "rust-call" fn call_
 
 impl From<Block<'_>> for Box<[Statement]> { fn from(b: Block) -> Self { b.statements.into() } }
 
+impl Block<'_> {
+	pub fn trace(&mut self, value: impl Into<Expression>) -> Value {
+		let id = def(value, self);
+		push(Statement::Trace{id: id.clone()}, self);
+		id
+	}
+}
 pub struct Function {
 	pub input: usize,
-	//pub values: usize,
-	//pub variables: usize,
 	pub statements: Box<[Statement]>,
 	pub output: Box<[Expression]>,
 }
-/*impl Function {
-	pub fn new(output: Box<[Expression]>, statements: Box<[Statement]>, FunctionBuilder{input, ../*values, variables*/}: FunctionBuilder) -> Self { Function{input, output, /*values,*/ /*variables,*/ statements} }
-}*/
-
-impl FnOnce<(&[f64], &mut [f64])> for Function {
-	type Output = ();
-	extern "rust-call" fn call_once(mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call_mut(args) }
-}
-impl FnMut<(&[f64], &mut [f64])> for Function {
-	extern "rust-call" fn call_mut(&mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call(args) }
-}
-impl Fn<(&[f64], &mut [f64])> for Function {
-	extern "rust-call" fn call(&self, (input, output): (&[f64], &mut [f64])) -> Self::Output {
-		/*struct State {
-			//input: &'t [f64],
-			//output: &'t mut [f64],
-			values: linear_map::LinearMap<Value, f64>,
-			//variables: Box<[Option<f64>]>,
-		}
-		impl State {*/
-		/*fn debug(&mut self, expression: &Expression) -> String {
-			use Expression::*;
-			match expression {
-				Value(id) => format!("{}", if id.0 < self.input.len() { self.input[id.0] } else { self.values[&id] }),
-				Add(a, b) => format!("{} + {}", eval(state, a), eval(state, b)),
-				Mul(a, b) => format!("{} * {}", eval(state, a), eval(state, b)),
-				Call { function, arguments } => match *function {
-					"exp2" => format!("exp2({})",self.debug(&arguments[0])),
-					function => panic!("{}", function)
-				}
-				e => panic!("{:?}", e),
-			}
-		}*/
-		type State = Vec<f64>;
-		fn eval(state: &mut State, expression: &Expression) -> f64 {
-			use Expression::*;
-			let result = match expression {
-				&F64(value) => value,
-				&F32(value) => value as f64,
-				&Integer(_)|Cast(_,_)|And(_,_)|Or(_,_)|IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FPromote(_)|FDemote(_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!(),
-				Value(id) => { assert!(state[id.0].is_finite()); state[id.0] }, //if id.0 < self.input.len() { self.input[id.0] } else { self.values[&id] },
-				//Load(variable) => { self.variables[variable.0].unwrap() }
-				Neg(x) => -eval(state, x),
-				Max(a,b) => f64::max(eval(state, a), eval(state, b)),
-				Add(a, b) => eval(state, a) + eval(state, b),
-				Sub(a, b) => eval(state, a) - eval(state, b),
-				LessOrEqual(a, b) => if eval(state, a) <= eval(state, b) { 1. } else { 0. },
-				Mul(a, b) => eval(state, a) * eval(state, b),
-				MulAdd(a, b, c) => eval(state, a).mul_add(eval(state, b), eval(state, c)),
-				Div(a, b) => eval(state, a) / eval(state, b),
-				Sqrt(x) => f64::sqrt(eval(state, x)),
-				Block { statements, result } => {
-					run(state, statements);
-					let result = eval(state, result);
-					for statement in statements.iter() { if let Statement::Value{ id, .. } = statement { state[id.0] = f64::NAN; } else { unreachable!() } }
-					result
-				},
-				//e => panic!("{:?}", e),
-			};
-			assert!(result.is_finite());//, "{result}: {expression:?} {}", self.debug(expression));
-			result
-		}
-		fn run(state: &mut State, statements: &[Statement]) {
-			for statement in statements {
-				use Statement::*;
-				match statement {
-					Value { id, value } => {
-						let value = eval(state, value);
-						assert!(state.len() < id.0);
-						state.resize(id.0+1, f64::NAN);
-						state[id.0] = value;
-					},
-					/*Store { variable, value } => {
-						let value = eval(state, value);
-						assert!(self.variables[variable.0].replace(value).is_none());
-					}*/
-					Branch { condition, consequent, alternative, results } => {
-						let values = if eval(state, condition) != 0. { consequent } else { alternative };
-						for (id, value) in results.iter().zip(&**values) {
-							let value = eval(state, value);
-							assert!(state.len() < id.0);
-							state.resize(id.0+1, f64::NAN);
-							state[id.0] = value;
-						}
-					},
-				}
-			}
-		}
-		assert!(input.len() == self.input);
-		let ref mut state = input.to_vec();
-		run(state, &self.statements);
-		for (slot, e) in output.iter_mut().zip(&*self.output) { *slot = eval(state, e); }
-	}
-}
-
-pub fn wrap(f: Function) -> impl Fn(&[f64]) -> Box<[f64]> { move |input| { let mut output = vec![0.; f.output.len()].into_boxed_slice(); f(input, &mut output); output } }
 
 impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }
 
-/*pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "max", arguments: box_([a.into(), b.into()]) } }
-pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "sqrt", arguments: box_([x.into()]) } }
-pub fn band(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "band", arguments: box_([a.into(), b.into()]) } }
-pub fn bor(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "bor", arguments: box_([a.into(), b.into()]) } }
-pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "fcvt_to_sint", arguments: box_([x.into()]) } } // fcvt_to_sint I32
-pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "fcvt_from_sint", arguments: box_([x.into()]) } } // fcvt_from_sint F32
-pub fn iadd(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "iadd", arguments: box_([a.into(), b.into()]) } }
-pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Call{ function: "isub", arguments: box_([a.into(), b.into()]) } }*/
-//pub fn exp2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "exp2", arguments: box_([x.into()]) } }
-//pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Call{ function: "log2", arguments: box_([x.into()]) } }
-
 #[cfg(feature="num")] impl num::Sqrt for Expression { fn sqrt(self) -> Self { sqrt(self) } }
-#[cfg(feature="num")] impl num::Log for Expression { fn log2(self) -> Self { log2(self) } }
+//#[cfg(feature="num")] impl num::Log for Expression { fn log2(self) -> Self { log2(self) } }
 
 #[track_caller] pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
 	iter.into_iter().fold(None, |sum, (c, e)|
@@ -281,3 +168,23 @@ pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { 
 	).unwrap()
 }
 pub fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
+
+pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,1/) (-9->-7)
+	let ref x = f((1./2048.)*x.into());
+	let ref x2 = f(x*x);
+	let ref x3 = f(x2*x);
+	let ref a = f(1.+3./28.*x2+1./1680.*x3*x);
+	let ref b = f(1./2.*x+1./84.*x3);
+	let sq = |x,f:&mut Block| { let ref x=f(x); x*x };
+	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
+	//Expression::Exp(box_(x.into()))
+}
+pub fn log2(x: impl Into<Expression>, _: &mut Block) -> Expression {
+	/*let ref i = f(cast(I32, fdemote(x)));
+	let ref m = f(cast(F32, or(and(i, u32(0x007FFFFF)), u32(1f32.to_bits()))));
+	fpromote(fma(fma(fma(fma(fma(-0.034436006f32, m, 0.31821337f32), m, -1.2315303f32), m, 2.5988452f32), m, -3.3241990f32), m, 3.1157899f32) * (m - 1f32) + fcvt_from_sint(isub(ushr_imm(and(i, u32(0x7F800000)), 23), u32(127))))*/
+	//ast::log2(x)
+	Expression::Log2(box_(x.into()))
+}
+
+pub mod interpret;

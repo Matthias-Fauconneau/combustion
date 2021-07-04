@@ -4,25 +4,6 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
 }
 
-mod polynomial {
-use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, Dot}};
-pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { Dot::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
-
-pub trait Vector<const N: usize> = IntoConstSizeIterator<N>+IntoIterator<Item=f64>;
-pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
-	use nalgebra::{DMatrix, DVector, SVD};
-	let ref w = DVector::from_iterator(N, w.into_iter());
-	let ref x = x.collect();
-	let A = DMatrix::from_iterator(N, D, (0..D).map(|k| x.iter().zip(w.iter()).map(move |(x, w)| w*x.powi(k as i32))).flatten());
-	let b = DVector::from_iterator(N, y.into_iter().zip(w.iter()).map(|(y, w)| w*y));
-	SVD::new(A, true, true).solve(&b, f64::EPSILON).unwrap().as_slice().try_into().unwrap()
-}
-
-// Regression with 1/y² weights (towards relative vertical error)
-pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
-pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
-}
-
 use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log2, ln, pow}, iter::{IntoConstSizeIterator, ConstRange, into::IntoCopied, box_, map}};
 
 const light_speed : f64 = 299_792_458.;
@@ -109,7 +90,7 @@ pub struct Polynomials<const D: usize> {
 impl<const D: usize> Polynomials<D> {
 pub fn new(species: &Species) -> Self {
 	let K = species.len();
-	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
+	let [temperature_min, temperature_max] : [f64; 2] = [300., 3500.];
 	const N : usize = /*D+2 FIXME: Remez*/50;
 	let T : [_; N] = ConstRange.map(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min)).collect();
 	let ref s = Interactions(species);

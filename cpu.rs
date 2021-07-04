@@ -8,13 +8,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let ref state = initial_state(&model);
 	use {iter::map, itertools::Itertools, ast::let_};
-	pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> {
+	pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> + '_ {
 		let output = f.output.len();
-		let f = ir::assemble(ir::compile(&f));
+		//let f = ir::assemble(ir::compile(f));
 		move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
 	}
 	if true {
-		let rates = compile(&reaction::rates(&species.thermodynamics, &reactions));
+		let rates = reaction::rates(&species.thermodynamics, &reactions);
+		let rates = compile(&rates);
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
