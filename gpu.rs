@@ -2,11 +2,11 @@
 mod vulkan;
 
 use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result}};
-#[throws] fn wrap(device: &'t Device, function: &Function) -> impl 't+Fn(&[f64], &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
+#[throws] fn wrap(device: &'t Device, function: &Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
 	let input_len = function.input;
 	let output_len = function.output.len();
 	let function = spirv::compile(1, function)?;
-	move |uniforms:&[f64], input:&[&[f64]]| {
+	move |uniforms:&[f32], input:&[&[f32]]| {
 		assert!(uniforms.len() == 1 && uniforms.len()+input.len() == input_len);
 		let states_len = input[0].len();
 		let input = map(&*input, |array| Buffer::new(device, array.iter().copied()).unwrap());
@@ -36,10 +36,10 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let states_len = 1;
-		let active_amounts = map(&amounts[0..amounts.len()-1], |&n| vec![n; states_len].into_boxed_slice());
-		let_!{ [energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &*([&[&[total_amount] as &[_], &[*T]] as &[_], &*map(&*active_amounts, |a| &**a)].concat()))? => {
+		let active_amounts = map(&amounts[0..amounts.len()-1], |&n| vec![n as f32; states_len].into_boxed_slice());
+		let_!{ [energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as f32], &*([&[&vec![total_amount as f32; states_len] as &[_], &vec![*T as f32; states_len] as &[_]] as &[_], &*map(&*active_amounts, |a| &**a)].concat()))? => {
 		//println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e3, (states_len as f32)/1e3/time);
-		let energy_rate_RT = energy_rate_RT[0];
+		let energy_rate_RT = energy_rate_RT[0] as f64;
 		let rates = rates.iter().map(|a| a[0]);
 		eprintln!("{}, HRR: {:.3e}", rates.zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
 		}}

@@ -75,7 +75,7 @@ impl<T> std::ops::Deref for MapMut<'t, T> { type Target = &'t mut [T]; fn deref(
 impl<T> std::ops::DerefMut for MapMut<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.map } }
 
 pub trait Plain {}
-impl Plain for f64 {}
+impl Plain for f32 {}
 impl<T:Plain> Buffer<T> {
 	#[throws] pub fn map(&'t self, device: &'t Device) -> Map<T> {
 		Map{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts(device.map_memory(self.memory, 0, (self.len * size_of::<T>()) as u64, default())? as *const T, self.len)} }
