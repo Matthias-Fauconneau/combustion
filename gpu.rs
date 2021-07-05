@@ -8,15 +8,17 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 	let function = spirv::compile(1, function)?;
 	move |uniforms:&[f32], input:&[&[f32]]| {
 		assert!(uniforms.len() == 1 && uniforms.len()+input.len() == input_len);
+		let local_size = 512;
 		let states_len = input[0].len();
 		let input = map(&*input, |array| Buffer::new(device, array.iter().copied()).unwrap());
 		let output = map(0..output_len, |_| Buffer::new(device, vec![0.; states_len]).unwrap());
 		let buffers = box_(input.iter().chain(&*output));
 		pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-		let pipeline = device.pipeline(&function, cast(&uniforms), &buffers)?;
+		let pipeline = device.pipeline(&function, local_size, cast(&uniforms), &buffers)?;
 		device.bind(pipeline.descriptor_set, &buffers)?;
-		let command_buffer = device.command_buffer(&pipeline, cast(&uniforms), /*width*/1, states_len)?;
-		let _time = device.submit_and_wait(command_buffer)?;
+		let command_buffer = device.command_buffer(&pipeline, cast(&uniforms), (states_len as u32)/local_size)?;
+		let time = device.submit_and_wait(command_buffer)?;
+		println!("{}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", local_size, states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
 		Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 	}
 }
@@ -35,13 +37,13 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
-		let states_len = 1;
+		let states_len = 65536*8;
 		let active_amounts = map(&amounts[0..amounts.len()-1], |&n| vec![n as f32; states_len].into_boxed_slice());
 		let_!{ [energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as f32], &*([&[&vec![total_amount as f32; states_len] as &[_], &vec![*T as f32; states_len] as &[_]] as &[_], &*map(&*active_amounts, |a| &**a)].concat()))? => {
-		//println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e3, (states_len as f32)/1e3/time);
-		let energy_rate_RT = energy_rate_RT[0] as f64;
-		let rates = rates.iter().map(|a| a[0]);
-		eprintln!("{}, HRR: {:.3e}", rates.zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())), NA * kB * T * -energy_rate_RT);
+		let all_same = |array:&[f32]| { assert!(array.len() == states_len); for &v in array { assert_eq!(v, array[0]); } array[0] };
+		let dtT_T = all_same(energy_rate_RT) as f64;
+		let rates = rates.iter().map(|a| all_same(a));
+		eprintln!("{}, dtT_T: {dtT_T:.3e}", rates.zip(&**species_names).format_with(", ", |(rate, name), f| f(&format!("{name}: {rate:.0}").to_string())));
 		}}
 	}
 	#[cfg(feature="transport")] {

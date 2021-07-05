@@ -115,7 +115,7 @@ pub struct Pipeline {
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
 impl Device {
-	#[throws] pub fn pipeline<T>(&self, code: &[u32], constants: &[u8], buffers: &[&Buffer<T>]) -> Pipeline {
+	#[throws] pub fn pipeline<T>(&self, code: &[u32], local_size: u32, constants: &[u8], buffers: &[&Buffer<T>]) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = (0..buffers.len()).map(|binding| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: 1, stage_flags, ..default()}).collect::<Box<_>>();
@@ -124,13 +124,18 @@ impl Device {
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
 			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.len() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
-			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts)
-																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
-			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
+			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder()
+				.set_layouts(&descriptor_set_layouts)
+				.push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
+			pub fn as_bytes<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())} }
+			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module)
+				.name(&CStr::from_bytes_with_nul(b"main\0").unwrap())
+				.specialization_info(&SpecializationInfo::builder().map_entries(&[SpecializationMapEntry{constant_id:0, offset: 0, size: std::mem::size_of::<u32>()}]).data(as_bytes(&local_size))) .build(),
+				layout, ..default() }];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
-			std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
-			{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
-			#[cfg(feature="naga")] {use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
+			//std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
+			//{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
+			//#[cfg(feature="naga")] {use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
 			std::fs::write("/var/tmp/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
@@ -149,7 +154,7 @@ impl Device {
 			}
 		}
 	}
-	#[throws] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[u8], stride: usize, len: usize) -> CommandBuffer {
+	#[throws] pub fn command_buffer/*<T>*/(&self, pipeline: &Pipeline, constants: &[u8], group_count: u32) -> CommandBuffer {
 		let Self{device, command_pool, query_pool, ..} = self;
 		let Pipeline{descriptor_set, layout, pipeline, ..} = pipeline;
 		unsafe {
@@ -160,7 +165,7 @@ impl Device {
 			device.cmd_push_constants(command_buffer, *layout, ShaderStageFlags::COMPUTE, 0, constants);
 			device.cmd_reset_query_pool(command_buffer, *query_pool, 0, 2);
 			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, *query_pool, 0);
-			device.cmd_dispatch(command_buffer, (len/stride) as u32, 1, 1);
+			device.cmd_dispatch(command_buffer, group_count, 1, 1);
 			device.cmd_write_timestamp(command_buffer, PipelineStageFlags::COMPUTE_SHADER, *query_pool, 1);
 			device.cmd_pipeline_barrier(command_buffer, PipelineStageFlags::ALL_COMMANDS, PipelineStageFlags::HOST, default(),
 				&[MemoryBarrier{src_access_mask: AccessFlags::MEMORY_WRITE, dst_access_mask: AccessFlags::HOST_READ, ..default()}], &[], &[]);

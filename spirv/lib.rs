@@ -15,7 +15,8 @@ fn expr(&mut self, e: &Expression) -> Word {
 	use Expression::*;
 	match e {
 		&F32(value) => self.constant_f32(f32, value),
-		&F64(value) => self.constant_f32(f32, value as f32),
+		//&F64(value) => self.constant_f32(f32, value as f32),
+		&Float(value) => self.constant_f32(f32, value as f32),
 		Value(v) => self.values[v],
 		Neg(x) => { let x = self.expr(x); self.f_negate(f32, None, x).unwrap() }
 		Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(f32, None, gl, GLOp::FMax as u32, operands).unwrap() }
@@ -74,9 +75,18 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	b.set_version(1, 5);
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
 	b.memory_model(AddressingModel::Logical, MemoryModel::Vulkan);
-	let gl = b.ext_inst_import("GLSL.std.450");
+	let void = b.type_void();
 	let u32 = b.type_int(32, 0);
+	let function_void = b.type_function(void, vec![]);
+	let f = b.begin_function(void, /*id: */None, FunctionControl::DONT_INLINE | FunctionControl::CONST, function_void)?;
+	let local_size = b.spec_constant_u32(u32, 1);
+	b.decorate(local_size, SpecId, [0u32.into()]);
+	let u32_1 = b.constant_u32(u32, 1);
+	b.execution_mode(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
+	let gl = b.ext_inst_import("GLSL.std.450");
 	let v3u = b.type_vector(u32, 3);
+	let workgroup_size = b.spec_constant_composite(v3u, [local_size, u32_1, u32_1]);
+	b.decorate(workgroup_size, BuiltIn, [Operand::BuiltIn(BuiltIn::WorkgroupSize)]);
 	let pv3u = b.type_pointer(None, StorageClass::Input, v3u);
 	let global_invocation_id_ref = b.variable(pv3u, None, StorageClass::Input, None);
 	b.decorate(global_invocation_id_ref, BuiltIn, [Operand::BuiltIn(BuiltIn::GlobalInvocationId)]);
@@ -108,10 +118,6 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 		b.decorate(variable, DescriptorSet, [0u32.into()]);
 		b.decorate(variable, Binding, [(binding as u32).into()]);
 	}
-	let return_type = b.type_void();
-	let function_type = b.type_function(return_type, vec![]);
-	let f = b.begin_function(return_type, /*id: */None, FunctionControl::DONT_INLINE | FunctionControl::CONST, function_type)?;
-	b.execution_mode(f, ExecutionMode::LocalSize, [1536, 1, 1]);
 	b.begin_block(None)?;
 	let global_invocation_id3 = b.load(v3u, None, global_invocation_id_ref, None, [])?;
 	let id = b.composite_extract(u32, None, global_invocation_id3, [0])?;
