@@ -26,6 +26,8 @@ fn expr(&mut self, e: &Expression) -> Word {
 		Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
 		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
 		Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
+		Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Exp as u32, [x]).unwrap() }
+		Ln(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Log as u32, [x]).unwrap() }
 		Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			self.expr(result)

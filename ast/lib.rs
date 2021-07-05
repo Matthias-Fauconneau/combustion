@@ -33,6 +33,8 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	FCvtToSInt(Box<Expression>),
 	FCvtFromSInt(Box<Expression>),
 	Sqrt(Box<Expression>),
+	Exp(Box<Expression>),
+	Ln(Box<Expression>),
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
 
@@ -155,7 +157,7 @@ pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.
 }
 pub fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
 
-pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,1/) (-9->-7)
+pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expression::Exp(box_(x.into())) } else { //e-12 (19*,1/) (-9->-7)
 	let ref x = f((1./2048.)*x.into());
 	let ref x2 = f(x*x);
 	let ref x3 = f(x2*x);
@@ -163,8 +165,8 @@ pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,
 	let ref b = f((1./2.)*x+(1./84.)*x3);
 	let sq = |x,f:&mut Block| { let ref x=f(x); x*x };
 	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
-}
-pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -5
+}}
+pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expression::Ln(box_(x.into())) } else { // -5
 	let x = (1./x0)*x.into();
 	let ref x = f(sqrt(sqrt(sqrt(sqrt(x)))));
 	let ref x = f((x-1.)/(x+1.));
@@ -172,6 +174,6 @@ pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -
 	let ref x4 = f(x2*x2);
 	let ref x6 = f(x4*x2);
 	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x4*x2 + (1./9.)*x6*x2)
-}
+}}
 
 pub mod interpret;
