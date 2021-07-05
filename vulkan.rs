@@ -7,6 +7,7 @@ pub struct Device {
 	_instance: ash::Instance,
 	_debug_utils: DebugUtils,
 	_debug_utils_messenger: DebugUtilsMessengerEXT,
+	memory_properties: ash::vk::PhysicalDeviceMemoryProperties,
 	device: ash::Device,
 	queue: Queue,
 	timestamp_period: f32,
@@ -45,6 +46,7 @@ impl Device {
 			let timestamp_period = instance.get_physical_device_properties(device).limits.timestamp_period;
 			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_size);
 			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_count);
+			let memory_properties = {let mut p = default(); instance.get_physical_device_memory_properties2(device,&mut p); p}.memory_properties;
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
 			let device = instance.create_device(
 				device,
@@ -58,7 +60,7 @@ impl Device {
 			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)?;
 			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
 			let fence = device.create_fence(&default(), None)?;
-			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, device, queue, timestamp_period, command_pool, query_pool, fence}
+			Self{_entry: entry, _instance: instance, _debug_utils: debug_utils, _debug_utils_messenger, memory_properties, device, queue, timestamp_period, command_pool, query_pool, fence}
 		}
 	}
 }
@@ -91,11 +93,14 @@ impl<T:Plain> Buffer<T> {
 				usage: BufferUsageFlags::STORAGE_BUFFER|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
-			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index: 0, ..default()}, None)?;
+			let flags = MemoryPropertyFlags::DEVICE_LOCAL|MemoryPropertyFlags::HOST_VISIBLE;
+			let memory_type_index = device.memory_properties.memory_types[..device.memory_properties.memory_type_count as _].iter().enumerate().position(
+				|(index, memory_type)| (1 << index) & memory_requirements.memory_type_bits != 0 && memory_type.property_flags & flags == flags).unwrap() as _;
+			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index, ..default()}, None)?;
 			device.bind_buffer_memory(buffer, memory, 0)?;
 			Self{len, buffer, memory, _type: default()}
 		};
-		for (item, cell) in iter.zip(buffer.map_mut(device)?.into_iter()) { *cell = item; }
+		for (item, cell) in iter.zip(buffer.map_mut(device).expect(&format!("{len}")).into_iter()) { *cell = item; }
 		buffer
 	}
 }
@@ -123,6 +128,8 @@ impl Device {
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+			std::fs::write("/var/tmp/spv", cast(code)).unwrap();
 			dbg!();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
 			dbg!();

@@ -49,14 +49,14 @@ fn push(&mut self, s: &Statement) {
 			let true_values = map(&**true_exprs, |e| self.expr(e));
 			self.values = scope;
 			assert!(results.len() == true_values.len());
-			//self.branch(merge);
+			self.branch(merge).unwrap();
 
 			let scope = self.values.clone();
 			self.begin_block(Some(false_block)).unwrap();
 			let false_values = map(&**false_exprs, |e| self.expr(e));
 			self.values = scope;
 			assert!(results.len() == false_values.len());
-			//self.branch(merge);
+			self.branch(merge).unwrap();
 
 			self.begin_block(Some(merge)).unwrap();
 			for id in &**results { assert!(!self.values.contains_key(id)); }
@@ -82,11 +82,12 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	let gl = b.ext_inst_import("GLSL.std.450");
 	let uniform = b.variable(f64, None, StorageClass::PushConstant, None);
 	let input = map(0..ast.input-uniform_len, |_| {
-		let v = b.variable(array, None, StorageClass::UniformConstant, None);
+		let v = b.variable(array, None, StorageClass::StorageBuffer, None);
+		b.decorate(v, NonWritable, []);
 		v
 	});
 	let output = map(&*ast.output,|_| {
-		let v = b.variable(array, None, StorageClass::Uniform, None);
+		let v = b.variable(array, None, StorageClass::StorageBuffer, None);
 		b.decorate(v, NonReadable, []);
 		v
 	});

@@ -2,20 +2,20 @@
 mod vulkan;
 
 use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result}};
-#[throws] fn wrap<const U: usize>(device: &'t Device, function: &Function) -> impl 't+Fn([f64; U], &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
+#[throws] fn wrap(device: &'t Device, function: &Function) -> impl 't+Fn(&[f64], &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
 	let input_len = function.input;
 	let output_len = function.output.len();
-	let function = spirv::compile(U, function)?;
-	move |uniforms:[f64; U], input:&[&[f64]]| {
-		assert!(U+input.len() == input_len);
+	let function = spirv::compile(1, function)?;
+	move |uniforms:&[f64], input:&[&[f64]]| {
+		assert!(uniforms.len() == 1 && uniforms.len()+input.len() == input_len);
 		let states_len = input[0].len();
 		let input = map(&*input, |array| Buffer::new(device, array.iter().copied()).unwrap());
 		let output = map(0..output_len, |_| Buffer::new(device, vec![0.; states_len]).unwrap());
 		let buffers = box_(input.iter().chain(&*output));
-		pub fn as_bytes<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())} }
-		let pipeline = device.pipeline(&function, as_bytes(&uniforms), &buffers)?;
+		pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+		let pipeline = device.pipeline(&function, cast(&uniforms), &buffers)?;
 		device.bind(pipeline.descriptor_set, &buffers)?;
-		let command_buffer = device.command_buffer(&pipeline, as_bytes(&uniforms), /*width*/1, states_len)?;
+		let command_buffer = device.command_buffer(&pipeline, cast(&uniforms), /*width*/1, states_len)?;
 		let _time = device.submit_and_wait(command_buffer)?;
 		Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 	}
@@ -37,7 +37,7 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 		let total_amount = amounts.iter().sum::<f64>();
 		let states_len = 1;
 		let active_amounts = map(&amounts[0..amounts.len()-1], |&n| vec![n; states_len].into_boxed_slice());
-		let_!{ [energy_rate_RT, rates @ ..] = &*rates([*pressure_R], &*([&[&[total_amount] as &[_], &[*T]] as &[_], &*map(&*active_amounts, |a| &**a)].concat()))? => {
+		let_!{ [energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &*([&[&[total_amount] as &[_], &[*T]] as &[_], &*map(&*active_amounts, |a| &**a)].concat()))? => {
 		//println!("{:.0}K in {:.1}ms = {:.2}ms, {:.1}K/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e3, (states_len as f32)/1e3/time);
 		let energy_rate_RT = energy_rate_RT[0];
 		let rates = rates.iter().map(|a| a[0]);
