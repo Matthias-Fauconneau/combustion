@@ -7,7 +7,9 @@ fn main() -> anyhow::Result<()> {
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = ir::assemble(ir::compile(&rates));
+	#[cfg(feature="ir")] let rates = ir::assemble(ir::compile(&rates));
+	#[cfg(feature="gpu")] let ref device = Device::new()?;
+	#[cfg(feature="gpu")] let rates = gpu::compile(device, &rates);
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
