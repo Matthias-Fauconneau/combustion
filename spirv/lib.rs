@@ -71,7 +71,7 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	assert!(uniform_len==1);
 	let mut b = rspirv::Builder::new();
 	b.set_version(1, 5);
-	b.capability(Capability::Shader);
+	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
 	b.memory_model(AddressingModel::Logical, MemoryModel::Vulkan);
 	let u32 = b.type_int(32, 0);
 	let uvec3 = b.type_vector(u32, 3);

@@ -22,7 +22,7 @@ ir= {optional=true, path='ir', features=['jit']}
 itertools='*'
 spirv= {optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
 ash= {optional=true, version='*'}
-naga= {optional=true, features=['spv-in''git='https://github.com/Matthias-Fauconneau/naga'}], version='*'}
+naga= {optional=true, features=['spv-in'], version='*'}
 spirv-tools= {optional=true, version='*', default-features=false, features=['use-installed-tools']}
 rand= {optional=true, version='*'}
 cvode= {optional=true, path='cvode'}
