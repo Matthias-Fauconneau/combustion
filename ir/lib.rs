@@ -2,20 +2,20 @@
 use {std::default::default, iter::map};
 pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32, F64}, condcodes::FloatCC};
 use cranelift::{
-	frontend::{self, FunctionBuilderContext},
+	frontend::{FunctionBuilder, FunctionBuilderContext},
 	codegen::{ir::{InstBuilder, AbiParam, entities::Value, MemFlags}, }, //types::Type,
 };
 
-#[derive(derive_more::Deref,derive_more::DerefMut)] struct FunctionBuilder<'t> {
-	#[deref]#[deref_mut] builder: frontend::FunctionBuilder<'t>,
+#[derive(derive_more::Deref,derive_more::DerefMut)] struct Builder<'t> {
+	#[deref]#[deref_mut] builder: FunctionBuilder<'t>,
 	constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<u32, Value>,
 	constants_f64: std::collections::HashMap<u64, Value>,
 }
 
-impl FunctionBuilder<'t> {
+impl Builder<'t> {
 	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self { Self{
-			builder: frontend::FunctionBuilder::new(function, function_builder_context),
+			builder: FunctionBuilder::new(function, function_builder_context),
 			constants_u32: default(),
 			constants_f32: default(),
 			constants_f64: default(),
@@ -40,38 +40,70 @@ impl FunctionBuilder<'t> {
 	}
 }
 
-fn load(base: Value, index: usize, f: &mut FunctionBuilder) -> Value { f.ins().load(F64, MemFlags::trusted(), base, (index*std::mem::size_of::<f64>()) as i32) }
-//fn cast(to: Type, x: Value, f: &mut FunctionBuilder) -> Value { f.ins().bitcast(to, x) }
-fn and(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().band(a, b) }
-fn or(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().bor(a, b) }
-fn ishl_imm(x: Value, imm: u8, f: &mut FunctionBuilder) -> Value { f.ins().ishl_imm(x, imm as i64) }
-fn ushr_imm(x: Value, imm: u8, f: &mut FunctionBuilder) -> Value { f.ins().ushr_imm(x, imm as i64) }
-fn iadd(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().iadd(a, b) }
-fn isub(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().isub(a, b) }
-fn neg(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fneg(x) }
+fn load(base: Value, index: usize, f: &mut Builder) -> Value { f.ins().load(F64, MemFlags::trusted(), base, (index*std::mem::size_of::<f64>()) as i32) }
+//fn cast(to: Type, x: Value, f: &mut Builder) -> Value { f.ins().bitcast(to, x) }
+fn and(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().band(a, b) }
+fn or(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().bor(a, b) }
+fn ishl_imm(x: Value, imm: u8, f: &mut Builder) -> Value { f.ins().ishl_imm(x, imm as i64) }
+fn ushr_imm(x: Value, imm: u8, f: &mut Builder) -> Value { f.ins().ushr_imm(x, imm as i64) }
+fn iadd(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().iadd(a, b) }
+fn isub(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().isub(a, b) }
+fn neg(x: Value, f: &mut Builder) -> Value { f.ins().fneg(x) }
 //fn min(&mut self, a: Value, b: Value) -> Value { self.ins().fmin(a, b) }
-fn max(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fmax(a, b) }
-fn add(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fadd(a, b) }
-fn sub(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fsub(a, b) }
-fn mul(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fmul(a, b) }
-//fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { f.ins().fma(a,b,c) }
-fn fma(a: Value, b: Value, c: Value, f: &mut FunctionBuilder) -> Value { add(mul(a, b, f), c, f) }
-fn div(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().fdiv(a, b) }
-fn sqrt(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().sqrt(x) }
-fn fpromote(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fpromote(F64, x) }
-fn fdemote(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fdemote(F32, x) }
-fn fcvt_to_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_to_sint(I32, x) }
-fn fcvt_from_sint(x: Value, f: &mut FunctionBuilder) -> Value { f.ins().fcvt_from_sint(F32, x) }
-fn store(value: Value, base: Value, index: usize, f: &mut FunctionBuilder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
+fn max(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fmax(a, b) }
+fn add(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fadd(a, b) }
+fn sub(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fsub(a, b) }
+fn mul(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fmul(a, b) }
+//fn fma(a: Value, b: Value, c: Value, f: &mut Builder) -> Value { f.ins().fma(a,b,c) }
+fn fma(a: Value, b: Value, c: Value, f: &mut Builder) -> Value { add(mul(a, b, f), c, f) }
+fn div(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fdiv(a, b) }
+fn sqrt(x: Value, f: &mut Builder) -> Value { f.ins().sqrt(x) }
+fn fpromote(x: Value, f: &mut Builder) -> Value { f.ins().fpromote(F64, x) }
+fn fdemote(x: Value, f: &mut Builder) -> Value { f.ins().fdemote(F32, x) }
+fn fcvt_to_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_to_sint(I32, x) }
+fn fcvt_from_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_from_sint(F32, x) }
+fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
 
-#[derive(derive_more::Deref,derive_more::DerefMut)] struct AstFunctionBuilder<'t> {
-	#[deref]#[deref_mut] builder: FunctionBuilder<'t>,
+#[derive(derive_more::Deref,derive_more::DerefMut)] struct AstBuilder<'t> {
+	#[deref]#[deref_mut] builder: Builder<'t>,
 	types: linear_map::LinearMap<ast::Value, ast::Type>,
 	values: linear_map::LinearMap<ast::Value, Value>,
 }
 
 use ast::*;
-impl AstFunctionBuilder<'_> {
+impl AstBuilder<'_> {
+fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_constants
+	use Expression::*;
+	match e {
+		&F32(v) => { self.f32(v as f32); ast::Type::F32 },
+		&F64(v) => { self.f64(v); ast::Type::F64 },
+		&I32(v) => { self.u32(v); ast::Type::I32 },
+		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
+		Cast(to, x) => { self.pass(x); *to },
+		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x) => self.pass(x),
+		FPromote(x) => { self.pass(x); ast::Type::F64 },
+		FDemote(x) => { self.pass(x); ast::Type::F32 },
+		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
+		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },
+		And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?}"); a },
+		MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
+		Block { statements, result } => { for s in &**statements { self.check_types_and_load_constants(s) } self.pass(result) }
+	}
+}
+fn check_types_and_load_constants(&mut self, statement: &Statement) {
+	use Statement::*;
+	match statement {
+		Value { id, value } => { let value = self.load(value); assert!(!self.types.contains_key(id)); self.types.insert(id.clone(), value); },
+		Branch { condition, true_exprs, false_exprs, results } => {
+			self.load(condition);
+			// Always load constants of both branches in root block so that they are always available for all later uses
+			let true_types = map(&**true_exprs, |e| self.pass(e));
+			let false_types = map(&**false_types, |e| self.pass(e));
+			for id in &**results { assert!(!self.values.contains_key(id)); }
+			self.types.extend(results.iter().zip(true_types.iter().zip(&*false_types)).map(|(id, (&a,&b))| { assert!(a==b); (id.clone(), a) }));
+		}
+	}
+}
 fn expr(&mut self, e: &Expression) -> Value {
 	use Expression::*;
 	match e {
@@ -105,74 +137,42 @@ fn expr(&mut self, e: &Expression) -> Value {
 		}
 	}
 }
-fn load(&mut self, e: &Expression) -> ast::Type {
-	use Expression::*;
-	match e {
-		&F32(v) => { self.f32(v as f32); ast::Type::F32 },
-		&F64(v) => { self.f64(v); ast::Type::F64 },
-		&I32(v) => { self.u32(v); ast::Type::I32 },
-		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
-		Cast(to, x) => { self.load(x); *to },
-		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x) => self.load(x),
-		FPromote(x) => { self.load(x); ast::Type::F64 },
-		FDemote(x) => { self.load(x); ast::Type::F32 },
-		FCvtToSInt(x)  => { self.load(x); ast::Type::I32 }
-		FCvtFromSInt(x) => { self.load(x); ast::Type::F32 },
-		And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.load(x)); assert!(a==b,"{e:?}"); a },
-		MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.load(x)); assert!(a==b && b==c); a },
-		Block { statements, result } => { for s in &**statements { self.load_statement(s) } self.load(result) }
-	}
-}
-fn load_statement(&mut self, statement: &Statement) {
-	use Statement::*;
-	match statement {
-		Value { id, value } => { let value = self.load(value); assert!(!self.types.contains_key(id)); self.types.insert(id.clone(), value); },
-		Branch { condition, consequent, alternative, results } => {
-			self.load(condition);
-			// Always load constants of both branches in root block so that they are always available for all later uses
-			let consequent = map(&**consequent, |e| self.load(e));
-			let alternative = map(&**alternative, |e| self.load(e));
-			for id in &**results { assert!(!self.values.contains_key(id)); }
-			self.types.extend(results.iter().zip(consequent.iter().zip(&*alternative)).map(|(id, (&a,&b))| { assert!(a==b); (id.clone(), a) }));
-		}
-	}
-}
 fn push(&mut self, statement: &Statement) {
 	use Statement::*;
 	match statement {
 		Value { id, value } => { let value = self.expr(value); assert!(!self.values.contains_key(id)); self.values.insert(id.clone(), value); },
-		Branch { condition, consequent, alternative, results } => {
+		Branch { condition, true_exprs, false_exprs, results } => {
 			let condition = self.expr(condition);
-			/*// Always load constants of both branches in root block so that they are always available for all later uses (already done for non-root branches (in load_statement))
-			for e in &**consequent { self.load(e) }
-			for e in &**alternative { self.load(e) }*/
-			let alternative_block = self.create_block();
-			self.ins().brz(condition, alternative_block, &[]);
-			self.seal_block(alternative_block);
-			let consequent_block = self.create_block();
-			self.ins().jump(consequent_block, &[]);
-			self.seal_block(consequent_block);
+			/*// Always load constants of both branches in root block so that they are always available for all later uses (already done for non-root branches (in check_types_and_load_constants))
+			for e in &**true_exprs { self.load(e) }
+			for e in &**false_exprs { self.load(e) }*/
+			let false_block = self.create_block();
+			self.ins().brz(condition, false_block, &[]);
+			self.seal_block(false_block);
+			let true_block = self.create_block();
+			self.ins().jump(true_block, &[]);
+			self.seal_block(true_block);
 			let join = self.create_block();
 			for _ in 0..results.len() { self.append_block_param(join, F64); }
 
 			let scope = self.values.clone();
-			self.switch_to_block(consequent_block);
-			let consequent = map(&**consequent, |e| self.expr(e));
+			self.switch_to_block(true_block);
+			let true_values = map(&**true_exprs, |e| self.expr(e));
 			self.values = scope;
-			assert!(results.len() == consequent.len(), "{results:?} {consequent:?}");
-			self.ins().jump(join, &consequent);
+			assert!(results.len() == true_values.len());
+			self.ins().jump(join, &true_block);
 
 			let scope = self.values.clone();
-			self.switch_to_block(alternative_block);
-			let alternative = map(&**alternative, |e| self.expr(e));
+			self.switch_to_block(false_block);
+			let false_values = map(&**false_exprs, |e| self.expr(e));
 			self.values = scope;
-			assert!(results.len() == alternative.len(), "{results:?} {alternative:?}");
-			self.ins().jump(join, &alternative);
+			assert!(results.len() == false_values.len());
+			self.ins().jump(join, &false_block);
 
 			self.seal_block(join);
 			self.switch_to_block(join);
 			let params = self.builder.block_params(join);
-			assert!(results.len() == params.len(), "{results:?} {params:?}");
+			assert!(results.len() == params.len());
 			for id in &**results { assert!(!self.values.contains_key(id)); }
 			self.values.extend(results.iter().zip(params).map(|(id, &value)| (id.clone(), value)));
 		}
@@ -183,7 +183,7 @@ fn push(&mut self, statement: &Statement) {
 pub fn compile(ast: &ast::Function) -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = FunctionBuilderContext::new();
-	let mut f = FunctionBuilder::new(&mut function, &mut function_builder_context);
+	let mut f = Builder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
 	f.func.signature.params = vec![AbiParam::new(I64); 2];
 	f.append_block_params_for_function_params(entry_block);
@@ -192,8 +192,8 @@ pub fn compile(ast: &ast::Function) -> Function {
 	let_!{ &[input, output] = f.block_params(entry_block) => {
 	let types = (0..ast.input).map(|i| (Value(i), ast::Type::F64)).collect();
 	let values = (0..ast.input).map(|i| (Value(i), load(input, i, &mut f))).collect();
-	let ref mut f = AstFunctionBuilder{builder: f, types, values};
-	for statement in &*ast.statements { f.load_statement(statement); }
+	let ref mut f = AstBuilder{builder: f, types, values};
+	for statement in &*ast.statements { f.check_types_and_load_constants(statement); }
 	for statement in &*ast.statements { f.push(statement); }
 	for (i, e) in ast.output.iter().enumerate() { store(f.expr(e), output, i, f); }
 	f.ins().return_(&[]);

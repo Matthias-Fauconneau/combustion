@@ -37,7 +37,7 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 
 #[derive(Debug)] pub enum Statement {
 	Value { id: Value, value: Expression },
-	Branch { condition: Expression, consequent: Box<[Expression]>, alternative: Box<[Expression]>, results: Box<[Value]> },
+	Select { condition: Expression, true_exprs: Box<[Expression]>, false_exprs: Box<[Expression]>, results: Box<[Value]> },
 }
 
 pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }

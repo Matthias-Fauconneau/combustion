@@ -5,7 +5,7 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 #[throws] fn wrap<const U: usize>(device: &'t Device, function: &Function) -> impl 't+Fn([f64; U], &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
 	let input_len = function.input;
 	let output_len = function.output.len();
-	let function = spirv::from(U, function)?;
+	let function = spirv::compile(U, function)?;
 	move |uniforms:[f64; U], input:&[&[f64]]| {
 		assert!(U+input.len() == input_len);
 		let states_len = input[0].len();

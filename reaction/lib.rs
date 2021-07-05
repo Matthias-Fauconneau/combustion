@@ -27,10 +27,10 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())) {
 		let results = map(species, |_| f.value());
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
-		push(Statement::Branch{
+		push(Statement::Select{
 			condition: less_or_equal(T.T, f64::from_bits(temperature_split)),
-			consequent: map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f)),
-			alternative: map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f)),
+			true_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f)),
+			false_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f)),
 			results
 		}, f);
 	}

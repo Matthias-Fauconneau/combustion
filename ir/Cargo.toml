@@ -6,8 +6,8 @@ lib = { path= 'lib.rs' }
 [dependencies]
 derive_more='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-ast= {path='../ast', version='*'}
 linear-map='*'
+ast= {path='../ast', version='*'}
 cranelift='*'
 cranelift-codegen= {optional=true, version='*'}
 cranelift-module= {optional=true, version='*'}

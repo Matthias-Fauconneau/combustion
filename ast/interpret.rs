@@ -69,8 +69,8 @@ fn run(state: &mut State, statements: &[Statement]) {
 				let value = eval(state, value);
 				assert!(self.variables[variable.0].replace(value).is_none());
 			}*/
-			Branch { condition, consequent, alternative, results } => {
-				let values = if eval(state, condition).bool() { consequent } else { alternative };
+			Select { condition, true_exprs, false_exprs, results } => {
+				let values = if eval(state, condition).bool() { true_exprs } else { false_exprs };
 				for (id, value) in results.iter().zip(&**values) {
 					let value = eval(state, value);
 					if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
