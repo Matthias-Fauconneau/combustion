@@ -28,23 +28,26 @@ fn main() -> anyhow::Result<()> {
 	};
 
 	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
-	let plot_min_time = 0.4;
+	let plot_min_time = 0.1;
 	let (mut time, mut state) = (0., &*state);
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
 		//dbg!(time/plot_min_time, time, state[0]);
+		//assert!(state[0]<1500.);
 	}
+	println!("T {}", state[0]);
 	let mut min = 0f64;
 	use iter::map;
-	let values = map(0..1000, |_| if let [temperature, active_amounts@..] = state {
+	let values = map(0..(0.2/model.time_step) as usize, |_| if let [temperature, active_amounts@..] = state {
 		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature].into_boxed_slice(), map(active_amounts, |v| v/active_amounts.iter().sum::<f64>())].into_boxed_slice());
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
 		min = min.min(state[1..].iter().copied().reduce(f64::min).unwrap());
 		value
 	} else { unreachable!() });
-	println!("{:.0e}", min);
+	println!("T {}", state[0]);
+	//println!("{:.0e}", min);
 	let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0)).iter().position(|active| !active).unwrap_or(species.len()-1);
 	let key = map((0..active).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
 	let mut s = map(0..active, |i| i);
