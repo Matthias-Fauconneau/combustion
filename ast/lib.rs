@@ -1,4 +1,4 @@
-#![allow(incomplete_features)]#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map)]
+#![allow(incomplete_features)]#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map,if_let_guard)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
@@ -10,6 +10,7 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	I32(u32),
 	F32(f32),
 	F64(f64),
+	Float(f64),
 	Value(Value),
 	Cast(Type, Box<Expression>),
 	And(Box<Expression>, Box<Expression>),
@@ -77,7 +78,7 @@ impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression;
 impl<E:Into<Expression>> std::ops::Div<E> for &Value { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 
 impl From<f32> for Expression { fn from(v: f32) -> Self { Self::F32(v) } }
-impl From<f64> for Expression { fn from(v: f64) -> Self { Self::F64(v) } }
+impl From<f64> for Expression { fn from(v: f64) -> Self { Self::Float(v) } }
 impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }

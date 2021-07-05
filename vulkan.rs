@@ -131,9 +131,7 @@ impl Device {
 			std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
 			{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
 			#[cfg(feature="naga")] {use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
-			dbg!();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
-			dbg!();
 			std::fs::write("/var/tmp/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}

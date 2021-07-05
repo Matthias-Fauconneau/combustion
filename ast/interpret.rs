@@ -5,20 +5,20 @@ impl DataValue {
 	fn bool(self) -> bool { if let Self::Bool(v) = self { v } else { panic!("{self:?}") } }
 	fn i32(self) -> u32 { if let Self::I32(v) = self { v } else { panic!("{self:?}") } }
 	fn f32(self) -> f32 { if let Self::F32(v) = self { v } else { panic!("{self:?}") } }
-	#[track_caller] fn f64(self) -> f64 { if let Self::F64(v) = self { v } else { panic!("{self:?}") } }
+	//#[track_caller] fn f64(self) -> f64 { if let Self::F64(v) = self { v } else { panic!("{self:?}") } }
 }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct State {
 	#[deref]#[deref_mut] values: Vec<DataValue>,
-	trace: Vec<f64>,
 }
 
 fn eval(state: &mut State, e: &Expression) -> DataValue {
 	use {Expression::*, DataValue::{Bool, I32, F64, F32}};
 	let result = match e {
 		&Expression::I32(value) => I32(value),
-		&Expression::F64(value) => F64(value),
 		&Expression::F32(value) => F32(value),
+		&Expression::F64(value) => F64(value),
+		&Expression::Float(value) => F32(value as f32),
 		Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
@@ -26,17 +26,25 @@ fn eval(state: &mut State, e: &Expression) -> DataValue {
 		//IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FPromote(_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!("{e:?}"),
 		Value(id) => state[id.0].clone(),
 		//Load(variable) => { self.variables[variable.0].unwrap() }
-		Neg(x) => F64(-eval(state, x).f64()),
-		Max(a,b) => F64(f64::max(eval(state, a).f64(), eval(state, b).f64())),
-		Add(a,b) => F64(eval(state, a).f64() + eval(state, b).f64()),
-		Sub(a,b) => F64(eval(state, a).f64() - eval(state, b).f64()),
-		LessOrEqual(a,b) => Bool(eval(state, a).f64() <= eval(state, b).f64()),
-		Mul(a,b) => F64(eval(state, a).f64() * eval(state, b).f64()),
-		MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| eval(state, x).f64()); F64(f64::mul_add(a,b,c)) },
-		Div(a,b) => F64(eval(state, a).f64() / eval(state, b).f64()),
-		FDemote(x) => F32(eval(state, x).f64() as f32),
-		FPromote(x) => F64(eval(state, x).f32() as f64),
-		Sqrt(x) => F64(f64::sqrt(eval(state, x).f64())),
+		Neg(x) if let F32(x) = eval(state, x) => F32(-x),
+		Neg(x) if let F64(x) = eval(state, x) => F64(-x),
+		Max(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(f32::max(a,b)),
+		Max(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(f64::max(a,b)),
+		Add(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a+b),
+		Add(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a+b),
+		Sub(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a-b),
+		Sub(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a-b),
+		LessOrEqual(a,b)  if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => Bool(a<=b),
+		LessOrEqual(a,b)  if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => Bool(a<=b),
+		Mul(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a*b),
+		Mul(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a*b),
+		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| eval(state, x).f64()); F64(f64::mul_add(a,b,c)) },
+		Div(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a/b),
+		Div(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a/b),
+		//FDemote(x) => F32(eval(state, x).f64() as f32),
+		//FPromote(x) => F64(eval(state, x).f32() as f64),
+		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
+		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
 		Block { statements, result } => {
 			run(state, statements);
 			let result = eval(state, result);
@@ -85,21 +93,20 @@ fn run(state: &mut State, statements: &[Statement]) {
 	}
 }
 
-pub fn call(f: &Function, input: &[f64], output: &mut [f64]) -> Vec<f64> {
+pub fn call(f: &Function, input: &[f32], output: &mut [f32]) {
 	assert!(input.len() == f.input);
-	let mut state = State{ values: iter::map(input, |&v| DataValue::F64(v)).into_vec(), trace: vec![] };
+	let mut state = State{values: iter::map(input, |&v| DataValue::F32(v)).into_vec()};
 	run(&mut state, &f.statements);
-	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F64(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
-	state.trace
+	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F32(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
 }
 
-impl FnOnce<(&[f64], &mut [f64])> for Function {
+impl FnOnce<(&[f32], &mut [f32])> for Function {
 	type Output = ();
-	extern "rust-call" fn call_once(mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call_mut(args) }
+	extern "rust-call" fn call_once(mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call_mut(args) }
 }
-impl FnMut<(&[f64], &mut [f64])> for Function {
-	extern "rust-call" fn call_mut(&mut self, args: (&[f64], &mut [f64])) -> Self::Output { self.call(args) }
+impl FnMut<(&[f32], &mut [f32])> for Function {
+	extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) }
 }
-impl Fn<(&[f64], &mut [f64])> for Function {
-	extern "rust-call" fn call(&self, (input, output): (&[f64], &mut [f64])) -> Self::Output { call(&self, input, output); }
+impl Fn<(&[f32], &mut [f32])> for Function {
+	extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); }
 }
