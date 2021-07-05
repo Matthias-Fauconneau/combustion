@@ -1,6 +1,6 @@
 cargo-features=['edition2021']
 package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'cpu' }
-features= { gpu=['spirv','ash','rspirv','naga','spirv-tools','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow'] }
+features= { gpu=['spirv','ash','rspirv','spirv-tools','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow'] }
 bin=[
 	{name='cpu', path='cpu.rs'},# required-features=['ir','ir/jit']},
 	{name='cantera', path='cantera.rs', required-features=['rand']},

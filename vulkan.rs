@@ -130,7 +130,7 @@ impl Device {
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
 			std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
 			{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
-			{use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
+			#[cfg(feature="naga")] {use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
 			dbg!();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
 			dbg!();
