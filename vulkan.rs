@@ -28,7 +28,7 @@ impl Device {
 				)
 				//.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
-				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF])
+				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
 				, None
 			)?;
 			let debug_utils = DebugUtils::new(&entry, &instance);
@@ -128,8 +128,8 @@ impl Device {
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
-			pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-			std::fs::write("/var/tmp/spv", cast(code)).unwrap();
+			{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
+			{use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
 			dbg!();
 			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
 			dbg!();
