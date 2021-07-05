@@ -34,7 +34,7 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	FCvtFromSInt(Box<Expression>),
 	Sqrt(Box<Expression>),
 	Exp(Box<Expression>),
-	Log2(Box<Expression>),
+	Ln(Box<Expression>),
 	//Call { function: &'static str, arguments: Box<[Expression]> },
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
@@ -70,8 +70,6 @@ pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtTo
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Sqrt(box_(x.into())) }
-//pub fn exp2(x: impl Into<Expression>) -> Expression { Expression::Exp2(box_(x.into())) }
-//pub fn log2(x: impl Into<Expression>) -> Expression { Expression::Log2(box_(x.into())) }
 
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 
@@ -173,18 +171,21 @@ pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,
 	let ref x = f((1./2048.)*x.into());
 	let ref x2 = f(x*x);
 	let ref x3 = f(x2*x);
-	let ref a = f(1.+3./28.*x2+1./1680.*x3*x);
-	let ref b = f(1./2.*x+1./84.*x3);
+	let ref a = f(1.+(3./28.)*x2+(1./1680.)*x3*x);
+	let ref b = f((1./2.)*x+(1./84.)*x3);
 	let sq = |x,f:&mut Block| { let ref x=f(x); x*x };
 	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
 	//Expression::Exp(box_(x.into()))
 }
-pub fn log2(x: impl Into<Expression>, _: &mut Block) -> Expression {
-	/*let ref i = f(cast(I32, fdemote(x)));
-	let ref m = f(cast(F32, or(and(i, u32(0x007FFFFF)), u32(1f32.to_bits()))));
-	fpromote(fma(fma(fma(fma(fma(-0.034436006f32, m, 0.31821337f32), m, -1.2315303f32), m, 2.5988452f32), m, -3.3241990f32), m, 3.1157899f32) * (m - 1f32) + fcvt_from_sint(isub(ushr_imm(and(i, u32(0x7F800000)), 23), u32(127))))*/
-	//ast::log2(x)
-	Expression::Log2(box_(x.into()))
+pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -5
+	//let ref x = if x0 == 1024. || x0==1./2. { f(x) } else { f.trace(x) };
+	let x = (1./x0)*x.into();
+	let ref x = f(sqrt(sqrt(sqrt(sqrt(x)))));
+	let ref x = f((x-1.)/(x+1.));
+	let ref x2 = f(x*x);
+	let ref x4 = f(x2*x2);
+	let ref x6 = f(x4*x2);
+	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x4*x2 + (1./9.)*x6*x2)
 }
 
 pub mod interpret;

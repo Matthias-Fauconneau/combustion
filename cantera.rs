@@ -1,4 +1,4 @@
-#![feature(format_args_capture,iter_is_partitioned)]#![allow(non_snake_case)]
+#![feature(format_args_capture,iter_is_partitioned,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
 use std::os::raw::c_char;
 #[link(name = "cantera")]
 extern "C" {
@@ -51,8 +51,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let trace = ast::interpret::call(&rates, &input, &mut output);
 		range[0] = f64::min(range[0], trace.iter().copied().reduce(f64::min).unwrap_or(f64::INFINITY));
 		range[1] = f64::max(range[1], trace.iter().copied().reduce(f64::max).unwrap_or(-f64::INFINITY));
-		if range[0]<range[1] { println!("{} {}", range[0], range[1]); }
-
+		if range[0]<range[1] {
+			println!("trace {} {}", range[0], range[1]);
+			let ln = |x| {
+				const x0: f64 = 1.;
+				let ref x = f64::sqrt(x);
+				let ref x = x.sqrt();
+				let ref x = x.sqrt();
+				let ref x = x.sqrt();
+				let ref x = (1./x0)*x;
+				let ref x = (x-1.)/(x+1.);
+				let ref x2 = x*x;
+				let ref x4 = x2*x2;
+				let ref x6 = x4*x2;
+				16.*(f64::ln(x0) + 2.*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x6 + (1./9.)*x6*x2))
+			};
+			println!("trace {} {}", ln(range[0]), ln(range[1]));
+			println!("trace {} {}", f64::ln(range[0]), f64::ln(range[1]));
+			println!("trace {:.1?}", range.map(|x| f64::log10(num::relative_error(f64::ln(x), ln(x)))));
+		}
 		let_!{ [_energy_rate_RT, rates @ ..] = &*output => { //&*rates(&input) => {
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
@@ -91,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 		let e = test(&State{temperature, pressure_R, volume, amounts});
 		//println!("{temperature} {pressure} {e}");
-		assert!(e < 1e-2, "{temperature} {pressure} {e} {max}");
+		assert!(e < 1e-2, "T {temperature} P {pressure} E {e} {max}");
 		if e > max { max = e; println!("{i} {e:.0e}"); }
 	}
 	Ok(())

@@ -38,7 +38,7 @@ fn eval(state: &mut State, e: &Expression) -> DataValue {
 		FPromote(x) => F64(eval(state, x).f32() as f64),
 		Sqrt(x) => F64(f64::sqrt(eval(state, x).f64())),
 		Exp(x) => F64(f64::exp(eval(state, x).f64())),
-		Log2(x) => F64(f64::log2(eval(state, x).f64())),
+		Ln(x) => F64(f64::ln(eval(state, x).f64())),
 		Block { statements, result } => {
 			run(state, statements);
 			let result = eval(state, result);
