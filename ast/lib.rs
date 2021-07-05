@@ -3,7 +3,6 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
 #[derive(PartialEq, Eq, Debug, Clone)] pub struct Value(pub usize);
-//#[derive(PartialEq, Eq, Debug)] pub struct Variable(pub usize);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)] pub enum Type { I32, F32, F64 }
 
@@ -33,23 +32,15 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	FCvtToSInt(Box<Expression>),
 	FCvtFromSInt(Box<Expression>),
 	Sqrt(Box<Expression>),
-	Exp(Box<Expression>),
-	Ln(Box<Expression>),
-	//Call { function: &'static str, arguments: Box<[Expression]> },
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
 
 #[derive(Debug)] pub enum Statement {
 	Value { id: Value, value: Expression },
-	//Store { variable: Variable, value: Expression },
 	Branch { condition: Expression, consequent: Box<[Expression]>, alternative: Box<[Expression]>, results: Box<[Value]> },
-	Trace { id: Value },
 }
 
 pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
-
-//pub fn r#use(value: &Value) -> Expression { Expression::Value(Value(value.0)) }
-
 pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
 pub fn and(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::And(box_(a.into()), box_(b.into())) }
 pub fn or(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Or(box_(a.into()), box_(b.into())) }
@@ -96,17 +87,11 @@ impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &
 impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
-//#[must_use] fn define(id: Value, value: impl Into<Expression>) -> Statement { Statement::Define{ id, value: value.into() } }
-//#[must_use] pub fn store(variable: &Variable, value: impl Into<Expression>) -> Statement { Statement::Store{ variable: Variable(variable.0), value: value.into() } }
-//#[must_use] pub fn output(index: usize, value: impl Into<Expression>) -> Statement { Statement::Output{ index, value: value.into() } }
-
 pub struct FunctionBuilder {
-	//input: usize,
 	values: usize,
-	//variables: usize,
 }
 impl FunctionBuilder {
-	pub fn new(input: &[Value]) -> Self { Self { /*input: input.len(),*/ values: input.len()/*, variables: 0*/ } }
+	pub fn new(input: &[Value]) -> Self { Self { values: input.len() } }
 }
 
 pub struct Block<'t> {
@@ -138,13 +123,13 @@ impl<E:Into<Expression>> FnMut<(E,)> for Block<'_> { extern "rust-call" fn call_
 
 impl From<Block<'_>> for Box<[Statement]> { fn from(b: Block) -> Self { b.statements.into() } }
 
-impl Block<'_> {
+/*impl Block<'_> {
 	pub fn trace(&mut self, value: impl Into<Expression>) -> Value {
 		let id = def(value, self);
 		push(Statement::Trace{id: id.clone()}, self);
 		id
 	}
-}
+}*/
 pub struct Function {
 	pub input: usize,
 	pub statements: Box<[Statement]>,
@@ -153,9 +138,6 @@ pub struct Function {
 
 impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }
-
-#[cfg(feature="num")] impl num::Sqrt for Expression { fn sqrt(self) -> Self { sqrt(self) } }
-//#[cfg(feature="num")] impl num::Log for Expression { fn log2(self) -> Self { log2(self) } }
 
 #[track_caller] pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
 	iter.into_iter().fold(None, |sum, (c, e)|
@@ -175,10 +157,8 @@ pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,
 	let ref b = f((1./2.)*x+(1./84.)*x3);
 	let sq = |x,f:&mut Block| { let ref x=f(x); x*x };
 	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
-	//Expression::Exp(box_(x.into()))
 }
 pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -5
-	//let ref x = if x0 == 1024. || x0==1./2. { f(x) } else { f.trace(x) };
 	let x = (1./x0)*x.into();
 	let ref x = f(sqrt(sqrt(sqrt(sqrt(x)))));
 	let ref x = f((x-1.)/(x+1.));

@@ -41,7 +41,7 @@ impl FunctionBuilder<'t> {
 }
 
 fn load(base: Value, index: usize, f: &mut FunctionBuilder) -> Value { f.ins().load(F64, MemFlags::trusted(), base, (index*std::mem::size_of::<f64>()) as i32) }
-fn cast(to: Type, x: Value, f: &mut FunctionBuilder) -> Value { f.ins().bitcast(to, x) }
+//fn cast(to: Type, x: Value, f: &mut FunctionBuilder) -> Value { f.ins().bitcast(to, x) }
 fn and(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().band(a, b) }
 fn or(a: Value, b: Value, f: &mut FunctionBuilder) -> Value { f.ins().bor(a, b) }
 fn ishl_imm(x: Value, imm: u8, f: &mut FunctionBuilder) -> Value { f.ins().ishl_imm(x, imm as i64) }
@@ -78,8 +78,8 @@ fn expr(&mut self, e: &Expression) -> Value {
 		Value(v) => *self.values.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.values)),
 		&F32(v) => self.constants_f32[&(v as f32).to_bits()],
 		&F64(v) => self.constants_f64[&v.to_bits()],
-		Integer(v) => self.constants_u32[v],
-		Cast(to, x) => cast(match to {ast::Type::F32=>self::F32,ast::Type::F64=>self::F64,ast::Type::I32=>I32}, self.expr(x), self),
+		I32(v) => self.constants_u32[v],
+		Cast(to, x) => unimplemented!("{to:?} {x:?}"),//cast(match to {ast::Type::F32=>self::F32,ast::Type::F64=>self::F64,ast::Type::I32=>I32}, self.expr(x), self),
 		And(a, b) => and(self.expr(a), self.expr(b), self),
 		Or(a, b)  => or(self.expr(a), self.expr(b), self),
 		IShLImm(x, imm) => ishl_imm(self.expr(x), *imm, self),
@@ -110,7 +110,7 @@ fn load(&mut self, e: &Expression) -> ast::Type {
 	match e {
 		&F32(v) => { self.f32(v as f32); ast::Type::F32 },
 		&F64(v) => { self.f64(v); ast::Type::F64 },
-		&Integer(v) => { self.u32(v); ast::Type::I32 },
+		&I32(v) => { self.u32(v); ast::Type::I32 },
 		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
 		Cast(to, x) => { self.load(x); *to },
 		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x) => self.load(x),

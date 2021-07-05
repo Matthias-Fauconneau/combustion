@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	//let rates = ir::assemble(ir::compile(&rates));
+	let rates = ir::assemble(ir::compile(&rates));
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -17,18 +17,13 @@ fn main() -> anyhow::Result<()> {
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
 	let mut input = iter::box_([pressure_R, total_amount].into_iter().chain(state.iter().map(|&v| v)));
-	let mut range = [f64::INFINITY, -f64::INFINITY];
 	let f = move |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u; }
-		//rates(&input, f_u);
-		let trace = ast::interpret::call(&rates, &input ,f_u);
+		rates(&input, f_u);
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
-		range[0] = f64::min(range[0], trace.iter().copied().reduce(f64::min).unwrap());
-		range[1] = f64::max(range[1], trace.iter().copied().reduce(f64::max).unwrap());
-		println!("{} {}", range[0], range[1]);
 		true
 	};
 

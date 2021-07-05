@@ -33,44 +33,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let ref state = initial_state(&model);
 	use {iter::map, ast::let_};
-	/*pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> + '_ {
+	pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> + '_ {
 		let output = f.output.len();
-		//let f = ir::assemble(ir::compile(&f));
+		#[cfg(feature="ir")] let f = ir::assemble(ir::compile(&f));
 		move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
-	}*/
+	}
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	//let rates = compile(&rates);
+	let rates = compile(&rates);
 	assert!(state.volume == 1.);
-	let mut range = [f64::INFINITY, -f64::INFINITY];
-	let mut test = move |state: &State| {
+	let test = move |state: &State| {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
 		let input = iter::box_([*pressure_R, total_amount, *temperature].iter().chain(active_amounts).copied());
-		let mut output = vec![0.; rates.output.len()].into_boxed_slice();
-		let trace = ast::interpret::call(&rates, &input, &mut output);
-		range[0] = f64::min(range[0], trace.iter().copied().reduce(f64::min).unwrap_or(f64::INFINITY));
-		range[1] = f64::max(range[1], trace.iter().copied().reduce(f64::max).unwrap_or(-f64::INFINITY));
-		if range[0]<range[1] {
-			println!("trace {} {}", range[0], range[1]);
-			let ln = |x| {
-				const x0: f64 = 1.;
-				let ref x = f64::sqrt(x);
-				let ref x = x.sqrt();
-				let ref x = x.sqrt();
-				let ref x = x.sqrt();
-				let ref x = (1./x0)*x;
-				let ref x = (x-1.)/(x+1.);
-				let ref x2 = x*x;
-				let ref x4 = x2*x2;
-				let ref x6 = x4*x2;
-				16.*(f64::ln(x0) + 2.*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x6 + (1./9.)*x6*x2))
-			};
-			println!("trace {} {}", ln(range[0]), ln(range[1]));
-			println!("trace {} {}", f64::ln(range[0]), f64::ln(range[1]));
-			println!("trace {:.1?}", range.map(|x| f64::log10(num::relative_error(f64::ln(x), ln(x)))));
-		}
-		let_!{ [_energy_rate_RT, rates @ ..] = &*output => { //&*rates(&input) => {
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&input) => {
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
