@@ -6,7 +6,6 @@ struct FunctionBuilder {
 	input: usize,
 	instructions: Vec<String>,
 	values: Vec<Value>,
-	//variables: Vec<Variable>,
 	results: usize,
 }
 
@@ -14,26 +13,26 @@ impl FunctionBuilder {
 fn expr(&mut self, e: &Expression) -> String {
 	use Expression::*;
 	match e {
-		&Literal(v) => {
+		&F64(v) => {
 			if v == f64::floor(v) {
-				if v >= 1e4 { format!("{:e}", v) }
-				else { (v as i64).to_string()+"." }
+				/*if v >= 1e4 { format!("{:e}", v) }
+				else {*/ (v as i64).to_string()+"." //}
 			}
 			else { float_pretty_print::PrettyPrintFloat(v).to_string() }
 		}
-		Use(v) => {
+		Value(v) => {
 			if v.0 < self.uniform{ format!("uniform[{}]", v.0) }
 			else if v.0 < self.input { format!("input{}[id]", v.0) }
 			else { assert!(self.values.contains(v), "{} {:?} {:?}", self.instructions.iter().format("\n"), self.values, v); format!("_{}", v.0) }
 		},
-		//Load(v) => { assert!(self.variables.contains(v)); format!("_[{}]", v.0) },
 		Neg(x) => format!("-{}", self.expr(x)),
+		Max(a, b) => format!("max({}, {})", self.expr(a), self.expr(b)),
 		Add(a, b) => format!("({} + {})", self.expr(a), self.expr(b)),
 		Sub(a, b) => format!("({} - {})", self.expr(a), self.expr(b)),
 		LessOrEqual(a, b) => format!("{} <= {}", self.expr(a), self.expr(b)),
 		Mul(a, b) => format!("({} * {})", self.expr(a), self.expr(b)),
 		Div(a, b) => format!("({} / {})", self.expr(a), self.expr(b)),
-		Call { function, arguments } => format!("{function}({})", arguments.iter().map(|e| self.expr(e)).format(", ")),
+		Sqrt(x) => format!("sqrt({})", self.expr(x)),
 		Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			let result = self.expr(result);
@@ -41,6 +40,7 @@ fn expr(&mut self, e: &Expression) -> String {
 			self.instructions.push(format!("let _{id} = {result};"));
 			format!("_{id}")
 		}
+		_ => panic!("{e:?}")
 	}
 }
 fn push(&mut self, s: &Statement) {
@@ -52,13 +52,7 @@ fn push(&mut self, s: &Statement) {
 			assert!(!self.values.contains(id));
 			self.values.push(id.clone());
 		}
-		/*Store { variable, value } => {
-			let value = self.expr(value);
-			self.instructions.push(format!("_[{}] = {value};", variable.0));
-			//assert!(!self.variables.contains(variable));
-			self.variables.push(Variable(variable.0));
-		}*/
-		Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("output{index}[id] = {value};")) }
+		//Output { index, value } => { let value = self.expr(value); self.instructions.push(format!("output{index}[id] = {value};")) }
 		Branch { condition, consequent, alternative, results } => {
 			self.instructions.extend(results.iter().map(|id| format!("var _{}: f64;", id.0)));
 			self.values.extend(results.iter().cloned());
@@ -82,13 +76,13 @@ fn push(&mut self, s: &Statement) {
 pub fn from(uniform: usize, Function{input, output, /*variables,*/ statements}: &Function) -> Result<Box<[u32]>> {
 	let mut bindings = vec![format!("[[group(0), binding(0)]] var<push_constant> uniform : array<f64, {uniform}>;")];
 	bindings.extend((uniform..*input).map(|i| { let binding = 1+i-uniform; format!("[[group(0), binding({binding})]] var<storage> input{i}: [[access(read)]] array<f64>;") }));
-	bindings.extend((0..*output).map(|i| { let binding = 1+input-uniform+i; format!("[[group(0), binding({binding})]] var<storage> output{i}: [[access(write)]] array<f64>;") }));
+	bindings.extend((0..output.len()).map(|i| { let binding = 1+input-uniform+i; format!("[[group(0), binding({binding})]] var<storage> output{i}: [[access(write)]] array<f64>;") }));
 	let module = [
 		bindings,
 		vec!["[[stage(compute), workgroup_size(1)]] fn main([[builtin(global_invocation_id)]] id3: vec3<u32>) { let id = id3.x;".to_string()],// var _: array<f64, {}>;", variables)],
 		{
 			let mut f = FunctionBuilder{uniform, input: *input, instructions: vec![], values: vec![], /*variables: vec![],*/ results: 0};
-			for s in &**statements { println!("{s:?}"); f.push(s); }
+			for s in &**statements { f.push(s); }
 			f.instructions
 		},
 		vec!["}".into()]

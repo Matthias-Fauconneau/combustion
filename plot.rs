@@ -1,4 +1,4 @@
-#![feature(destructuring_assignment)]#![allow(non_snake_case)]
+#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case)]
 
 fn main() -> anyhow::Result<()> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
@@ -17,12 +17,14 @@ fn main() -> anyhow::Result<()> {
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
 	let mut input = iter::box_([pressure_R, total_amount].into_iter().chain(state.iter().map(|&v| v)));
-	let f = move |u: &[f64], f_u: &mut [f64]| {
+	let mut evaluations = 0;
+	let f = |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u; }
 		rates(&input, f_u);
+		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true
 	};
@@ -30,13 +32,14 @@ fn main() -> anyhow::Result<()> {
 	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
 	let plot_min_time = 0.1;
 	let (mut time, mut state) = (0., &*state);
+	let start = std::time::Instant::now();
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
 		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
-	println!("T {}", state[0]);
+	//println!("T {}", state[0]);
 	let mut min = 0f64;
 	use iter::map;
 	let values = map(0..(0.2/model.time_step) as usize, |_| if let [temperature, active_amounts@..] = state {
@@ -46,7 +49,10 @@ fn main() -> anyhow::Result<()> {
 		min = min.min(state[1..].iter().copied().reduce(f64::min).unwrap());
 		value
 	} else { unreachable!() });
+	let end = std::time::Instant::now();
+	let time = (end-start).as_secs_f64();
 	println!("T {}", state[0]);
+	println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
 	//println!("{:.0e}", min);
 	let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0)).iter().position(|active| !active).unwrap_or(species.len()-1);
 	let key = map((0..active).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
