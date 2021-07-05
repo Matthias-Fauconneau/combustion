@@ -128,6 +128,7 @@ impl Device {
 																																																																	  .push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module).name(&CStr::from_bytes_with_nul(b"main\0").unwrap()).build(), layout, ..default()}];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
 			{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
 			{use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
 			dbg!();

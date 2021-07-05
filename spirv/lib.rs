@@ -74,8 +74,9 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
 	b.memory_model(AddressingModel::Logical, MemoryModel::Vulkan);
 	let u32 = b.type_int(32, 0);
-	let uvec3 = b.type_vector(u32, 3);
-	let id = b.variable(uvec3, None, StorageClass::UniformConstant, None);
+	let v3u = b.type_vector(u32, 3);
+	let pv3u = b.type_pointer(None, StorageClass::Input, v3u);
+	let id = b.variable(pv3u, None, StorageClass::Input, None);
 	b.decorate(id, BuiltIn, [Operand::BuiltIn(BuiltIn::GlobalInvocationId)]);
 	let f64 = b.type_float(64);
 	let array = b.type_runtime_array(f64);
@@ -98,7 +99,9 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	let return_type = b.type_void();
 	let function_type = b.type_function(return_type, vec![]);
 	let f = b.begin_function(return_type, /*id: */None, FunctionControl::DONT_INLINE | FunctionControl::CONST, function_type)?;
+	b.execution_mode(f, ExecutionMode::LocalSize, [1536, 1, 1]);
 	b.begin_block(None)?;
+	let id = b.load(v3u, None, id, None, [])?;
 	let id = b.composite_extract(u32, None, id, [0])?;
 	let uniform_constant = b.type_pointer(None, StorageClass::UniformConstant, f64);
 	let input = map(&*input, |&input| {
