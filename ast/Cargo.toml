@@ -6,7 +6,6 @@ version= '0.0.0'
 edition= '2021'
 
 [dependencies]
-derive_more='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map= '*'
 num= {optional=true, git='https://github.com/Matthias-Fauconneau/num'}

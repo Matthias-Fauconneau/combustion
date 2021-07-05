@@ -42,6 +42,7 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 }
 
 pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
+//pub fn float(float: f64) -> Expression { Expression::Float(float) }
 pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
 pub fn and(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::And(box_(a.into()), box_(b.into())) }
 pub fn or(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Or(box_(a.into()), box_(b.into())) }
@@ -75,18 +76,22 @@ impl std::ops::Neg for &Value { type Output = Expression; fn neg(self) -> Self::
 impl<E:Into<Expression>> std::ops::Add<E> for &Value { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for &Value { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
 impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
-impl<E:Into<Expression>> std::ops::Div<E> for &Value { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
+//impl<E:Into<Expression>> std::ops::Div<E> for &Value { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
+impl std::ops::Div<Expression> for &Value { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
+impl std::ops::Div<&Value> for &Value { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
+//impl std::ops::Div<f32> for &Value { type Output = Expression; fn div(self, b: f32) -> Self::Output { mul(1./b, self) } }
+impl std::ops::Div<f64> for &Value { type Output = Expression; #[track_caller] fn div(self, b: f64) -> Self::Output { assert!(f64::abs(b)>1e-28); mul(1./b, self) } }
 
 impl From<f32> for Expression { fn from(v: f32) -> Self { Self::F32(v) } }
 impl From<f64> for Expression { fn from(v: f64) -> Self { Self::Float(v) } }
-impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(self, b) } }
-impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
-impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }
-impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
-impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
-impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
-impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
-impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
+impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(Expression::Float(self), b) } }
+impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(Expression::Float(self), b) } }
+impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(Expression::Float(self), b) } }
+impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(Expression::Float(self), b) } }
+impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(Expression::Float(self), b) } }
+impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(Expression::Float(self), b) } }
+impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(Expression::Float(self), b) } }
+impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(Expression::Float(self), b) } }
 
 pub struct FunctionBuilder {
 	values: usize,

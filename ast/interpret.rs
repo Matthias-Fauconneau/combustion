@@ -7,14 +7,24 @@ impl DataValue {
 	fn f32(self) -> f32 { if let Self::F32(v) = self { v } else { panic!("{self:?}") } }
 	//#[track_caller] fn f64(self) -> f64 { if let Self::F64(v) = self { v } else { panic!("{self:?}") } }
 }
+impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
-#[derive(derive_more::Deref,derive_more::DerefMut)] struct State {
-	#[deref]#[deref_mut] values: Vec<DataValue>,
+type State = Vec<DataValue>;
+
+fn to_string(state: &State, expression: &Expression) -> String {
+	use Expression::*;
+	match expression {
+		Float(x) => format!("{:e}", x),
+		Value(id) => format!("{}", state[id.0].clone()),
+		Add(a, b) => format!("{} + {}", eval(state, a), eval(state, b)),
+		Mul(a, b) => format!("{} * {}", eval(state, a), eval(state, b)),
+		e => panic!("{:?}", e),
+	}
 }
 
-fn eval(state: &mut State, e: &Expression) -> DataValue {
+fn eval(state: &State, expression: &Expression) -> DataValue {
 	use {Expression::*, DataValue::{Bool, I32, F64, F32}};
-	let result = match e {
+	let result = match expression {
 		&Expression::I32(value) => I32(value),
 		&Expression::F32(value) => F32(value),
 		&Expression::F64(value) => F64(value),
@@ -46,20 +56,21 @@ fn eval(state: &mut State, e: &Expression) -> DataValue {
 		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
 		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
 		Block { statements, result } => {
+			let ref mut state = state.clone();
 			run(state, statements);
 			let result = eval(state, result);
-			for statement in statements.iter() {
+			/*for statement in statements.iter() {
 				match statement {
 					Statement::Value{ id, .. } => { state[id.0] = DataValue::None; }
 					//Statement::Trace{..} => {},
 					_ => { unreachable!() }
 				}
-			}
+			}*/
 			result
 		},
-		e => panic!("{e:?}"),
+		expression => panic!("{expression:?}"),
 	};
-	//assert!(result.is_finite());//, "{result}: {expression:?} {}", self.debug(expression));
+	if let F32(x) = result { assert!(f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
 	result
 }
 
@@ -95,7 +106,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 
 pub fn call(f: &Function, input: &[f32], output: &mut [f32]) {
 	assert!(input.len() == f.input);
-	let mut state = State{values: iter::map(input, |&v| DataValue::F32(v)).into_vec()};
+	let mut state = iter::map(input, |&v| DataValue::F32(v)).into_vec();
 	run(&mut state, &f.statements);
 	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F32(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
 }

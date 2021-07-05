@@ -5,12 +5,12 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 	map
 }
 
-use ast::*;
+use ast::{*, Expression::Float as c};
 
-fn product_of_exponentiations(c: &[impl Copy+Into<i16>], v: &[Value]) -> Expression {
-	let (num, div) : (Vec::<_>,Vec::<_>) = c.iter().map(|&c| c.into()).zip(v).filter(|&(c,_)| c!=0).partition(|&(c,_)| c>0);
-	let num : Option<Expression> = num.into_iter().fold(None, |mut p, (c,e)|{ for _ in 0..c { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
-	let div : Option<Expression> = div.into_iter().fold(None, |mut p, (c,e)|{ for _ in 0..-c { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
+fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Expression {
+	let (num, div) : (Vec::<_>,Vec::<_>) = n.iter().map(|&n| n.into()).zip(b).filter(|&(n,_)| n!=0).partition(|&(n,_)| n>0);
+	let num : Option<Expression> = num.into_iter().fold(None, |mut p, (n,e)|{ for _ in 0..n { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
+	let div : Option<Expression> = div.into_iter().fold(None, |mut p, (n,e)|{ for _ in 0..-n { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
 	match (num, div) {
 		(None, None) => None,
 		(Some(num), None) => Some(num),
@@ -28,7 +28,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 		let results = map(species, |_| f.value());
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
 		push(Statement::Select{
-			condition: less_or_equal(T.T, f64::from_bits(temperature_split)),
+			condition: less_or_equal(T.T, c(f64::from_bits(temperature_split))),
 			true_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f)),
 			false_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f)),
 			results
@@ -47,7 +47,7 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 // A.T^β.exp(-Ea/kT)
 fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T4,rcp_T,rcp_T2,..}: T<'_>, f: &mut Block) -> Expression {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		if temperature_exponent == 0. { A.into() }
+		if temperature_exponent == 0. { c(A) }
 		else if temperature_exponent == -1. { A * rcp_T }
 		else if temperature_exponent == 1. { A * T }
 		else if temperature_exponent == 2. { A * T2 }
@@ -55,7 +55,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 		else if temperature_exponent == -2. { A * rcp_T2 }
 		else { unreachable!() }
 	} else {
-		let βlnT𐊛lnA = if temperature_exponent == 0. { f64::ln(A).into() } else { temperature_exponent * ln_T + f64::ln(A) };
+		let βlnT𐊛lnA = if temperature_exponent == 0. { c(f64::ln(A)) } else { temperature_exponent * ln_T + c(f64::ln(A)) };
 		let ln_arrhenius = if activation_temperature == 0. { βlnT𐊛lnA } else { -activation_temperature * rcp_T + βlnT𐊛lnA };
 		exp(ln_arrhenius, f)
 	}
@@ -73,12 +73,16 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|f|{
 			let ref k_inf = def(arrhenius(k_inf, T, f), f);
 			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T, f) / k_inf, f);
-			let Fcent = {let T{T,rcp_T,..}=T; (1.-A) * exp(T/(-T3), f) + A * exp(T/(-T1), f) + exp((-T2)*rcp_T, f)};
+			let Fcent = {let T{T,rcp_T,..}=T; sum([
+				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
+				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
+				(T2 != 0.).then(|| exp((-T2)*rcp_T, f))
+			].into_iter().filter_map(|x| x))};
 			let ref lnFcent = def(ln(1./2., Fcent, f), f); // 0.1-0.7 => e-3
-			let c =-0.67*lnFcent - 0.4*f64::ln(10.);
+			let C =-0.67*lnFcent - 0.4*f64::ln(10.);
 			let N = -1.27*lnFcent + 0.75*f64::ln(10.);
-			let ref lnPr𐊛c = def(ln(1., Pr, f) + c, f); // 2m - 2K
-			let ref f1 = f(lnPr𐊛c / (-0.14*lnPr𐊛c+N));
+			let ref lnPr𐊛C = def(ln(1., Pr, f) + C, f); // 2m - 2K
+			let ref f1 = f(lnPr𐊛C / (-0.14*lnPr𐊛C+N));
 			let F = exp(lnFcent/(f1*f1+1.), f);
 			k_inf * Pr / (Pr + 1.) * F
 		})}
@@ -88,9 +92,9 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Value]> {
 	map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f); // todo: CSE
-		let forward = product_of_exponentiations(reactants, concentrations);
+		let forward = product_of_exponentiations(concentrations, reactants);
 		let coefficient = if let ReactionModel::Irreversible = model { forward } else {
-			let rcp_equilibrium_constant_0 = product_of_exponentiations(net, exp_Gibbs0_RT);
+			let rcp_equilibrium_constant_0 = product_of_exponentiations(exp_Gibbs0_RT, net);
 			//let rcp_equilibrium_constant_0 = exp2(idot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0,
@@ -98,7 +102,7 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 				-1 => rcp_C0 * rcp_equilibrium_constant_0,
 				_ => unreachable!()
 			};
-			let reverse = rcp_equilibrium_constant * product_of_exponentiations(products, concentrations);
+			let reverse = rcp_equilibrium_constant * product_of_exponentiations(concentrations, products);
 			forward - reverse
 		};
 		f(forward_rate_constant * coefficient)
