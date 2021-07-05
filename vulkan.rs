@@ -43,16 +43,15 @@ impl Device {
 				message_type: DebugUtilsMessageTypeFlagsEXT::all(), pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?;
 
 			let device = *instance.enumerate_physical_devices()?.first().unwrap();
+			//dbg!(instance.get_physical_device_properties(device));
 			let timestamp_period = instance.get_physical_device_properties(device).limits.timestamp_period;
-			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_size);
-			//dbg!(instance.get_physical_device_properties(device).limits.max_compute_work_group_count);
-			let memory_properties = {let mut p = default(); instance.get_physical_device_memory_properties2(device,&mut p); p}.memory_properties;
+			let memory_properties = instance.get_physical_device_memory_properties(device);
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
 			let device = instance.create_device(
 				device,
 				&DeviceCreateInfo::builder()
 					.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
-					.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
+					//.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
 					.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()]),
 				None
 			)?;
