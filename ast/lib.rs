@@ -95,39 +95,31 @@ impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &
 impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(Expression::Float(self), b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(Expression::Float(self), b) } }
 
-pub struct FunctionBuilder {
-	values: usize,
-}
-impl FunctionBuilder {
-	pub fn new(input: &[Value]) -> Self { Self { values: input.len() } }
-}
-
+//type FunctionBuilder = Vec<String>;
+//impl FunctionBuilder { pub fn new(input: &[&str]) -> Self { Self { values: input.iter().map(|s| s.to_string()).collect() } } }
 pub struct Block<'t> {
 	pub statements: Vec<Statement>,
-	pub values: &'t mut usize,
+	pub values: &'t mut Vec<String>,
 }
 pub fn push(s: Statement, block: &mut Block) { block.statements.push(s) }
 impl Block<'t> {
-	pub fn new(f: &'t mut FunctionBuilder) -> Self { Self { statements: vec![], values: &mut f.values } }
+	pub fn new(values: &'t mut Vec<String>) -> Self { Self{statements: vec![], values} }
 	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ statements: vec![], values: &mut self.values };
 		let result = build(&mut block);
 		Expression::Block { statements: block.statements.into(), result: box_(result) }
 	}
-	pub fn value(&mut self) -> Value {
-		let id = Value(*self.values);
-		*self.values += 1;
+	pub fn value(&mut self, debug: String) -> Value {
+		let id = Value(self.values.len());
+		self.values.push(debug);
 		id
 	}
 }
-pub fn def(value: impl Into<Expression>, block: &mut Block) -> Value {
-	let id = block.value();
+pub fn def(value: impl Into<Expression>, block: &mut Block, debug: String) -> Value {
+	let id = block.value(debug);
 	push(Statement::Value{id: id.clone(), value: value.into()}, block);
 	id
 }
-
-impl<E:Into<Expression>> FnOnce<(E,)> for Block<'_> { type Output = Value; extern "rust-call" fn call_once(mut self, args: (E,)) -> Self::Output { self.call_mut(args) }}
-impl<E:Into<Expression>> FnMut<(E,)> for Block<'_> { extern "rust-call" fn call_mut(&mut self, (value,): (E,)) -> Self::Output  { def(value, self) } }
 
 impl From<Block<'_>> for Box<[Statement]> { fn from(b: Block) -> Self { b.statements.into() } }
 
@@ -135,6 +127,7 @@ pub struct Function {
 	pub input: usize,
 	pub statements: Box<[Statement]>,
 	pub output: Box<[Expression]>,
+	pub values: Box<[String]>,
 }
 
 impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
@@ -150,22 +143,24 @@ pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.
 }
 pub fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
 
+#[macro_export] macro_rules! l { ($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))) ) }
+
 pub fn exp_approx(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,1/) (-9->-7)
-	let ref x = f((1./2048.)*x.into());
-	let ref x2 = f(x*x);
-	let ref x3 = f(x2*x);
-	let ref a = f(1.+(3./28.)*x2+(1./1680.)*x3*x);
-	let ref b = f((1./2.)*x+(1./84.)*x3);
-	let sq = |x,f:&mut Block| { let ref x=f(x); x*x };
+	let ref x = l!(f (1./2048.)*x.into());
+	let ref x2 = l!(f x*x);
+	let ref x3 = l!(f x2*x);
+	let ref a = l!(f 1.+(3./28.)*x2+(1./1680.)*x3*x);
+	let ref b = l!(f (1./2.)*x+(1./84.)*x3);
+	let sq = |x,f:&mut Block| { let ref x=l!(f x); x*x };
 	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
 }
 pub fn ln_approx(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -5
 	let x = (1./x0)*x.into();
-	let ref x = f(sqrt(sqrt(sqrt(sqrt(x)))));
-	let ref x = f((x-1.)/(x+1.));
-	let ref x2 = f(x*x);
-	let ref x4 = f(x2*x2);
-	let ref x6 = f(x4*x2);
+	let ref x = l!(f sqrt(sqrt(sqrt(sqrt(x)))));
+	let ref x = l!(f (x-1.)/(x+1.));
+	let ref x2 = l!(f x*x);
+	let ref x4 = l!(f x2*x2);
+	let ref x6 = l!(f x4*x2);
 	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x4*x2 + (1./9.)*x6*x2)
 }
 

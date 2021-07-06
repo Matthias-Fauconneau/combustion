@@ -9,7 +9,13 @@ impl DataValue {
 }
 impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
-type State = Vec<DataValue>;
+#[derive(Clone)] struct State<'t> {
+	values: Box<[DataValue]>,
+	debug: &'t [String],
+}
+impl std::ops::Deref for State<'_> { type Target=[DataValue]; fn deref(&self) -> &Self::Target { &self.values} }
+impl std::ops::DerefMut for State<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.values} }
+
 
 fn to_string(state: &State, expression: &Expression) -> String {
 	use Expression::*;
@@ -56,12 +62,12 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		//FPromote(x) => F64(eval(state, x).f32() as f64),
 		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
 		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
-		Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp(x)),
+		Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp({assert!(x < 1e5, "{x} {expression:?}"); x})),
 		Exp(x) if let F64(x) = eval(state, x) => F64(f64::exp(x)),
 		Ln{x,..} if let F32(x) = eval(state, x) => F32(f32::ln(x)),
 		Ln{x,..} if let F64(x) = eval(state, x) => F64(f64::ln(x)),
 		Block { statements, result } => {
-			let ref mut state = state.clone();
+			let ref mut state = (*state).clone();
 			run(state, statements);
 			let result = eval(state, result);
 			/*for statement in statements.iter() {
@@ -85,7 +91,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 		match statement {
 			Value { id, value } => {
 				let value = eval(state, value);
-				if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
+				//if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
 				assert!(state[id.0] == DataValue::None);
 				state[id.0] = value;
 			},
@@ -97,7 +103,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 				let values = if eval(state, condition).bool() { true_exprs } else { false_exprs };
 				for (id, value) in results.iter().zip(&**values) {
 					let value = eval(state, value);
-					if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
+					//if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
 					assert!(state[id.0] == DataValue::None);
 					state[id.0] = value;
 				}
@@ -111,7 +117,10 @@ fn run(state: &mut State, statements: &[Statement]) {
 
 pub fn call(f: &Function, input: &[f32], output: &mut [f32]) {
 	assert!(input.len() == f.input);
-	let mut state = iter::map(input, |&v| DataValue::F32(v)).into_vec();
+	let mut state = State{
+		values: input.iter().map(|&v| DataValue::F32(v)).chain((0..f.values.len()).map(|_| DataValue::None)).collect(),
+		debug: &f.values
+	};
 	run(&mut state, &f.statements);
 	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F32(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
 }

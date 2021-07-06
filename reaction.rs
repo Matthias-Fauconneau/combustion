@@ -21,10 +21,10 @@ fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Express
 
 use {iter::{box_, map}, super::*};
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
-fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block) -> Box<[Value]> {
+fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())) {
-		let results = map(species, |_| f.value());
+		let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
 		push(Statement::Select{
 			condition: less_or_equal(T.T, c(f64::from_bits(temperature_split))),
@@ -65,23 +65,23 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		Elementary|Irreversible => arrhenius(k_inf, T, f),
 		ThreeBody{efficiencies} => arrhenius(k_inf, T, f) * dot(efficiencies, concentrations),
 		PressureModification{efficiencies, k0} => f.block(|f|{
-			let ref C_k0 = def(dot(efficiencies, concentrations) * arrhenius(k0, T, f), f);
-			let ref k_inf = def(arrhenius(k_inf, T, f), f);
+			let ref C_k0 = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f));
+			let ref k_inf = l!(f arrhenius(k_inf, T, f));
 			(C_k0 * k_inf) / (C_k0 + k_inf)
 		}),
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|f|{
-			let ref k_inf = def(arrhenius(k_inf, T, f), f);
-			let ref Pr = def(dot(efficiencies, concentrations) * arrhenius(k0, T, f) / k_inf, f);
+			let ref k_inf = l!(f arrhenius(k_inf, T, f));
+			let ref Pr = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f) / k_inf);
 			let Fcent = {let T{T,rcp_T,..}=T; sum([
 				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
 				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
 				(T2 != 0.).then(|| exp((-T2)*rcp_T, f))
 			].into_iter().filter_map(|x| x))};
-			let ref lnFcent = def(ln(1./2., Fcent, f), f); // 0.1-0.7 => e-3
+			let ref lnFcent = l!(f ln(1./2., Fcent, f)); // 0.1-0.7 => e-3
 			let C =-0.67*lnFcent - 0.4*f64::ln(10.);
 			let N = -1.27*lnFcent + 0.75*f64::ln(10.);
-			let ref lnPr𐊛C = def(ln(1., Pr, f) + C, f); // 2m - 2K
-			let ref f1 = f(lnPr𐊛C / (-0.14*lnPr𐊛C+N));
+			let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
+			let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
 			let F = exp(lnFcent/(f1*f1+1.), f);
 			k_inf * Pr / (Pr + 1.) * F
 		})}
@@ -104,7 +104,7 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 			let reverse = rcp_equilibrium_constant * product_of_exponentiations(concentrations, products);
 			forward - reverse
 		};
-		f(forward_rate_constant * coefficient)
+		l!(f forward_rate_constant * coefficient)
 	})
 }
 
@@ -115,29 +115,30 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 		active.iter().position(|active| !active).unwrap_or(species.len()-1)
 	};
 	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
-	let mut function = FunctionBuilder::new(input);
-	let mut f = Block::new(&mut function);
-	let ref ln_T = def(ln(1024., T, &mut f), &mut f);
-	let ref T2 = f(T*T);
-	let ref T3 = f(T*T2);
-	let ref T4 = f(T*T3);
-	let ref rcp_T = f(1./T);
-	let ref rcp_T2 = f(num::sq(rcp_T));
-	let ref rcp_C0 = f((1./NASA7::reference_pressure) * T);
-	let ref C0 = f(NASA7::reference_pressure * rcp_T);
-	let ref total_concentration = f(pressure_R / T); // Constant pressure
+	let mut values = ["pressure_","total_amount","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
+	let mut function = Block::new(&mut values);
+	let ref mut f = function;
+	let ref ln_T = l!(f ln(1024., T, f));
+	let ref T2 = l!(f T*T);
+	let ref T3 = l!(f T*T2);
+	let ref T4 = l!(f T*T3);
+	let ref rcp_T = l!(f 1./T);
+	let ref rcp_T2 = l!(f num::sq(rcp_T));
+	let ref rcp_C0 = l!(f (1./NASA7::reference_pressure) * T);
+	let ref C0 = l!(f NASA7::reference_pressure * rcp_T);
+	let ref total_concentration = l!(f pressure_R / T); // Constant pressure
 	let T = T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2};
-	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, &mut f);
-	let ref density = f(total_concentration / total_amount);
-	let active_concentrations = map(0..active, |k| f(density*max(0., &active_amounts[k])));
-	let inert_concentration = f(total_concentration - active_concentrations.iter().sum::<Expression>());
+	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, f, "exp_Gibbs0_RT");
+	let ref density = l!(f total_concentration / total_amount);
+	let active_concentrations = map(0..active, |k| l!(f density*max(0., &active_amounts[k])));
+	let inert_concentration = l!(f total_concentration - active_concentrations.iter().sum::<Expression>());
 	let concentrations = box_(active_concentrations.into_vec().into_iter().chain([inert_concentration].into_iter()));
-	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, &mut f);
-	let rates = map(0..active, |specie| f(idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
-	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, &mut f);
+	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
+	let rates = map(0..active, |specie| l!(f idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
+	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, f, "enthalpy_RT");
 	let dot = |a:&[Value], b:&[Value]| iter::dot(a.iter().zip(b.iter()));
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
-	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, &mut f));
+	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
 	let dtT_T = - energy_rate_RT / Cp;
-	Function{output: box_([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: f.into(), input: input.len()}
+	Function{output: box_([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.into(), input: input.len(), values: values.into()}
 }}}
