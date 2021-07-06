@@ -18,6 +18,7 @@ fn to_string(state: &State, expression: &Expression) -> String {
 		Value(id) => format!("{}", state[id.0].clone()),
 		Add(a, b) => format!("{} + {}", eval(state, a), eval(state, b)),
 		Mul(a, b) => format!("{} * {}", eval(state, a), eval(state, b)),
+		Exp(x) => format!("exp({})", eval(state, x)),
 		e => panic!("{:?}", e),
 	}
 }
@@ -55,6 +56,10 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		//FPromote(x) => F64(eval(state, x).f32() as f64),
 		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
 		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
+		Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp(x)),
+		Exp(x) if let F64(x) = eval(state, x) => F64(f64::exp(x)),
+		Ln{x,..} if let F32(x) = eval(state, x) => F32(f32::ln(x)),
+		Ln{x,..} if let F64(x) = eval(state, x) => F64(f64::ln(x)),
 		Block { statements, result } => {
 			let ref mut state = state.clone();
 			run(state, statements);
@@ -70,7 +75,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		},
 		expression => panic!("{expression:?}"),
 	};
-	if let F32(x) = result { assert!(f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
+	if let F32(x) = result { assert!(false || f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
 	result
 }
 

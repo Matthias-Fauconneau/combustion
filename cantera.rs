@@ -38,12 +38,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	use {iter::map, ast::let_};
 	assert!(state.volume == 1.);
 	let test = move |state: &State| {
+		use itertools::Itertools;
+
 		let State{temperature, pressure_R, amounts, ..} = state;
+
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
 		let input = iter::box_([total_amount, *temperature].iter().chain(active_amounts).copied().map(|input| vec![input as _; 1].into_boxed_slice()));
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input)).unwrap()[0] => {
-		let rates = map(&*rates, |&v| v as _);
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input)).unwrap() => {
+		let rates = map(&*rates, |v| v[0] as _);
+		assert!(rates.len() == species.len()-1, "{}", rates.len());
+		println!("{}", rates.iter().format(" "));
+
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
@@ -54,9 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let order = |o: &[f64]| map(&species_names[0..species.len()-1], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			order(&map(rates, |c| c*1000.)) // kmol -> mol
 		};
-		use itertools::Itertools;
+		assert!(cantera.len() == species.len()-1);
+		println!("{}", cantera.iter().format(" "));
+
 		let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
-		if false { rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
+		if true { rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
 		else {
 			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
 			let nekrk = nekrk.stdout;
