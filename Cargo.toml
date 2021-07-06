@@ -1,28 +1,34 @@
 cargo-features=['edition2021']
-package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'plot' }
-features= { gpu=['spirv','vulkan','anyhow','fehler'], plot=['cvode','ui','image','png','anyhow'], default=['itertools'] }
+package={name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021'}
+features={yaml=['yaml-rust','pest_derive','pest'], transport=['nalgebra'], gpu=['spirv','vulkan','anyhow','fehler'], plot=['cvode','ui','image','png','anyhow'], default=['yaml','itertools','rand']}
+lib={path='lib.rs'}
 bin=[
-	{name='test', path='test.rs', required-features=['itertools']},
-	{name='cantera', path='cantera.rs', required-features=['itertools','rand']},
-	{name='plot', path='plot.rs', required-features=['plot']}
+	{name='main', path='main.rs', required-features=['yaml','itertools']},
+	{name='cantera', path='cantera.rs', required-features=['yaml','itertools','rand']},
+	{name='plot', path='plot.rs', required-features=['yaml','plot']}
 ]
 
 [dependencies]
-anyhow= {optional=true, version='*' }
-fehler= {optional=true, version='*' }
-itertools= {optional=true, version='*' }
-iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-num= {git='https://github.com/Matthias-Fauconneau/num'}
-ast= {path='ast'}
-yaml-model= {path='yaml'}
-chemistry= {path='chemistry'}
-reaction= {path='reaction'}
-ir= {optional=true, path='ir', features=['jit']}
-vulkan= {optional=true, path='vulkan'}
-spirv= {optional=true, path='spirv', package='ast-spirv'}
-rand= {optional=true, version='*'}
-cvode= {optional=true, path='cvode'}
-ui= {optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
-image= {optional=true, git='https://github.com/Matthias-Fauconneau/image'}
-png= {optional=true, package= 'image', version='', default-features=false, features= ['png']}
-transport= {optional=true, path='transport'}
+serde={version='*', features=['derive']}
+strum='*'
+strum_macros='*'
+linear-map={version='*', features=['serde_impl']}
+anyhow={optional=true, version='*' }
+fehler={optional=true, version='*' }
+itertools={optional=true, version='*' }
+iter={git='https://github.com/Matthias-Fauconneau/iter'}
+num={git='https://github.com/Matthias-Fauconneau/num'}
+yaml-rust={optional=true, version='*' }
+pest_derive={optional=true, version='*' }
+pest={optional=true, version='*' }
+float-pretty-print='*'
+ast={path='ast'}
+rand={optional=true, version='*'}
+nalgebra={optional=true, version='*'}
+spirv={optional=true, path='spirv', package='ast-spirv'}
+vulkan={optional=true, path='vulkan'}
+cvode={optional=true, path='cvode'}
+ir={optional=true, path='ir', features=['jit']}
+ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
+image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
+png={optional=true, package= 'image', version='', default-features=false, features= ['png']}

@@ -1,4 +1,4 @@
-#![feature(array_map,iter_partition_in_place)]#![allow(non_snake_case,non_upper_case_globals)]
+//#![feature(array_map,iter_partition_in_place)]#![allow(non_snake_case,non_upper_case_globals)]
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -15,14 +15,8 @@ impl std::fmt::Display for Pretty<&u8> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { self.0.fmt(fmt) }
 }
 
-
-use iter::map;
-
-extern crate pest;
-#[macro_use]
-extern crate pest_derive;
-use pest::Parser;
-#[derive(Parser)]#[grammar_inline = r#"
+use {iter::map, pest::Parser};
+#[derive(pest_derive::Parser)]#[grammar_inline = r#"
 	WHITESPACE = _{ " " }
 	atom = { "H" | "O" | "C" | "AR" | "N" }
 	count = @{ '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
@@ -46,7 +40,7 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 }
 
 pub use yaml_rust::YamlLoader as Loader;
-use chemical_model::*;
+use combustion::model::*;
 
 pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 	use std::str::FromStr;
@@ -131,74 +125,3 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 		time_step: 1e-5,
 	}
 }
-
-/*pub fn to_string(model: &Model) -> std::fmt::Result<String> {
-	let mut o = String::new();
-	use std::fmt::Write;
-	writeln!(o, "#![enable(unwrap_newtypes)]")?;
-	writeln!(o, "(")?;
-	writeln!(o, "time_step: {},", Pretty(&model.time_step))?;
-	use itertools::Itertools;
-	impl std::fmt::Display for Pretty<&Map<&str, f64>> {
-		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
-	}
-	impl std::fmt::Display for Pretty<&Map<&str, u8>> {
-		fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "{{{}}}", self.0.iter().format_with(", ", |(k,v), f| f(&format_args!("\"{}\": {}", k, Pretty(v))))) }
-	}
-	writeln!(o, "state: (temperature: {}, pressure: {}, volume: {}, amount_proportions: {}),",
-		model.state.temperature, model.state.pressure, model.state.volume, Pretty(&model.state.amount_proportions))?;
-	writeln!(o, "species: {{")?;
-	for (name, Specie{composition, thermodynamic:NASA7{temperature_ranges, pieces}, transport}) in &model.species {
-		writeln!(o, "\"{}\": (", name)?;
-		writeln!(o, "\tcomposition: {:?},", composition)?;
-		writeln!(o, "\tthermodynamic: (")?;
-		impl std::fmt::Display for Pretty<&[f64]> {
-			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "[{}]", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
-		}
-		impl<T, const N: usize> std::fmt::Display for Pretty<&[T; N]> where for<'t> Pretty<&'t T>: std::fmt::Display {
-			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "({})", self.0.iter().format_with(", ", |v, f| f(&format_args!("{}", Pretty(v))))) }
-		}
-		writeln!(o, "\t\ttemperature_ranges: {},", Pretty(temperature_ranges.as_ref()))?;
-		writeln!(o, "\t\t\tpieces: [")?;
-		for piece in pieces.iter() { writeln!(o, "\t\t\t{},", Pretty(piece))?; }
-		writeln!(o, "\t\t],")?;
-		writeln!(o, "\t),")?;
-		struct Fields<'t, const N: usize>(&'t [(&'t str, f64); N]);
-		impl<const N: usize> std::fmt::Display for Fields<'_, N> {
-			#[throws(std::fmt::Error)] fn fmt(&self, fmt: &mut std::fmt::Formatter) {
-				let nonzero = self.0.into_iter().filter(|(_,v)| *v != 0.).collect::<Box<_>>();
-				write!(fmt, "({})", nonzero.iter().format_with(", ", |(k,v), f| f(&format_args!("{}: {}", k, Pretty(v)))))?
-			}
-		}
-		writeln!(o, "\ttransport: (well_depth_K: {}, diameter_A: {}, geometry: {})", transport.well_depth_K, transport.diameter_Å, {use Geometry::*; match transport.geometry {
-			Atom => format!("Atom"),
-			Linear{polarizability_Å3, rotational_relaxation} => format!("Linear{}", Fields(&[("polarizability_A3",polarizability_Å3),("rotational_relaxation",rotational_relaxation)])),
-			Nonlinear{polarizability_Å3, rotational_relaxation, permanent_dipole_moment_Debye} =>
-				format!("Nonlinear{}", Fields(&[("polarizability_A3",polarizability_Å3),("rotational_relaxation",rotational_relaxation),("permanent_dipole_moment_Debye",permanent_dipole_moment_Debye)])),
-		}})?;
-		writeln!(o, "),")?;
-	}
-	writeln!(o, "}},")?;
-	writeln!(o, "reactions: [")?;
-	for Reaction{equation, rate_constant, model} in model.reactions.iter() {
-		impl std::fmt::Display for Pretty<&RateConstant> {
-			fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { write!(fmt, "(A: {}, beta: {}, Ea: {})", Pretty(&self.0.preexponential_factor), Pretty(&self.0.temperature_exponent), Pretty(&self.0.activation_energy)) }
-		}
-		write!(o, "(equation: {}, rate_constant: {}, model: ", Pretty(equation), Pretty(rate_constant))?;
-		if let ReactionModel::Falloff{..} = model { write!(o, "\n\t ")?; }
-		use ReactionModel::*; match model {
-			Elementary => write!(o, "Elementary"),
-			Irreversible => write!(o, "Irreversible"),
-			ThreeBody{efficiencies} =>
-				write!(o, "ThreeBody(efficiencies: {})", Pretty(efficiencies)),
-			PressureModification{k0, efficiencies} =>
-				write!(o, "PressureModification(k0: {}, efficiencies: {})", Pretty(k0), Pretty(efficiencies)),
-			Falloff{k0, troe: Troe{A,T3,T1,T2}, efficiencies} =>
-				write!(o, "Falloff(k0: {}, troe: {}, efficiencies: {})", Pretty(k0), format!("(A: {}, T3: {}, T1: {}, T2: {})", Pretty(A), Pretty(T3), Pretty(T1), Pretty(T2)), Pretty(efficiencies)),
-		}?;
-		writeln!(o, "),")?;
-	}
-	writeln!(o, "]")?;
-	write!(o, ")")?;
-	Ok(o)
-}*/

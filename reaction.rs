@@ -1,4 +1,4 @@
-#![feature(associated_type_bounds,bindings_after_at,iter_is_partitioned,array_map,format_args_capture,trait_alias)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
+//#![feature(associated_type_bounds,bindings_after_at,iter_is_partitioned,array_map,format_args_capture,trait_alias)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
 fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, Vec<usize>)> {
 	let mut map = linear_map::LinearMap::<_, Vec<_>>::new();
 	for (index, key) in iter.into_iter().enumerate() { map.entry(key).or_insert(Default::default()).push(index) }
@@ -19,8 +19,7 @@ fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Express
 	}.unwrap()
 }
 
-use iter::{box_, map};
-use chemistry::*;
+use {iter::{box_, map}, super::*};
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
 fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);

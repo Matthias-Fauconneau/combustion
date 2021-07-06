@@ -1,5 +1,6 @@
-#![feature(once_cell, in_band_lifetimes, array_map, array_methods,format_args_capture)]
-#![allow(non_upper_case_globals, non_snake_case)]
+#![feature(once_cell,in_band_lifetimes,array_map,array_methods,format_args_capture,associated_type_bounds,iter_is_partitioned,bindings_after_at)]
+#![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints)]
+pub mod model;
 pub use model::{kB, NA};
 const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
 
@@ -119,3 +120,6 @@ impl Reaction {
 		}
 	}
 }
+
+pub mod reaction;
+#[cfg(feature="transport")] pub mod transport;

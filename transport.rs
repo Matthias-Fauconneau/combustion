@@ -3,7 +3,25 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
 }
+mod polynomial {
+//#![feature(trait_alias)]#![allow(non_snake_case)]
+use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, Dot}};
+pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { Dot::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
 
+pub trait Vector<const N: usize> = IntoConstSizeIterator<N>+IntoIterator<Item=f64>;
+pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
+	use nalgebra::{DMatrix, DVector, SVD};
+	let ref w = DVector::from_iterator(N, w.into_iter());
+	let ref x = x.collect();
+	let A = DMatrix::from_iterator(N, D, (0..D).map(|k| x.iter().zip(w.iter()).map(move |(x, w)| w*x.powi(k as i32))).flatten());
+	let b = DVector::from_iterator(N, y.into_iter().zip(w.iter()).map(|(y, w)| w*y));
+	SVD::new(A, true, true).solve(&b, f64::EPSILON).unwrap().as_slice().try_into().unwrap()
+}
+
+// Regression with 1/y² weights (towards relative vertical error)
+pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
+pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
+}
 use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log2, ln, pow}, iter::{IntoConstSizeIterator, ConstRange, into::IntoCopied, box_, map}};
 
 const light_speed : f64 = 299_792_458.;
@@ -16,11 +34,11 @@ fn polynomial_regression_δ⃰(table: &[[f64; 8]; 39]) -> [[f64; 7]; 39] { table
 use std::lazy::SyncLazy;
 /*const*/static Ω⃰22: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
 /*const*/static A⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::A⃰));
-///*const*/static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
-///*const*/static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
+//*const*/static B⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::B⃰));
+//*const*/static C⃰: SyncLazy<[[f64; 7]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::C⃰));
 
-use chemistry::{kB, NA, Species};
-struct Interactions<'t>(&'t chemistry::Species);
+use super::{kB, NA, Species};
+struct Interactions<'t>(&'t Species);
 impl Interactions<'t> {
 	fn	reduced_mass(&self, a: usize, b: usize) -> f64 {
 		let Species{molar_mass, ..} = self.0;

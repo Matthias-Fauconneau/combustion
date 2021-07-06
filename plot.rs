@@ -1,5 +1,5 @@
-#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case)]
-//#[cfg(feature="gpu")]  mod gpu;
+#![feature(destructuring_assignment,format_args_capture,iter_partition_in_place)]#![allow(non_snake_case)]
+mod yaml; mod device;
 fn main() -> anyhow::Result<()> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model);

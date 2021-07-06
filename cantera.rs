@@ -1,5 +1,5 @@
-#![feature(format_args_capture,iter_is_partitioned,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
-mod device;
+#![feature(format_args_capture,iter_partition_in_place,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
+mod yaml; mod device;
 use std::os::raw::c_char;
 #[link(name = "cantera")]
 extern "C" {
@@ -15,9 +15,9 @@ fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let path = std::env::args().skip(1).next().unwrap();
-	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
-	let model = yaml_model::parse(&model);
-	use chemistry::*;
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
+	let model = yaml::parse(&model);
+	use combustion::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);

@@ -1,10 +1,10 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_is_partitioned)]#![allow(non_snake_case)]
-mod device;
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_partition_in_place)]#![allow(non_snake_case)]
+mod yaml; mod device;
 use {iter::map, ast::*};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
-	let model = yaml_model::parse(&model);
-	use chemistry::*;
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
+	let model = yaml::parse(&model);
+	use crate::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let ref state = initial_state(&model);
