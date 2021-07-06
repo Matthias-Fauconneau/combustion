@@ -63,9 +63,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		assert!(cantera.len() == species.len()-1);
 		if false { println!("{}", cantera.iter().format(" ")); }
 
-		let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
-		if true { rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
+		if true {
+			let error = |a,b| { let m=f64::abs(f64::max(a,b)); let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b) };
+			let max = rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			if max.1 > 1e-4 {
+				println!("{}", rates.iter().format(" "));
+				println!("{} {}", rates[max.0], cantera[max.0]);
+			}
+			max
+		}
 		else {
+			unimplemented!();
+			/*let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
 			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
 			let nekrk = nekrk.stdout;
 			let nekrk = std::str::from_utf8(&nekrk).unwrap();
@@ -75,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				(key, value.trim().parse().expect(value))
 			}).collect();
 			let nekrk = map(&species_names[0..species.len()-1], |specie| nekrk[specie]); // Already in mol
-			rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()
+			rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()*/
 		}
 	}}};
 	let mut random= rand::thread_rng();
@@ -91,7 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 		let e = test(&State{temperature, pressure_R, volume, amounts});
 		//println!("{temperature} {pressure} {e}");
-		assert!(e < 1e-2, "T {temperature} P {pressure} E {e} {max}");
+		assert!(e.1 < 1e-4, "T {temperature} P {pressure} E {e:?} {max} {}", species_names[e.0]);
+		let e = e.1;
 		if e > max { max = e; println!("{i} {e:.0e}"); }
 	}
 	Ok(())
