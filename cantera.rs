@@ -11,6 +11,7 @@ fn thermo_getSpeciesName(n: i32, m: usize, len: usize, buffer: *mut c_char) -> i
 fn thermo_setPressure(n: i32, p: f64) -> i32;
 fn kin_newFromFile(file_name: *const c_char, phase_name: *const c_char, reactingPhase: i32, neighbor0: i32, neighbor1: i32, neighbor2: i32, neighbor3: i32) -> i32;
 fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32;
+fn kin_getNetRatesOfProgress(n: i32, len: usize, rates: *mut f64) -> i32;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml::parse(&model);
 	use combustion::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
+	//eprintln!("{species_names:?}");
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
 	let rates = device::assemble(&rates);
@@ -51,20 +53,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		if false { println!("{}", rates.iter().format(" ")); }
 
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
-		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
+		let amount_fractions = map(&**amounts, |n| n/total_amount);
+		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
-		let cantera = {
+		let cantera = if false { // Species
 			let mut rates = vec![0.; species.len()];
 			unsafe{kin_getNetProductionRates(kinetics, rates.len(), rates.as_mut_ptr())};
 			let order = |o: &[f64]| map(&species_names[0..species.len()-1], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
-			order(&map(rates, |c| c*1000.)) // kmol -> mol
+			let species_rates = order(&map(rates, |c| c*1000.)); // kmol -> mol
+			assert!(species_rates.len() == species.len()-1);
+			species_rates
+		} else { // Reactions
+			let mut rates = vec![0.; reactions.len()];
+			unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
+			map(rates, |c| c*1000.) // kmol -> mol
 		};
-		assert!(cantera.len() == species.len()-1);
-		if false { println!("{}", cantera.iter().format(" ")); }
+		if true{ println!("{:.0}", cantera.iter().format(" ")); }
 
-		if true {
-			let error = |a,b| { let m=f64::abs(f64::max(a,b)); let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b) };
+		let error = |a,b| {
+			let m=f64::abs(f64::max(a,b));
+			if m < 1e2 { return 0.; }
+			let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
+		};
+		//let error = |a,b| num::relative_error(a,b);
+		if false {
 			let max = rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 			if max.1 > 1e-4 {
 				println!("{}", rates.iter().format(" "));
@@ -73,18 +86,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			max
 		}
 		else {
-			unimplemented!();
-			/*let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
-			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
+			//amount_fractions is in split active/inert indexing (for Rust and nekRK) (TODO: parse amounts[specie name] in C++ to prevent such errors)
+			//let amount_fractions = cantera_species_names.iter().map(|specie| amount_fractions[species_names.iter().position(|s| s==specie).unwrap()]).format(" ").to_string(); // Cantera order
+			//println!("cd ../nekRK && ../nekRK/build/main Serial 1 1 0 gri30 {} {} {}",temperature,pressure_R*(kB*NA),amount_fractions);
+			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK")
+				.args(["Serial","1","1","0","gri30",&(pressure_R*(kB*NA)).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output().unwrap();
+			assert!(nekrk.stderr.is_empty(), "{}", std::str::from_utf8(&nekrk.stderr).unwrap());
 			let nekrk = nekrk.stdout;
 			let nekrk = std::str::from_utf8(&nekrk).unwrap();
-			let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
-				let entry:Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
-				let [key, value]:[&str;2] = *entry;
-				(key, value.trim().parse().expect(value))
-			}).collect();
-			let nekrk = map(&species_names[0..species.len()-1], |specie| nekrk[specie]); // Already in mol
-			rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()*/
+			let nekrk = if false { // Species
+				let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
+					let entry : Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
+					let [key, value]:[&str;2] = *entry;
+					(key, value.trim().parse().unwrap())
+				}).collect();
+				map(&species_names[0..species.len()-1], |specie| nekrk[specie]) // Already in mol
+			} else { // Reactions
+				map(nekrk.trim().split(" "), |r| r.trim().parse().unwrap())
+			};
+			let max = cantera.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			if max.1 > 1e-4 {
+				println!("{:.0}", nekrk.iter().format(" "));
+				println!("{:>6}", cantera.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));
+				println!("{} {}", cantera[max.0], nekrk[max.0]);
+			}
+			max
+			//rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()*/
 		}
 	}}};
 	let mut random= rand::thread_rng();
@@ -100,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 		let e = test(&State{temperature, pressure_R, volume, amounts});
 		//println!("{temperature} {pressure} {e}");
-		assert!(e.1 < 1e-4, "T {temperature} P {pressure} E {e:?} {max} {}", species_names[e.0]);
+		assert!(e.1 < 1e-4, "T {temperature} P {pressure} E {e:?} {max} {}", ""/*species_names[e.0]*/);
 		let e = e.1;
 		if e > max { max = e; println!("{i} {e:.0e}"); }
 	}
