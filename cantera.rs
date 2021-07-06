@@ -1,4 +1,5 @@
 #![feature(format_args_capture,iter_is_partitioned,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
+mod device;
 use std::os::raw::c_char;
 #[link(name = "cantera")]
 extern "C" {
@@ -19,6 +20,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
+	let rates = reaction::rates(&species.thermodynamics, &reactions);
+	let rates = device::assemble(&rates);
 
 	let file = std::ffi::CString::new(path).unwrap();
 	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
@@ -33,20 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let ref state = initial_state(&model);
 	use {iter::map, ast::let_};
-	pub fn compile(f: &ast::Function) -> impl Fn(&[f64]) -> Box<[f64]> + '_ {
-		let output = f.output.len();
-		#[cfg(feature="ir")] let f = ir::assemble(ir::compile(&f));
-		move |input| { let mut output = vec![0.; output].into_boxed_slice(); f(input, &mut output); output }
-	}
-	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = compile(&rates);
 	assert!(state.volume == 1.);
 	let test = move |state: &State| {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
-		let input = iter::box_([*pressure_R, total_amount, *temperature].iter().chain(active_amounts).copied());
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&input) => {
+		let input = iter::box_([total_amount, *temperature].iter().chain(active_amounts).copied().map(|input| vec![input as _; 1].into_boxed_slice()));
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input)).unwrap()[0] => {
+		let rates = map(&*rates, |&v| v as _);
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
@@ -57,19 +54,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let order = |o: &[f64]| map(&species_names[0..species.len()-1], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			order(&map(rates, |c| c*1000.)) // kmol -> mol
 		};
-		/*use itertools::Itertools;
+		use itertools::Itertools;
 		let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
-		let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
-		let nekrk = nekrk.stdout;
-		let nekrk = std::str::from_utf8(&nekrk).unwrap();
-		let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
-			let entry:Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
-			let [key, value]:[&str;2] = *entry;
-			(key, value.trim().parse().expect(value))
-		}).collect();
-		let nekrk = map(&species_names[0..species.len()-1], |specie| nekrk[specie]); // Already in mol
-		rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()*/
-		rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap()
+		if false { rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }
+		else {
+			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK").args(["Serial","1","1","0","gri30",&amounts.to_string(), &temperature.to_string(), &(pressure_R*(kB*NA)).to_string()]).output().unwrap();
+			let nekrk = nekrk.stdout;
+			let nekrk = std::str::from_utf8(&nekrk).unwrap();
+			let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
+				let entry:Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
+				let [key, value]:[&str;2] = *entry;
+				(key, value.trim().parse().expect(value))
+			}).collect();
+			let nekrk = map(&species_names[0..species.len()-1], |specie| nekrk[specie]); // Already in mol
+			rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max).unwrap()
+		}
 	}}};
 	let mut random= rand::thread_rng();
 	let mut max = 0.;

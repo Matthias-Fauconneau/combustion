@@ -7,9 +7,7 @@ fn main() -> anyhow::Result<()> {
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	#[cfg(feature="ir")] let rates = ir::assemble(ir::compile(&rates));
-	//#[cfg(feature="gpu")] let ref device = vulkan::Device::new()?;
-	//#[cfg(feature="gpu")] let rates = gpu::compile(device, &rates);
+	let rates = device::assemble(&rates);
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -25,7 +23,8 @@ fn main() -> anyhow::Result<()> {
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u as _; }
-		rates(&input, f_u);
+		let output = rates(&input);
+		for (f_u, &output) in f_u.iter_mut().zip(output) { *f_u = output as _; }
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true

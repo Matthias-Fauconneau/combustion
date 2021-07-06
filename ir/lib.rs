@@ -62,7 +62,7 @@ fn fpromote(x: Value, f: &mut Builder) -> Value { f.ins().fpromote(F64, x) }
 fn fdemote(x: Value, f: &mut Builder) -> Value { f.ins().fdemote(F32, x) }
 fn fcvt_to_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_to_sint(I32, x) }
 fn fcvt_from_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_from_sint(F32, x) }
-fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
+fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f32>()) as i32); }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct AstBuilder<'t,'m> {
 	#[deref]#[deref_mut] builder: &'m mut Builder<'t>,
@@ -72,6 +72,19 @@ fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().sto
 
 use ast::*;
 impl AstBuilder<'_,'_> {
+fn inline<T>(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression, pass: impl Fn(Expression, &Block, AstBuilder) -> T) -> T {
+	let types = vec![(ast::Value(0), ast::Type::F32)].into_iter().collect();
+	let values = vec![(ast::Value(0), self.expr(x))].into_iter().collect();
+	let f = AstBuilder{builder: &mut self.builder, types, values}; // New values scope/frame to let function define new intermediates without conflicting with parent caller
+	let ref mut values = 1;
+	let ref mut block = Block{values, statements: vec![]};
+	pass(function(Expression::Value(ast::Value(0)), block), block, f)
+}
+fn inline_pass(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression) -> ast::Type {
+	self.inline(x, function, |result, block, mut f| {
+	for statement in &*block.statements { f.check_types_and_load_constants(statement); }
+	f.pass(&result)
+})}
 fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_constants
 	use Expression::*;
 	match e {
@@ -81,7 +94,9 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 		&Float(v) => { self.f32(v as f32); ast::Type::F32 },
 		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
 		Cast(to, x) => { self.pass(x); *to },
-		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x)|Exp(x)|Ln{x,..} => self.pass(x),
+		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x) => self.pass(x),
+		Exp(x) => self.inline_pass(x, exp_approx),
+		Ln{x0,x} => self.inline_pass(x, |x,f| ln_approx(*x0, x, f)),
 		FPromote(x) => { self.pass(x); ast::Type::F64 },
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
@@ -105,17 +120,11 @@ fn check_types_and_load_constants(&mut self, statement: &Statement) {
 		}
 	}
 }
-fn inline(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression) -> Value {
-	let types = vec![(ast::Value(0), ast::Type::F32)].into_iter().collect();
-	let values = vec![(ast::Value(0), self.expr(x))].into_iter().collect();
-	let ref mut f = AstBuilder{builder: &mut self.builder, types, values}; // New values scope/frame to let function define new intermediates without conflicting with parent caller
-	let ref mut values = 1;
-	let ref mut block = Block{values, statements: vec![]};
-	let result = function(Expression::Value(ast::Value(0)), block);
-	for statement in &*block.statements { f.check_types_and_load_constants(statement); }
+fn inline_expr(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression) -> Value {
+	self.inline(x, function, |result, block, mut f| {
 	for statement in &*block.statements { f.push(statement); }
-	self.expr(&result)
-}
+	f.expr(&result)
+})}
 fn expr(&mut self, x: &Expression) -> Value {
 	use Expression::*;
 	match x {
@@ -144,8 +153,8 @@ fn expr(&mut self, x: &Expression) -> Value {
 		FDemote(x) => fdemote(self.expr(x), self),
 		FCvtToSInt(x) => fcvt_to_sint(self.expr(x), self),
 		FCvtFromSInt(x) => fcvt_from_sint(self.expr(x), self),
-		Exp(x) => self.inline(x, exp_approx),
-		Ln{x0,x} => self.inline(x, |x,f| ln_approx(*x0, x, f)),
+		Exp(x) => self.inline_expr(x, exp_approx),
+		Ln{x0,x} => self.inline_expr(x, |x,f| ln_approx(*x0, x, f)),
 		Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			self.expr(result)
@@ -207,12 +216,12 @@ pub fn compile(ast: &ast::Function) -> Function {
 	let ref mut f = AstBuilder{builder: f, types, values};
 	for statement in &*ast.statements { f.check_types_and_load_constants(statement); }
 	for statement in &*ast.statements { f.push(statement); }
-	for (i, e) in ast.output.iter().enumerate() { store(fpromote(f.expr(e), f), output, i, f); }
+	for (i, e) in ast.output.iter().enumerate() { f.pass(e); store(f.expr(e), f), output, i, f); }
 	f.ins().return_(&[]);
 	function
 }}}
 
-#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f32], &mut [f64]) {
+#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f32], &mut [f32]) {
 	let mut module = cranelift_jit::JITModule::new({
 		let flag_builder = cranelift_codegen::settings::builder();
 		use cranelift_codegen::settings::Configurable;
@@ -228,6 +237,6 @@ pub fn compile(ast: &ast::Function) -> Function {
   module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(*const f32, *mut f64)>(function)};
+	let function = unsafe{std::mem::transmute::<_,extern fn(*const f32, *mut f32)>(function)};
 	move |input, output| function(input.as_ptr(), output.as_mut_ptr())
 }

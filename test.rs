@@ -1,6 +1,7 @@
 #![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_is_partitioned)]#![allow(non_snake_case)]
-use ast::*;
-fn main() -> anyhow::Result<()> {
+mod device;
+use {iter::map, ast::*};
+fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model);
 	use chemistry::*;
@@ -8,9 +9,9 @@ fn main() -> anyhow::Result<()> {
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let ref state = initial_state(&model);
 	use itertools::Itertools;
-	let ref device = Device::new()?;
 	if true {
-		let rates = compile(device, &reaction::rates(&species.thermodynamics, &reactions))?;
+		let rates = reaction::rates(&species.thermodynamics, &reactions);
+		let rates = device::assemble(&rates);
 		assert!(state.volume == 1.);
 		let State{temperature: T, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();

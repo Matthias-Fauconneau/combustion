@@ -111,13 +111,6 @@ pub fn call(f: &Function, input: &[f32], output: &mut [f32]) {
 	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F32(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
 }
 
-impl FnOnce<(&[f32], &mut [f32])> for Function {
-	type Output = ();
-	extern "rust-call" fn call_once(mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call_mut(args) }
-}
-impl FnMut<(&[f32], &mut [f32])> for Function {
-	extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) }
-}
-impl Fn<(&[f32], &mut [f32])> for Function {
-	extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); }
-}
+impl FnOnce<(&[f32], &mut [f32])> for Function { type Output = (); extern "rust-call" fn call_once(mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call_mut(args) } }
+impl FnMut<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) } }
+impl Fn<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); } }
