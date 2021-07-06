@@ -21,10 +21,12 @@ fn to_string(state: &State, expression: &Expression) -> String {
 	use Expression::*;
 	match expression {
 		Float(x) => format!("{:e}", x),
-		Value(id) => format!("{}", state[id.0].clone()),
-		Add(a, b) => format!("{} + {}", eval(state, a), eval(state, b)),
-		Mul(a, b) => format!("{} * {}", eval(state, a), eval(state, b)),
-		Exp(x) => format!("exp({})", eval(state, x)),
+		Value(id) => format!("{} = {}", state.debug[id.0], state.values[id.0]),
+		Add(a, b) => format!("{} + {}", to_string(state, a), to_string(state, b)),
+		Sub(a, b) => format!("{} - {}", to_string(state, a), to_string(state, b)),
+		Mul(a, b) => format!("({}) * ({})", to_string(state, a), to_string(state, b)),
+		Div(a, b) => format!("({}) / ({})", to_string(state, a), to_string(state, b)),
+		Exp(x) => format!("exp({})", to_string(state, x)),
 		e => panic!("{:?}", e),
 	}
 }
@@ -62,7 +64,8 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		//FPromote(x) => F64(eval(state, x).f32() as f64),
 		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
 		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
-		Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp({assert!(x < 1e5, "{x} {expression:?}"); x})),
+		//Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp(x)),
+		Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp({assert!(x < 1e5, "{x} {}", to_string(state,expression)); x})),
 		Exp(x) if let F64(x) = eval(state, x) => F64(f64::exp(x)),
 		Ln{x,..} if let F32(x) = eval(state, x) => F32(f32::ln(x)),
 		Ln{x,..} if let F64(x) = eval(state, x) => F64(f64::ln(x)),
@@ -81,7 +84,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		},
 		expression => panic!("{expression:?}"),
 	};
-	if let F32(x) = result { assert!(false || f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
+	//if let F32(x) = result { assert!(false || f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
 	result
 }
 
@@ -89,28 +92,22 @@ fn run(state: &mut State, statements: &[Statement]) {
 	for statement in statements {
 		use Statement::*;
 		match statement {
-			Value { id, value } => {
-				let value = eval(state, value);
-				//if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
+			Value { id, value: expression } => {
+				let result= eval(state, expression);
 				assert!(state[id.0] == DataValue::None);
-				state[id.0] = value;
+				if let DataValue::F32(x) = result { assert!(x.is_finite() && f32::abs(x)<1e28, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression)); }
+				state[id.0] = result;
 			},
-			/*Store { variable, value } => {
-				let value = eval(state, value);
-				assert!(self.variables[variable.0].replace(value).is_none());
-			}*/
 			Select { condition, true_exprs, false_exprs, results } => {
-				let values = if eval(state, condition).bool() { true_exprs } else { false_exprs };
-				for (id, value) in results.iter().zip(&**values) {
-					let value = eval(state, value);
-					//if state.len() <= id.0 { state.resize_with(id.0+1, || DataValue::None); }
+				let expressions = if eval(state, condition).bool() { true_exprs } else { false_exprs };
+				for (id, expression) in results.iter().zip(&**expressions) {
+					let result = eval(state, expression);
+					if let DataValue::F32(x) = result { assert!(x.is_finite() /*&& f32::abs(x)<1e28*/, "{} = {result}: {}", state.debug[id.0], to_string(state, expression)); }
 					assert!(state[id.0] == DataValue::None);
-					state[id.0] = value;
+					state[id.0] = result;
 				}
 			},
-			/*Trace { id } => {
-				state.trace.push(state[id.0].clone().f64());
-			}*/
+			Display(id) => if false { println!("{} = {}", state.debug[id.0], state.values[id.0]); },
 		}
 	}
 }

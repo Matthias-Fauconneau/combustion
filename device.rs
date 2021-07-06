@@ -13,12 +13,12 @@ type Output = Result<Box<[Box<[f32]>]>, Box<dyn std::error::Error>>;
 			let mut input = box_(uniforms.iter().copied().chain(inputs.iter().map(|_| 0.)));
 			let mut output = vec![0.; output_len].into_boxed_slice();
 			for state_id in 0..states_len {
-				for (input, array) in input.iter_mut().zip(inputs) { *input = array[state_id]; }
+				for (input, array) in input[uniforms.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
 				function(&input, &mut output);
 				for (array, output) in outputs.iter_mut().zip(&*output) { array[state_id] = *output; }
 			}
 			let time= time.elapsed().as_secs_f64();
-			println!("{:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f64/1e3, time*1e3, time/(states_len as f64)*1e9, (states_len as f64)/1e6/time);
+			if states_len > 1 { println!("{:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f64/1e3, time*1e3, time/(states_len as f64)*1e9, (states_len as f64)/1e6/time); }
 			Ok(outputs)
 		}
 	}

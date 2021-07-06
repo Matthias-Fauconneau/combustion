@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input)).unwrap() => {
 		let rates = map(&*rates, |v| v[0] as _);
 		assert!(rates.len() == species.len()-1, "{}", rates.len());
-		println!("{}", rates.iter().format(" "));
+		if false { println!("{}", rates.iter().format(" ")); }
 
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
 		unsafe{thermo_setMoleFractions(phase, amounts.len(), cantera_order(&amounts).as_ptr(), 1)}; // /!\ Needs to be set before pressure
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			order(&map(rates, |c| c*1000.)) // kmol -> mol
 		};
 		assert!(cantera.len() == species.len()-1);
-		println!("{}", cantera.iter().format(" "));
+		if false { println!("{}", cantera.iter().format(" ")); }
 
 		let amounts = cantera_species_names.iter().map(|specie| amounts[species_names.iter().position(|s| s==specie).unwrap()]).format(" ");
 		if true { rates.iter().zip(&*cantera).map(|(&a,&b)| num::relative_error(a,b)).reduce(f64::max).unwrap() }

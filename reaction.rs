@@ -5,7 +5,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 	map
 }
 
-use ast::{*, Expression::Float as c};
+use ast::{*, dbg};
 
 fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Expression {
 	let (num, div) : (Vec::<_>,Vec::<_>) = n.iter().map(|&n| n.into()).zip(b).filter(|&(n,_)| n!=0).partition(|&(n,_)| n>0);
@@ -27,7 +27,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 		let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
 		push(Statement::Select{
-			condition: less_or_equal(T.T, c(f64::from_bits(temperature_split))),
+			condition: less_or_equal(T.T, f64::from_bits(temperature_split)),
 			true_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f)),
 			false_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f)),
 			results
@@ -46,7 +46,7 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 // A.T^β.exp(-Ea/kT)
 fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T4,rcp_T,rcp_T2,..}: T<'_>, f: &mut Block) -> Expression {
 	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		if temperature_exponent == 0. { c(A) }
+		if temperature_exponent == 0. { A.into() }
 		else if temperature_exponent == -1. { A * rcp_T }
 		else if temperature_exponent == 1. { A * T }
 		else if temperature_exponent == 2. { A * T2 }
@@ -54,7 +54,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 		else if temperature_exponent == -2. { A * rcp_T2 }
 		else { unreachable!() }
 	} else {
-		let βlnT𐊛lnA = if temperature_exponent == 0. { c(f64::ln(A)) } else { temperature_exponent * ln_T + c(f64::ln(A)) };
+		let βlnT𐊛lnA = if temperature_exponent == 0. { f64::ln(A).into() } else { temperature_exponent * ln_T + f64::ln(A) };
 		let ln_arrhenius = if activation_temperature == 0. { βlnT𐊛lnA } else { -activation_temperature * rcp_T + βlnT𐊛lnA };
 		exp(ln_arrhenius, f)
 	}
@@ -94,16 +94,20 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 		let forward = product_of_exponentiations(concentrations, reactants);
 		let coefficient = if let ReactionModel::Irreversible = model { forward } else {
 			let rcp_equilibrium_constant_0 = product_of_exponentiations(exp_Gibbs0_RT, net);
+			dbg!(f; rcp_equilibrium_constant_0);
 			//let rcp_equilibrium_constant_0 = exp2(idot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
-				0 => rcp_equilibrium_constant_0,
+				0 => rcp_equilibrium_constant_0.into(),
 				1 => C0 * rcp_equilibrium_constant_0,
 				-1 => rcp_C0 * rcp_equilibrium_constant_0,
 				_ => unreachable!()
 			};
+			dbg!(f; rcp_equilibrium_constant);
 			let reverse = rcp_equilibrium_constant * product_of_exponentiations(concentrations, products);
+			dbg!(f; forward, reverse);
 			forward - reverse
 		};
+		dbg!(f; forward_rate_constant, coefficient);
 		l!(f forward_rate_constant * coefficient)
 	})
 }
@@ -140,5 +144,5 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
 	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
 	let dtT_T = - energy_rate_RT / Cp;
-	Function{output: box_([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.into(), input: input.len(), values: values.into()}
+	Function{output: box_([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.statements.into(), input: input.len(), values: values.into()}
 }}}
