@@ -40,7 +40,7 @@ impl Builder<'t> {
 	}
 }
 
-fn load(base: Value, index: usize, f: &mut Builder) -> Value { f.ins().load(F64, MemFlags::trusted(), base, (index*std::mem::size_of::<f64>()) as i32) }
+fn load(base: Value, index: usize, f: &mut Builder) -> Value { f.ins().load(F32, MemFlags::trusted(), base, (index*std::mem::size_of::<f64>()) as i32) }
 //fn cast(to: Type, x: Value, f: &mut Builder) -> Value { f.ins().bitcast(to, x) }
 fn and(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().band(a, b) }
 fn or(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().bor(a, b) }
@@ -64,23 +64,24 @@ fn fcvt_to_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_to_sint(I32, 
 fn fcvt_from_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_from_sint(F32, x) }
 fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f64>()) as i32); }
 
-#[derive(derive_more::Deref,derive_more::DerefMut)] struct AstBuilder<'t> {
-	#[deref]#[deref_mut] builder: Builder<'t>,
+#[derive(derive_more::Deref,derive_more::DerefMut)] struct AstBuilder<'t,'m> {
+	#[deref]#[deref_mut] builder: &'m mut Builder<'t>,
 	types: linear_map::LinearMap<ast::Value, ast::Type>,
 	values: linear_map::LinearMap<ast::Value, Value>,
 }
 
 use ast::*;
-impl AstBuilder<'_> {
+impl AstBuilder<'_,'_> {
 fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_constants
 	use Expression::*;
 	match e {
-		&F32(v) => { self.f32(v as f32); ast::Type::F32 },
-		&F64(v) => { self.f64(v); ast::Type::F64 },
 		&I32(v) => { self.u32(v); ast::Type::I32 },
+		&F32(v) => { self.f32(v); ast::Type::F32 },
+		&F64(v) => { self.f64(v); ast::Type::F64 },
+		&Float(v) => { self.f32(v as f32); ast::Type::F32 },
 		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
 		Cast(to, x) => { self.pass(x); *to },
-		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x) => self.pass(x),
+		Neg(x)|IShLImm(x,_)|UShRImm(x,_)|Sqrt(x)|Exp(x)|Ln{x,..} => self.pass(x),
 		FPromote(x) => { self.pass(x); ast::Type::F64 },
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
@@ -93,23 +94,35 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 fn check_types_and_load_constants(&mut self, statement: &Statement) {
 	use Statement::*;
 	match statement {
-		Value { id, value } => { let value = self.load(value); assert!(!self.types.contains_key(id)); self.types.insert(id.clone(), value); },
-		Branch { condition, true_exprs, false_exprs, results } => {
-			self.load(condition);
+		Value { id, value } => { let value = self.pass(value); assert!(!self.types.contains_key(id)); self.types.insert(id.clone(), value); },
+		Select { condition, true_exprs, false_exprs, results } => {
+			self.pass(condition);
 			// Always load constants of both branches in root block so that they are always available for all later uses
 			let true_types = map(&**true_exprs, |e| self.pass(e));
-			let false_types = map(&**false_types, |e| self.pass(e));
+			let false_types = map(&**false_exprs, |e| self.pass(e));
 			for id in &**results { assert!(!self.values.contains_key(id)); }
 			self.types.extend(results.iter().zip(true_types.iter().zip(&*false_types)).map(|(id, (&a,&b))| { assert!(a==b); (id.clone(), a) }));
 		}
 	}
 }
-fn expr(&mut self, e: &Expression) -> Value {
+fn inline(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression) -> Value {
+	let types = vec![(ast::Value(0), ast::Type::F32)].into_iter().collect();
+	let values = vec![(ast::Value(0), self.expr(x))].into_iter().collect();
+	let ref mut f = AstBuilder{builder: &mut self.builder, types, values}; // New values scope/frame to let function define new intermediates without conflicting with parent caller
+	let ref mut values = 1;
+	let ref mut block = Block{values, statements: vec![]};
+	let result = function(Expression::Value(ast::Value(0)), block);
+	for statement in &*block.statements { f.check_types_and_load_constants(statement); }
+	for statement in &*block.statements { f.push(statement); }
+	self.expr(&result)
+}
+fn expr(&mut self, x: &Expression) -> Value {
 	use Expression::*;
-	match e {
+	match x {
 		Value(v) => *self.values.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.values)),
-		&F32(v) => self.constants_f32[&(v as f32).to_bits()],
+		&F32(v) => self.constants_f32[&v.to_bits()],
 		&F64(v) => self.constants_f64[&v.to_bits()],
+		&Float(v) => self.constants_f32[&(v as f32).to_bits()],
 		I32(v) => self.constants_u32[v],
 		Cast(to, x) => unimplemented!("{to:?} {x:?}"),//cast(match to {ast::Type::F32=>self::F32,ast::Type::F64=>self::F64,ast::Type::I32=>I32}, self.expr(x), self),
 		And(a, b) => and(self.expr(a), self.expr(b), self),
@@ -131,6 +144,8 @@ fn expr(&mut self, e: &Expression) -> Value {
 		FDemote(x) => fdemote(self.expr(x), self),
 		FCvtToSInt(x) => fcvt_to_sint(self.expr(x), self),
 		FCvtFromSInt(x) => fcvt_from_sint(self.expr(x), self),
+		Exp(x) => self.inline(x, exp_approx),
+		Ln{x0,x} => self.inline(x, |x,f| ln_approx(*x0, x, f)),
 		Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			self.expr(result)
@@ -141,11 +156,8 @@ fn push(&mut self, statement: &Statement) {
 	use Statement::*;
 	match statement {
 		Value { id, value } => { let value = self.expr(value); assert!(!self.values.contains_key(id)); self.values.insert(id.clone(), value); },
-		Branch { condition, true_exprs, false_exprs, results } => {
+		Select { condition, true_exprs, false_exprs, results } => {
 			let condition = self.expr(condition);
-			/*// Always load constants of both branches in root block so that they are always available for all later uses (already done for non-root branches (in check_types_and_load_constants))
-			for e in &**true_exprs { self.load(e) }
-			for e in &**false_exprs { self.load(e) }*/
 			let false_block = self.create_block();
 			self.ins().brz(condition, false_block, &[]);
 			self.seal_block(false_block);
@@ -153,21 +165,21 @@ fn push(&mut self, statement: &Statement) {
 			self.ins().jump(true_block, &[]);
 			self.seal_block(true_block);
 			let join = self.create_block();
-			for _ in 0..results.len() { self.append_block_param(join, F64); }
+			for _ in 0..results.len() { self.append_block_param(join, F32); }
 
 			let scope = self.values.clone();
 			self.switch_to_block(true_block);
 			let true_values = map(&**true_exprs, |e| self.expr(e));
 			self.values = scope;
 			assert!(results.len() == true_values.len());
-			self.ins().jump(join, &true_block);
+			self.ins().jump(join, &true_values);
 
 			let scope = self.values.clone();
 			self.switch_to_block(false_block);
 			let false_values = map(&**false_exprs, |e| self.expr(e));
 			self.values = scope;
 			assert!(results.len() == false_values.len());
-			self.ins().jump(join, &false_block);
+			self.ins().jump(join, &false_values);
 
 			self.seal_block(join);
 			self.switch_to_block(join);
@@ -183,24 +195,24 @@ fn push(&mut self, statement: &Statement) {
 pub fn compile(ast: &ast::Function) -> Function {
 	let mut function = Function::new();
 	let mut function_builder_context = FunctionBuilderContext::new();
-	let mut f = Builder::new(&mut function, &mut function_builder_context);
+	let ref mut f = Builder::new(&mut function, &mut function_builder_context);
 	let entry_block = f.create_block();
 	f.func.signature.params = vec![AbiParam::new(I64); 2];
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
 	let_!{ &[input, output] = f.block_params(entry_block) => {
-	let types = (0..ast.input).map(|i| (Value(i), ast::Type::F64)).collect();
-	let values = (0..ast.input).map(|i| (Value(i), load(input, i, &mut f))).collect();
+	let types = (0..ast.input).map(|i| (Value(i), ast::Type::F32)).collect();
+	let values = (0..ast.input).map(|i| (Value(i), load(input, i, f))).collect();
 	let ref mut f = AstBuilder{builder: f, types, values};
 	for statement in &*ast.statements { f.check_types_and_load_constants(statement); }
 	for statement in &*ast.statements { f.push(statement); }
-	for (i, e) in ast.output.iter().enumerate() { store(f.expr(e), output, i, f); }
+	for (i, e) in ast.output.iter().enumerate() { store(fpromote(f.expr(e), f), output, i, f); }
 	f.ins().return_(&[]);
 	function
 }}}
 
-#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f64], &mut [f64]) {
+#[cfg(feature="jit")] pub fn assemble(function: Function) -> impl Fn(&[f32], &mut [f64]) {
 	let mut module = cranelift_jit::JITModule::new({
 		let flag_builder = cranelift_codegen::settings::builder();
 		use cranelift_codegen::settings::Configurable;
@@ -216,6 +228,6 @@ pub fn compile(ast: &ast::Function) -> Function {
   module.define_function(id, &mut context, &mut cranelift_codegen::binemit::NullTrapSink{}, &mut cranelift_codegen::binemit::NullStackMapSink{}).unwrap();
 	module.finalize_definitions();
 	let function = module.get_finalized_function(id);
-	let function = unsafe{std::mem::transmute::<_,extern fn(*const f64, *mut f64)>(function)};
+	let function = unsafe{std::mem::transmute::<_,extern fn(*const f32, *mut f64)>(function)};
 	move |input, output| function(input.as_ptr(), output.as_mut_ptr())
 }

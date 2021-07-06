@@ -1,5 +1,5 @@
 #![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case)]
-
+//#[cfg(feature="gpu")]  mod gpu;
 fn main() -> anyhow::Result<()> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model);
@@ -8,8 +8,8 @@ fn main() -> anyhow::Result<()> {
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
 	#[cfg(feature="ir")] let rates = ir::assemble(ir::compile(&rates));
-	#[cfg(feature="gpu")] let ref device = Device::new()?;
-	#[cfg(feature="gpu")] let rates = gpu::compile(device, &rates);
+	//#[cfg(feature="gpu")] let ref device = vulkan::Device::new()?;
+	//#[cfg(feature="gpu")] let rates = gpu::compile(device, &rates);
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -18,13 +18,13 @@ fn main() -> anyhow::Result<()> {
 	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
-	let mut input = iter::box_([pressure_R, total_amount].into_iter().chain(state.iter().map(|&v| v)));
+	let mut input = iter::box_([pressure_R as f32, total_amount as f32].into_iter().chain(state.iter().map(|&v| v as _)));
 	let mut evaluations = 0;
 	let f = |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
-		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u; }
+		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u as _; }
 		rates(&input, f_u);
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));

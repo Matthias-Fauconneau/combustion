@@ -1,3 +1,4 @@
+#![feature(associated_type_bounds,in_band_lifetimes,default_free_fn)]
 use {std::default::default, fehler::throws, anyhow::Error};
 use std::{mem::size_of, ffi::CStr};
 use ash::{*, vk::*, version::*, extensions::ext::DebugUtils};
@@ -99,7 +100,7 @@ impl<T:Plain> Buffer<T> {
 			device.bind_buffer_memory(buffer, memory, 0)?;
 			Self{len, buffer, memory, _type: default()}
 		};
-		for (item, cell) in iter.zip(buffer.map_mut(device).expect(&format!("{len}")).into_iter()) { *cell = item; }
+		for (item, cell) in iter.zip(&mut **buffer.map_mut(device)?) { *cell = item; }
 		buffer
 	}
 }

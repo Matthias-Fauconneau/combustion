@@ -1,0 +1,14 @@
+cargo-features=['edition2021']
+package= { name= 'vulkan', description= 'Vulkan Compute', version= '0.0.0', edition= '2021'}
+lib= {path='lib.rs'}
+
+[dependencies]
+fehler='*'
+anyhow='*'
+#iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+#num= {git='https://github.com/Matthias-Fauconneau/num'}
+#itertools='*'
+ash='*'
+#rspirv={optional=true}
+#naga= {optional=true, features=['spv-in'], version='*'}
+#spirv-tools= {optional=true, version='*', default-features=false, features=['use-installed-tools']}

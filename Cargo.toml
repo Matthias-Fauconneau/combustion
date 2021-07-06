@@ -1,31 +1,28 @@
 cargo-features=['edition2021']
 package= { name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run = 'plot' }
-features= { gpu=['spirv','ash','rspirv','spirv-tools','fehler','anyhow'], plot=['cvode','ui','image','png','anyhow'], default=['gpu','plot'] }
+features= { gpu=['spirv','vulkan','anyhow','fehler'], plot=['cvode','ui','image','png','anyhow'], default=['ir','plot'] }
 bin=[
-	{name='test', path='test.rs'},
+	{name='test', path='test.rs', required-features=['itertools']},
 	{name='cantera', path='cantera.rs', required-features=['rand']},
 	{name='plot', path='plot.rs', required-features=['plot']}
 ]
 
 [dependencies]
-fehler={ optional=true, version='*' }
-anyhow={ optional=true, version='*' }
+anyhow= {optional=true, version='*' }
+fehler= {optional=true, version='*' }
+itertools= {optional=true, version='*' }
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 ast= {path='ast'}
 yaml-model= {path='yaml'}
 chemistry= {path='chemistry'}
 reaction= {path='reaction'}
-transport= {optional=true, path='transport'}
 ir= {optional=true, path='ir', features=['jit']}
-itertools='*'
-spirv= {optional=true, path= 'spirv', package= 'ast-spirv', version='*' }
-ash= {optional=true, version='*'}
-rspirv={optional=true, git='https://github.com/Matthias-Fauconneau/rspirv'}
-naga= {optional=true, features=['spv-in'], version='*'}
-spirv-tools= {optional=true, version='*', default-features=false, features=['use-installed-tools']}
+vulkan= {optional=true, path='vulkan'}
+spirv= {optional=true, path='spirv', package='ast-spirv'}
 rand= {optional=true, version='*'}
 cvode= {optional=true, path='cvode'}
 ui= {optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
 image= {optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png= {optional=true, package= 'image', version='', default-features=false, features= ['png']}
+transport= {optional=true, path='transport'}

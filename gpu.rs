@@ -1,8 +1,5 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_is_partitioned)]#![allow(non_snake_case)]
-mod vulkan;
-
 use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result}};
-#[throws] fn compile(device: &'t Device, function: &Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
+#[throws] pub fn compile<'t>(device: &'t Device, function: &Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
 	let input_len = function.input;
 	let output_len = function.output.len();
 	let function = spirv::compile(1, function)?;
@@ -18,7 +15,7 @@ use {iter::{box_, map}, ast::*, vulkan::*, fehler::throws, anyhow::{Error,Result
 		device.bind(pipeline.descriptor_set, &buffers)?;
 		let command_buffer = device.command_buffer(&pipeline, cast(&uniforms), (states_len as u32)/local_size)?;
 		let time = device.submit_and_wait(command_buffer)?;
-		println!("{}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", local_size, states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
+		println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
 		Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 	}
 }

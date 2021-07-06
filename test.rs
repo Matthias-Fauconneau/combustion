@@ -1,6 +1,6 @@
 #![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_is_partitioned)]#![allow(non_snake_case)]
-
-#[throws] fn main() {
+use ast::*;
+fn main() -> anyhow::Result<()> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model);
 	use chemistry::*;
@@ -31,4 +31,5 @@
 			eprintln!("μ: {viscosity:.4e}, λ: {thermal_conductivity:.4}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
 		}}
 	}
+	Ok(())
 }
