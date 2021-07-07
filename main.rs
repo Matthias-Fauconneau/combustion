@@ -1,4 +1,4 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,iter_partition_in_place)]#![allow(non_snake_case)]
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds)]#![allow(non_snake_case)]
 mod yaml; mod device;
 use {iter::map, ast::*};
 fn main() -> Result<(), Box<dyn std::error::Error>> {

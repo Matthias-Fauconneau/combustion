@@ -1,9 +1,9 @@
-#![feature(destructuring_assignment,format_args_capture,iter_partition_in_place)]#![allow(non_snake_case)]
+#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case)]
 mod yaml; mod device;
-fn main() -> anyhow::Result<()> {
+use {anyhow::Result, iter::{list, map}, chemistry::*};
+fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml_model::parse(&model);
-	use chemistry::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
 	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
-	let mut input = iter::box_([pressure_R as f32, total_amount as f32].into_iter().chain(state.iter().map(|&v| v as _)));
+	let mut input = list([pressure_R as f32, total_amount as f32].into_iter().chain(state.iter().map(|&v| v as _)));
 	let mut evaluations = 0;
 	let f = |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
@@ -42,7 +42,6 @@ fn main() -> anyhow::Result<()> {
 	}
 	//println!("T {}", state[0]);
 	let mut min = 0f64;
-	use iter::map;
 	let values = map(0..(0.2/model.time_step) as usize, |_| if let [temperature, active_amounts@..] = state {
 		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature].into_boxed_slice(), map(active_amounts, |v| v/active_amounts.iter().sum::<f64>())].into_boxed_slice());
 		let next_time = time + model.time_step;

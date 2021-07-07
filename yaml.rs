@@ -1,4 +1,4 @@
-//#![feature(array_map,iter_partition_in_place)]#![allow(non_snake_case,non_upper_case_globals)]
+//#![feature(array_map)]#![allow(non_snake_case,non_upper_case_globals)]
 
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
@@ -15,7 +15,7 @@ impl std::fmt::Display for Pretty<&u8> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { self.0.fmt(fmt) }
 }
 
-use {iter::map, pest::Parser};
+use {iter::{list, map}, pest::Parser};
 #[derive(pest_derive::Parser)]#[grammar_inline = r#"
 	WHITESPACE = _{ " " }
 	atom = { "H" | "O" | "C" | "AR" | "N" }
@@ -29,7 +29,7 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 	use std::str::FromStr;
 	map(EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner(), |side|
 		side.into_inner().map(|term|
-			match &*iter::box_(term.into_inner()) {
+			match &*list(term.into_inner()) {
 				[specie] => (specie.as_str(), 1),
 				[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
 				_ => unreachable!(),
@@ -116,11 +116,10 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 			}
 		}
 	});
-	let mut species = species;
-	species.iter_mut().partition_in_place(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
+	let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
-		species,
+		species: [&*active, &*inert].concat().into_boxed_slice(),
 		reactions,
 		time_step: 1e-5,
 	}

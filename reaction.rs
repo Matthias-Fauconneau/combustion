@@ -19,7 +19,7 @@ fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Express
 	}.unwrap()
 }
 
-use {iter::{box_, map}, super::*};
+use {iter::{list, map}, super::*};
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
 fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);
@@ -136,7 +136,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let ref density = l!(f total_concentration / total_amount);
 	let active_concentrations = map(0..active, |k| l!(f density*max(0., &active_amounts[k])));
 	let inert_concentration = l!(f total_concentration - active_concentrations.iter().sum::<Expression>());
-	let concentrations = box_(active_concentrations.into_vec().into_iter().chain([inert_concentration].into_iter()));
+	let concentrations = list(active_concentrations.into_vec().into_iter().chain([inert_concentration].into_iter()));
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
 	let rates = map(0..active, |specie| l!(f idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
 	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, f, "enthalpy_RT");
@@ -144,5 +144,5 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
 	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
 	let dtT_T = - energy_rate_RT / Cp;
-	Function{output: box_([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.statements.into(), input: input.len(), values: values.into()}
+	Function{output: list([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.statements.into(), input: input.len(), values: values.into()}
 }}}

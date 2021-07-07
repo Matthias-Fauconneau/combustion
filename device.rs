@@ -1,6 +1,6 @@
 type Output = Result<Box<[Box<[f32]>]>, Box<dyn std::error::Error>>;
 #[cfg(not(feature="gpu"))] mod device {
-	use {iter::{box_, map}, ast::*};
+	use {iter::{list, map}, ast::*};
 	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> super::Output {
 		let input_len = function.input;
 		let output_len = function.output.len();
@@ -10,7 +10,7 @@ type Output = Result<Box<[Box<[f32]>]>, Box<dyn std::error::Error>>;
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![0.; states_len].into_boxed_slice());
 			let time = std::time::Instant::now();
-			let mut input = box_(uniforms.iter().copied().chain(inputs.iter().map(|_| 0.)));
+			let mut input = list(uniforms.iter().copied().chain(inputs.iter().map(|_| 0.)));
 			let mut output = vec![0.; output_len].into_boxed_slice();
 			for state_id in 0..states_len {
 				for (input, array) in input[uniforms.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
@@ -24,7 +24,7 @@ type Output = Result<Box<[Box<[f32]>]>, Box<dyn std::error::Error>>;
 	}
 }
 #[cfg(feature="gpu")] mod device {
-use {iter::{box_, map}, ast::*, vulkan::*, super::Result};
+use {iter::{list, map}, ast::*, vulkan::*, super::Result};
 pub struct Function<Device: AsRef<Device>> {
 	device: Device,
 	input_len: usize,
@@ -38,7 +38,7 @@ pub fn call(Function{input_len, output_len, device, function}: Function, uniform
 	let device = device.as_ref();
 	let input = map(&*input, |array| Buffer::new(device, array.iter().copied()).unwrap());
 	let output = map(0..output_len, |_| Buffer::new(device, vec![0.; states_len]).unwrap());
-	let buffers = box_(input.iter().chain(&*output));
+	let buffers = list(input.iter().chain(&*output));
 	pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
 	let pipeline = device.pipeline(&function, local_size, cast(&uniforms), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;

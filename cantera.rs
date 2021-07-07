@@ -1,4 +1,4 @@
-#![feature(format_args_capture,iter_partition_in_place,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(format_args_capture,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
 use std::os::raw::c_char;
 #[link(name = "cantera")]
@@ -15,8 +15,8 @@ fn kin_getNetRatesOfProgress(n: i32, len: usize, rates: *mut f64) -> i32;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let path = std::env::args().skip(1).next().unwrap();
-	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
+	let mechanism_file_path = std::env::args().skip(1).next().unwrap();
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&mechanism_file_path)?)?)?;
 	let model = yaml::parse(&model);
 	use combustion::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
 	let rates = device::assemble(&rates);
 
-	let file = std::ffi::CString::new(path).unwrap();
+	let file = std::ffi::CString::new(mechanism_file_path.as_str()).unwrap();
 	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(b"gri30\0").unwrap().as_ptr();
 	let phase = unsafe{thermo_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr)};
 	let cantera_species_names = map(0..species.len(), |k| {
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
 	let ref state = initial_state(&model);
-	use {iter::map, ast::let_};
+	use {iter::{list, map}, ast::let_};
 	assert!(state.volume == 1.);
 	let test = move |state: &State| {
 		use itertools::Itertools;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		let total_amount = amounts.iter().sum::<f64>();
 		let active_amounts = &amounts[0..amounts.len()-1];
-		let input = iter::box_([total_amount, *temperature].iter().chain(active_amounts).copied().map(|input| vec![input as _; 1].into_boxed_slice()));
+		let input = list([total_amount, *temperature].iter().chain(active_amounts).copied().map(|input| vec![input as _; 1].into_boxed_slice()));
 		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input)).unwrap() => {
 		let rates = map(&*rates, |v| v[0] as _);
 		assert!(rates.len() == species.len()-1, "{}", rates.len());
@@ -89,21 +89,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			//amount_fractions is in split active/inert indexing (for Rust and nekRK) (TODO: parse amounts[specie name] in C++ to prevent such errors)
 			//let amount_fractions = cantera_species_names.iter().map(|specie| amount_fractions[species_names.iter().position(|s| s==specie).unwrap()]).format(" ").to_string(); // Cantera order
 			//println!("cd ../nekRK && ../nekRK/build/main Serial 1 1 0 gri30 {} {} {}",temperature,pressure_R*(kB*NA),amount_fractions);
+			//std::fs::write("/var/tmp/main.c", std::process::Command::new("../nekRK/main.py").arg(&mechanism_file_path).output().unwrap().stdout).unwrap(); // FIXME: don't do it everytime since OCCA takes forever to pass the code on to nvcc
 			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK")
-				.args(["Serial","1","1","0","gri30",&(pressure_R*(kB*NA)).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output().unwrap();
+				.args(["/var/tmp/main.c","Serial","1","1","0",&(pressure_R*(kB*NA)).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output().unwrap();
 			assert!(nekrk.stderr.is_empty(), "{}", std::str::from_utf8(&nekrk.stderr).unwrap());
-			let nekrk = nekrk.stdout;
-			let nekrk = std::str::from_utf8(&nekrk).unwrap();
-			let nekrk = if false { // Species
-				let nekrk : std::collections::HashMap<&str,f64> = nekrk.split(", ").map(|entry| {
-					let entry : Box<_> = entry.split(": ").collect::<Box<_>>().try_into().unwrap();
-					let [key, value]:[&str;2] = *entry;
-					(key, value.trim().parse().unwrap())
-				}).collect();
-				map(&species_names[0..species.len()-1], |specie| nekrk[specie]) // Already in mol
-			} else { // Reactions
-				map(nekrk.trim().split(" "), |r| r.trim().parse().unwrap())
-			};
+			let stdout = nekrk.stdout;
+			let stdout = std::str::from_utf8(&stdout).unwrap();
+			let lines = list(stdout.split("\n"));
+			let ref nekrk_species_names = list(lines[0].trim().split(" "));
+			assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
+			let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 			let max = cantera.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 			if max.1 > 1e-4 {
 				println!("{:.0}", nekrk.iter().format(" "));

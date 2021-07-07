@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log2, ln, pow}, iter::{IntoConstSizeIterator, ConstRange, into::IntoCopied, box_, map}};
+use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, log2, ln, pow}, iter::{IntoConstSizeIterator, ConstRange, into::IntoCopied, list, map}};
 
 const light_speed : f64 = 299_792_458.;
 const μ0 : f64 = 1.2566370621e-6; //  H/m (Henry=kg⋅m²/(s²A²))
@@ -115,7 +115,7 @@ pub fn new(species: &Species) -> Self {
 	Self{
 		sqrt_viscosity_T_14: map(0..K, |k| polynomial::fit(T, log2, |T| sqrt(s.viscosity(k, T))/sqrt(sqrt(T)))),
 		thermal_conductivity_T_12: map(0..K, |k| polynomial::fit(T, log2, |T| s.thermal_conductivity(k,T)/sqrt(T))),
-		binary_thermal_diffusion_coefficients_T32: box_((0..K).map(|k| (0..K).map(move |j|
+		binary_thermal_diffusion_coefficients_T32: map(0..K, map(|k| (0..K).map(move |j|
 			polynomial::fit(T, log2, |T| s.binary_thermal_diffusion_coefficient(k, j, T) / (T*sqrt(T)))
 		)).flatten())
 	}
@@ -165,7 +165,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials
 	let ref rcp_amount = f.def(1./total_amount);
 	let active_fractions= map(0..K-1, |k| f.def(rcp_amount*max(0., &active_amounts[k])));
 	let inert_fraction= f.def(1. - active_fractions.iter().sum::<Expression>());
-	let ref mole_fractions = box_(active_fractions.into_vec().into_iter().chain(std::iter::once(inert_fraction)));
+	let ref mole_fractions = list(active_fractions.into_vec().into_iter().chain(std::iter::once(inert_fraction)));
 	let ref rcp_mean_molar_mass = f.def(1./dot(&molar_mass, &mole_fractions));
 	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
 	let ref T_12 = f.def(sqrt(r#use(T)));
