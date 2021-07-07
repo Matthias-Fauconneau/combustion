@@ -1,19 +1,19 @@
 cargo-features=['edition2021']
 package={name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021'}
-features={yaml=['yaml-rust','pest_derive','pest'], transport=['nalgebra'], gpu=['spirv','vulkan','anyhow','fehler'], plot=['cvode','ui','image','png','anyhow'], default=['yaml','itertools','rand']}
+features={yaml=['yaml-rust','pest_derive','pest'], transport=['nalgebra'], gpu=['spirv','vulkan','anyhow','fehler'], plot=['cvode','ui','image','png','anyhow'], default=['anyhow','yaml','itertools','rand']}
 lib={path='lib.rs'}
 bin=[
-	{name='main', path='main.rs', required-features=['yaml','itertools']},
-	{name='cantera', path='cantera.rs', required-features=['yaml','itertools','rand']},
-	{name='plot', path='plot.rs', required-features=['yaml','plot']}
+	{name='main', path='main.rs', required-features=['anyhow','yaml','itertools']},
+	{name='cantera', path='cantera.rs', required-features=['anyhow','yaml','itertools','rand']},
+	{name='plot', path='plot.rs', required-features=['anyhow','yaml','plot']}
 ]
 
 [dependencies]
+anyhow={optional=true, version='*' }
 serde={version='*', features=['derive']}
 strum='*'
 strum_macros='*'
 linear-map={version='*', features=['serde_impl']}
-anyhow={optional=true, version='*' }
 fehler={optional=true, version='*' }
 itertools={optional=true, version='*' }
 iter={git='https://github.com/Matthias-Fauconneau/iter'}

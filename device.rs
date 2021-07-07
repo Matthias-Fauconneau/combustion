@@ -1,4 +1,4 @@
-type Output = Result<Box<[Box<[f32]>]>, Box<dyn std::error::Error>>;
+type Output = anyhow::Result<Box<[Box<[f32]>]>>;
 #[cfg(not(feature="gpu"))] mod device {
 	use {iter::{list, map}, ast::*};
 	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> super::Output {
