@@ -39,21 +39,21 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 	).into_vec().try_into().unwrap()
 }
 
-pub use yaml_rust::YamlLoader as Loader;
+pub use yaml::{Yaml, YamlLoader as Loader};
 use combustion::model::*;
 
-pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
+pub fn parse(yaml: &[Yaml]) -> Model {
 	use std::str::FromStr;
 	let data = &yaml[0];
 	let units = &data["units"];
 	assert!(units["length"].as_str()==Some("cm") && units["time"].as_str()==Some("s") && units["quantity"].as_str()==Some("mol"));
 	let species = map(data["species"].as_vec().unwrap(), |specie| (specie["name"].as_str().unwrap(), Specie{
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
-		thermodynamic: (|thermo:&yaml_rust::Yaml| NASA7{
+		thermodynamic: (|thermo:&Yaml| NASA7{
 			temperature_ranges: map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap()),
 			pieces: map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap())
 		})(&specie["thermo"]),
-		transport: (|transport:&yaml_rust::Yaml| Transport{
+		transport: (|transport:&Yaml| Transport{
 			well_depth_K: transport["well-depth"].as_f64().unwrap(),
 			diameter_Å: transport["diameter"].as_f64().unwrap(),
 			geometry: {use Geometry::*; match transport["geometry"].as_str().unwrap() {
@@ -75,7 +75,7 @@ pub fn parse(yaml: &[yaml_rust::Yaml]) -> Model {
 		let equation: [Map<&str, u8>; 2] = equation(reaction["equation"].as_str().unwrap());
 		let reactants: u8 = equation[0].iter().map(|(_,n)| n).sum();
 		let reactants = reactants + if let Some("three-body") = reaction["type"].as_str() {1} else {0};
-		let rate_constant = |rate_constant:&yaml_rust::Yaml, concentration_cm3_unit_conversion_factor_exponent: u8| RateConstant{
+		let rate_constant = |rate_constant:&Yaml, concentration_cm3_unit_conversion_factor_exponent: u8| RateConstant{
 			preexponential_factor: rate_constant["A"].as_f64().unwrap()*f64::powf(1e-6, concentration_cm3_unit_conversion_factor_exponent as f64),
 			temperature_exponent: rate_constant["b"].as_f64().unwrap(),
 			activation_temperature: {

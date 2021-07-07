@@ -1,4 +1,5 @@
-#![allow(incomplete_features)]#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map,if_let_guard)]
+#![allow(incomplete_features,non_snake_case)]
+#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map,if_let_guard)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
@@ -44,15 +45,15 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	Display(Value)
 }
 
-pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
-//pub fn float(float: f64) -> Expression { Expression::Float(float) }
-pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
+//pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
+#[track_caller] pub fn float(float: f64) -> Option<Expression> { /*assert!((float as f32).is_finite(), "{float:e}");*/ (float as f32).is_finite().then(|| Expression::Float(float)) }
+/*pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
 pub fn and(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::And(box_(a.into()), box_(b.into())) }
 pub fn or(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Or(box_(a.into()), box_(b.into())) }
 pub fn ishl_imm(a: impl Into<Expression>, b: u8) -> Expression { Expression::IShLImm(box_(a.into()), b) }
 pub fn ushr_imm(a: impl Into<Expression>, b: u8) -> Expression { Expression::UShRImm(box_(a.into()), b) }
 pub fn iadd(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::IAdd(box_(a.into()), box_(b.into())) }
-pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::ISub(box_(a.into()), box_(b.into())) }
+pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::ISub(box_(a.into()), box_(b.into())) }*/
 fn neg(x: impl Into<Expression>) -> Expression { Expression::Neg(box_(x.into())) }
 pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Max(box_(a.into()), box_(b.into())) }
 fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Add(box_(a.into()), box_(b.into())) }
@@ -60,11 +61,11 @@ fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expre
 pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::LessOrEqual(box_(a.into()), box_(b.into())) }
 fn mul(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Mul(box_(a.into()), box_(b.into())) }
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Div(box_(a.into()), box_(b.into())) }
-pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
+/*pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
 pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
 pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
-pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }
+pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }*/
 pub fn sqrt(x: impl Into<Expression>) -> Expression { Expression::Sqrt(box_(x.into())) }
 
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
@@ -85,16 +86,16 @@ impl std::ops::Div<&Value> for &Value { type Output = Expression; fn div(self, b
 //impl std::ops::Div<f32> for &Value { type Output = Expression; fn div(self, b: f32) -> Self::Output { mul(1./b, self) } }
 impl std::ops::Div<f64> for &Value { type Output = Expression; #[track_caller] fn div(self, b: f64) -> Self::Output { assert!(f64::abs(b)>1e-28); mul(1./b, self) } }
 
-impl From<f32> for Expression { fn from(v: f32) -> Self { Self::F32(v) } }
-impl From<f64> for Expression { fn from(v: f64) -> Self { Self::Float(v) } }
-impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(Expression::Float(self), b) } }
-impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(Expression::Float(self), b) } }
-impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(Expression::Float(self), b) } }
-impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(Expression::Float(self), b) } }
-impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(Expression::Float(self), b) } }
-impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(Expression::Float(self), b) } }
-impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(Expression::Float(self), b) } }
-impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(Expression::Float(self), b) } }
+//impl From<f32> for Expression { fn from(v: f32) -> Self { Expression::F32(v) } }
+impl From<f64> for Expression { fn from(v: f64) -> Self { float(v).unwrap() } }
+impl std::ops::Add<Expression> for f64 { type Output = Expression; fn add(self, b: Expression) -> Self::Output { add(self, b) } }
+impl std::ops::Sub<Expression> for f64 { type Output = Expression; fn sub(self, b: Expression) -> Self::Output { sub(self, b) } }
+impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, b: Expression) -> Self::Output { mul(self, b) } }
+impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
+impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
+impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
+impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
+impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
 //type FunctionBuilder = Vec<String>;
 //impl FunctionBuilder { pub fn new(input: &[&str]) -> Self { Self { values: input.iter().map(|s| s.to_string()).collect() } } }
@@ -135,8 +136,23 @@ pub struct Function {
 	pub values: Box<[String]>,
 }
 
-impl<E:Into<Expression>> std::iter::Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { iter.into_iter().map(|e| e.into()).reduce(add).unwrap() } }
+use std::iter::{Sum, Product};
+
+// cannot impl Sum<Option<Expression>> for Option<Expression> as std:iter_arith_traits_option defines impl Sum<Option> for Option<Sum>
+// Forgetting .filter_map(|x| x) will compile with unexpected results
+pub fn Σ(iter: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> {
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Expression::Float(e) = e {*e!=0.} else {true}).reduce(add)
+}
+impl Sum<Expression> for Option<Expression> { fn sum<I:Iterator<Item=Expression>>(iter: I) -> Self { Σ(iter) } }
+impl<E:Into<Expression>> Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { Σ(iter).unwrap() } }
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }
+
+pub fn Π(iter: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> {
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Expression::Float(e) = e {*e!=1.} else {true}).reduce(mul)
+}
+impl Product<Expression> for Option<Expression> { fn product<I:Iterator<Item=Expression>>(iter: I) -> Self { Π(iter) } }
+impl<E:Into<Expression>> Product<E> for Expression { fn product<I:Iterator<Item=E>>(iter: I) -> Self { Π(iter).unwrap() } }
+pub fn product(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().product() }
 
 #[track_caller] pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
 	iter.into_iter().fold(None, |sum, (c, e)|

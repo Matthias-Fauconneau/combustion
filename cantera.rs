@@ -20,7 +20,6 @@ fn main() -> Result<()> {
 	let model = yaml::parse(&model);
 	use combustion::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
-	//eprintln!("{species_names:?}");
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
 	let rates = device::assemble(&rates);
@@ -69,7 +68,6 @@ fn main() -> Result<()> {
 			unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
 			map(rates, |c| c*1000.) // kmol -> mol
 		};
-		//if true { println!("{:.0}", cantera.iter().format(" ")); }
 
 		let error = |a,b| {
 			let m=f64::abs(f64::max(a,b));
@@ -77,9 +75,10 @@ fn main() -> Result<()> {
 			let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 		};
 		//let error = |a,b| num::relative_error(a,b);
-		let max = if false {
+		let max = if true {
 			let max = rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 			if max.1 > 1e-4 {
+				println!("{:.0}", cantera.iter().format(" "));
 				println!("{}", rates.iter().format(" "));
 				println!("{} {}", rates[max.0], cantera[max.0]);
 			}
@@ -109,7 +108,6 @@ fn main() -> Result<()> {
 				println!("{} {}", cantera[max.0], nekrk[max.0]);
 			}
 			max
-			//rates.iter().zip(&*cantera).zip(&*nekrk).map(|((&a,&b), &c)| f64::max(num::relative_error(a,b), num::relative_error(b,c))).reduce(f64::max)?*/
 		};
 		Ok(max)
 	}}};
@@ -121,12 +119,12 @@ fn main() -> Result<()> {
 		let temperature = random.gen_range(1000. .. 1200.);
 		let pressure = random.gen_range(0. .. 1e5);
 		let pressure_R = pressure/(kB*NA); //random.gen_range(0. .. 10e6)/(kB*NA);
-		let amount = pressure_R * volume / temperature;
+		let total_amount = pressure_R * volume / temperature;
 		let amount_proportions = map(0..species.len(), |_| random.gen());
-		let amounts = map(&*amount_proportions, |amount_proportion| amount * amount_proportion/amount_proportions.iter().sum::<f64>());
+		let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());
+		let amount_fractions = map(&*amounts, |n| n/total_amount);
 		let e = test(&State{temperature, pressure_R, volume, amounts})?;
-		//println!("{temperature} {pressure} {e}");
-		assert!(e.1 < 1e-4, "T {temperature} P {pressure} E {e:?} {max} {}", ""/*species_names[e.0]*/);
+		assert!(e.1 < 1e-4, "T:{temperature} P:{pressure} X:{amount_fractions:?} E:{}:{:e}(vs{max:e})", species_names[e.0], e.1);
 		let e = e.1;
 		if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100==0 { println!("{i}") }
 	}

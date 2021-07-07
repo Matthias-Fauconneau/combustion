@@ -37,7 +37,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		&Expression::I32(value) => I32(value),
 		&Expression::F32(value) => F32(value),
 		&Expression::F64(value) => F64(value),
-		&Expression::Float(value) => F32(value as f32),
+		&Expression::Float(value) => F32({assert!((value as f32).is_finite()); value as _}),
 		Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
@@ -84,7 +84,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		},
 		expression => panic!("{expression:?}"),
 	};
-	//if let F32(x) = result { assert!(false || f32::abs(x)<1e28, "{x}: {expression:?} {}", to_string(state, expression)); }
+	if let F32(x) = result { assert!(false || x.is_finite(), "{x}: {expression:?} {}", to_string(state, expression)); }
 	result
 }
 
@@ -95,7 +95,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 			Value { id, value: expression } => {
 				let result= eval(state, expression);
 				assert!(state[id.0] == DataValue::None);
-				if let DataValue::F32(x) = result { assert!(x.is_finite() && f32::abs(x)<1e28, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression)); }
+				if let DataValue::F32(x) = result { assert!(x.is_finite() /*&& f32::abs(x)<1e28*/, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression)); }
 				state[id.0] = result;
 			},
 			Select { condition, true_exprs, false_exprs, results } => {

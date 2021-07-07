@@ -76,7 +76,7 @@ fn inline<T>(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block
 	let types = vec![(ast::Value(0), ast::Type::F32)].into_iter().collect();
 	let values = vec![(ast::Value(0), self.expr(x))].into_iter().collect();
 	let f = AstBuilder{builder: &mut self.builder, types, values}; // New values scope/frame to let function define new intermediates without conflicting with parent caller
-	let ref mut values = 1;
+	let ref mut values = vec!["x".to_string()];
 	let ref mut block = Block{values, statements: vec![]};
 	pass(function(Expression::Value(ast::Value(0)), block), block, f)
 }
@@ -118,6 +118,7 @@ fn check_types_and_load_constants(&mut self, statement: &Statement) {
 			for id in &**results { assert!(!self.values.contains_key(id)); }
 			self.types.extend(results.iter().zip(true_types.iter().zip(&*false_types)).map(|(id, (&a,&b))| { assert!(a==b); (id.clone(), a) }));
 		}
+		Display(_) => unimplemented!(),
 	}
 }
 fn inline_expr(&mut self, x: &Expression, function: impl Fn(Expression, &mut Block) -> Expression) -> Value {
@@ -197,6 +198,7 @@ fn push(&mut self, statement: &Statement) {
 			for id in &**results { assert!(!self.values.contains_key(id)); }
 			self.values.extend(results.iter().zip(params).map(|(id, &value)| (id.clone(), value)));
 		}
+		Display(_) => unimplemented!()
 	}
 }
 }
@@ -216,7 +218,7 @@ pub fn compile(ast: &ast::Function) -> Function {
 	let ref mut f = AstBuilder{builder: f, types, values};
 	for statement in &*ast.statements { f.check_types_and_load_constants(statement); }
 	for statement in &*ast.statements { f.push(statement); }
-	for (i, e) in ast.output.iter().enumerate() { f.pass(e); store(f.expr(e), f), output, i, f); }
+	for (i, e) in ast.output.iter().enumerate() { f.pass(e); store(f.expr(e), output, i, f); }
 	f.ins().return_(&[]);
 	function
 }}}

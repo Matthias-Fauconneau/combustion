@@ -1,9 +1,10 @@
-#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case)]
+#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
-use {anyhow::Result, iter::{list, map}, chemistry::*};
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let model = yaml_model::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
-	let model = yaml_model::parse(&model);
+use {anyhow::Result, iter::{list, map}};
+fn main() -> Result<()> {
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
+	let model = yaml::parse(&model);
+	use combustion::*;
 	let (ref species_names, ref species) = Species::new(&model.species);
 	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
@@ -16,15 +17,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
-	let mut input = list([pressure_R as f32, total_amount as f32].into_iter().chain(state.iter().map(|&v| v as _)));
+	let mut input = list([list([total_amount as _])].into_iter().chain(state.iter().map(|&v| list([v as _]))));
 	let mut evaluations = 0;
 	let f = |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
-		for (input, &u) in input[2..].iter_mut().zip(u) { *input = u as _; }
-		let output = rates(&input);
-		for (f_u, &output) in f_u.iter_mut().zip(output) { *f_u = output as _; }
+		for (input, &u) in input[2..].iter_mut().zip(u) { input[0] = u as _; }
+		let output = rates(&[pressure_R as _], &map(&*input, |input| &**input)).unwrap();
+		for (f_u, output) in f_u.iter_mut().zip(&*output) { *f_u = output[0] as _; }
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true
@@ -64,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		(t, vec![sets_0, map(&*select, |&k| sets_1[k])].into_boxed_slice())
 	});
 	let mut plot = ui::plot::Plot::new(vec![&["T"] as &[_], &species_names].into_boxed_slice(), values.to_vec());
-	if true { ui::app::run(plot) }
+	if true { Ok(ui::app::run(plot)?) }
 	else {
 		let mut target = image::Image::zero((3840, 2160).into());
 		ui::widget::Widget::paint(&mut plot, &mut target.as_mut())?;

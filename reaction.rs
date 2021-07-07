@@ -19,7 +19,9 @@ fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Express
 	}.unwrap()
 }
 
-use {iter::{list, map}, super::*};
+type Error = String;
+use {fehler::throws, iter::{list, map}, super::*};
+
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
 fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);
@@ -44,34 +46,39 @@ fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Exp
 fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
 
 // A.T^β.exp(-Ea/kT)
-fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T4,rcp_T,rcp_T2,..}: T<'_>, f: &mut Block) -> Expression {
-	if [0.,-1.,1.,2.,4.,-2.].contains(&temperature_exponent) && activation_temperature == 0. {
-		if temperature_exponent == 0. { A.into() }
-		else if temperature_exponent == -1. { A * rcp_T }
-		else if temperature_exponent == 1. { A * T }
-		else if temperature_exponent == 2. { A * T2 }
-		else if temperature_exponent == 4. { A * T4 }
-		else if temperature_exponent == -2. { A * rcp_T2 }
-		else { unreachable!() }
-	} else {
-		let βlnT𐊛lnA = if temperature_exponent == 0. { f64::ln(A).into() } else { temperature_exponent * ln_T + f64::ln(A) };
-		let ln_arrhenius = if activation_temperature == 0. { βlnT𐊛lnA } else { -activation_temperature * rcp_T + βlnT𐊛lnA };
-		exp(ln_arrhenius, f)
-	}
+#[track_caller]#[throws] fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2}: T<'_>, f: &mut Block) -> Expression {
+	let (temperature_factor, ln_T_coefficient) =
+		/*if temperature_exponent <= -8. { unimplemented!("{temperature_exponent}") }
+		// T~1000: T^-n << 1 so no need to factorize exponent out of exp to reduce input domain
+		else*/ if temperature_exponent <= -1.5 { (Some(rcp_T2), temperature_exponent+2.) }
+		else if temperature_exponent <= -0.5 { (Some(rcp_T), temperature_exponent+1.) }
+		else if temperature_exponent >= 8. { unimplemented!("{temperature_exponent}") }
+		// TODO: T~1000: factorize exponent out of exp to reduce input domain
+		else if temperature_exponent >= 3.5 { (Some(T4), temperature_exponent-4.) }
+		else if temperature_exponent >= 2.5 { (Some(T3), temperature_exponent-3.) }
+		else if temperature_exponent >= 1.5 { (Some(T2), temperature_exponent-2.) }
+		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
+		else { (None, temperature_exponent) };
+	const T0: f64 = 1000.;
+	[Some(float(A*f64::powf(T0,ln_T_coefficient)).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
+	 (ln_T_coefficient != 0.).then(|| ln_T_coefficient * (ln_T-f64::ln(T0))),
+	 (activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
+	].into_iter().filter_map(|x| x).sum::<Option<_>>().map(|x| exp(x, f))].into_iter().filter_map(|x| x).product::<Option<_>>().unwrap()
 }
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
-		Elementary|Irreversible => arrhenius(k_inf, T, f),
-		ThreeBody{efficiencies} => arrhenius(k_inf, T, f) * dot(efficiencies, concentrations),
+		Elementary|Irreversible => arrhenius(k_inf, T, f).unwrap(),
+		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * dot(efficiencies, concentrations),
 		PressureModification{efficiencies, k0} => f.block(|f|{
-			let ref C_k0 = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f));
-			let ref k_inf = l!(f arrhenius(k_inf, T, f));
+			let ref C_k0 = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f).unwrap());
+			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
 			(C_k0 * k_inf) / (C_k0 + k_inf)
 		}),
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|f|{
-			let ref k_inf = l!(f arrhenius(k_inf, T, f));
-			let ref Pr = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f) / k_inf);
+			let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
+			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
+			let ref Pr = l!(f dot(efficiencies, concentrations) * k0 / k_inf);
 			let Fcent = {let T{T,rcp_T,..}=T; sum([
 				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
 				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
@@ -135,7 +142,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, f, "exp_Gibbs0_RT");
 	let ref density = l!(f total_concentration / total_amount);
 	let active_concentrations = map(0..active, |k| l!(f density*max(0., &active_amounts[k])));
-	let inert_concentration = l!(f total_concentration - active_concentrations.iter().sum::<Expression>());
+	let inert_concentration = l!(f total_concentration - sum(&*active_concentrations));
 	let concentrations = list(active_concentrations.into_vec().into_iter().chain([inert_concentration].into_iter()));
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
 	let rates = map(0..active, |specie| l!(f idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
