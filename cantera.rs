@@ -3,11 +3,12 @@ mod yaml; mod device;
 use {anyhow::Result, iter::{list, map}, itertools::Itertools, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap();
-	let model = std::str::from_utf8(&std::fs::read(&path)?);
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
+	let model = yaml::parse(&model);
 	use combustion::*;
-	let (ref species_names, ref species, active, reactions, state) = new(model);
+	let (ref species_names, ref species, active, reactions, state) = new(&model);
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = assemble(&rates);
+	let rates = with_repetitive_input(assemble(&rates), 1);
 
 	use std::os::raw::c_char;
 	#[link(name = "cantera")]
@@ -37,7 +38,7 @@ fn main() -> Result<()> {
 	let test = move |state: &State| -> Result<_> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[pressure_R], [&[total_amount, temperature], &amounts[0..amounts.len()-1]].concat())? => {
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
 		assert!(rates.len() == active, "{}", rates.len());
 		if false { println!("{}", rates.iter().format(" ")); }
 

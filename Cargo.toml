@@ -1,5 +1,5 @@
 cargo-features=['edition2021']
-package={name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021'}
+package={name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run='main'}
 features={yaml=['dep:yaml','pest_derive','pest'], transport=['nalgebra'], gpu=['spirv','vulkan','anyhow'], plot=['cvode','ui','image','png','anyhow'], default=['anyhow','yaml','itertools','rand']}
 lib={path='lib.rs'}
 bin=[
