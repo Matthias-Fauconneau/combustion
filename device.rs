@@ -1,19 +1,20 @@
-type Output = anyhow::Result<Box<[Box<[f32]>]>>;
+use {anyhow::Result, iter::map};
+type Output = Result<Box<[Box<[f32]>]>>;
 #[cfg(not(feature="gpu"))] mod device {
 	use {iter::{list, map}, ast::*};
 	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> super::Output {
 		let input_len = function.input;
 		let output_len = function.output.len();
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(function));
-		move |uniforms:&[f32], inputs:&[&[f32]]| {
-			assert!(uniforms.len() == 1 && uniforms.len()+inputs.len() == input_len);
+		move |constants:&[f32], inputs:&[&[f32]]| {
+			assert!(constants.len() == 1 && constants.len()+inputs.len() == input_len);
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![0.; states_len].into_boxed_slice());
 			let time = std::time::Instant::now();
-			let mut input = list(uniforms.iter().copied().chain(inputs.iter().map(|_| 0.)));
+			let mut input = list(constants.iter().copied().chain(inputs.iter().map(|_| 0.)));
 			let mut output = vec![0.; output_len].into_boxed_slice();
 			for state_id in 0..states_len {
-				for (input, array) in input[uniforms.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
+				for (input, array) in input[constants.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
 				function(&input, &mut output);
 				for (array, output) in outputs.iter_mut().zip(&*output) { array[state_id] = *output; }
 			}
@@ -31,8 +32,8 @@ pub struct Function<Device: AsRef<Device>> {
 	output_len: usize,
 	function: Box<[u32]>,
 }
-pub fn call(Function{input_len, output_len, device, function}: Function, uniforms: &[f32], input: &[&[f32]]) -> super::Output {
-	assert!(uniforms.len() == 1 && uniforms.len()+input.len() == input_len);
+pub fn call(Function{input_len, output_len, device, function}: Function, constants: &[f32], input: &[&[f32]]) -> super::Output {
+	assert!(constants.len() == 1 && constants.len()+input.len() == input_len);
 	let local_size = 512;
 	let states_len = input[0].len();
 	let device = device.as_ref();
@@ -40,9 +41,9 @@ pub fn call(Function{input_len, output_len, device, function}: Function, uniform
 	let output = map(0..output_len, |_| Buffer::new(device, vec![0.; states_len]).unwrap());
 	let buffers = list(input.iter().chain(&*output));
 	pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-	let pipeline = device.pipeline(&function, local_size, cast(&uniforms), &buffers)?;
+	let pipeline = device.pipeline(&function, local_size, cast(&constants), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;
-	let command_buffer = device.command_buffer(&pipeline, cast(&uniforms), (states_len as u32)/local_size)?;
+	let command_buffer = device.command_buffer(&pipeline, cast(&constants), (states_len as u32)/local_size)?;
 	let time = device.submit_and_wait(command_buffer)?;
 	println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
 	Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
@@ -59,4 +60,8 @@ impl FnOnce<(&[f32], &mut [f32])> for Function { type Output = super::Output; ex
 impl FnMut<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) } }
 impl Fn<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); } }
 }
-pub use device::*;
+pub use {device::*, ast::let_};
+pub fn all_same(array:&[f32], times: usize) -> f32 { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
+pub fn with_repetitive_input(f: impl Fn(&[f32],&[&[f32]])->Output, times: usize) -> impl Fn(&[f64],&[f64])->Result<Box<[f64]>> {
+	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times) as _))
+}

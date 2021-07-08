@@ -1,4 +1,4 @@
-#![feature(once_cell,in_band_lifetimes,array_map,array_methods,format_args_capture,associated_type_bounds,iter_is_partitioned,bindings_after_at)]
+#![feature(once_cell,in_band_lifetimes,array_map,array_methods,format_args_capture,associated_type_bounds,bindings_after_at,trait_alias)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints)]
 pub mod model;
 pub use model::{kB, NA};
@@ -37,7 +37,7 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(||
 use iter::map;
 
 impl Species {
-	pub fn new(species: &[(&'t str, model::Specie)]) -> (Box<[&'t str]>, Self) {
+	pub fn new(species: &[(&'t str, model::Specie)]) -> Self {
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
@@ -54,7 +54,7 @@ impl Species {
 			map(species, |(_,s)| if let Linear{rotational_relaxation,..}|Nonlinear{rotational_relaxation,..} = s.transport.geometry { rotational_relaxation } else { 0. });
 		let internal_degrees_of_freedom = map(species, |(_,s)| match s.transport.geometry { Atom => 0., Linear{..} => 1., Nonlinear{..} => 3./2. });
 		let heat_capacity_ratio = map(species, |(_,s)| 1. + 2. / match s.transport.geometry { Atom => 3., Linear{..} => 5., Nonlinear{..} => 6. });
-		(map(species, |(name,_)| *name), Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, heat_capacity_ratio})
+		Species{molar_mass, thermodynamics, diameter, well_depth_J, polarizability, permanent_dipole_moment, rotational_relaxation, internal_degrees_of_freedom, heat_capacity_ratio}
 	}
 	pub fn len(&self) -> usize { self.molar_mass.len() }
 }
@@ -100,10 +100,10 @@ pub struct Reaction {
 }
 
 impl Reaction {
-	pub fn new(species_names: &[&str], model::Reaction{equation, rate_constant, model}: &model::Reaction) -> Self {
+	pub fn new(species_names: &[&str], active: usize, model::Reaction{equation, rate_constant, model}: &model::Reaction) -> Self {
 		for side in equation { for (specie, _) in side { assert!(species_names.contains(&specie), "{}", specie) } }
 		let [reactants, products] = equation.each_ref().map(|e| species_names.iter().map(|&s| *e.get(s).unwrap_or(&0)).collect::<Box<_>>());
-		let net = products.into_iter().zip(reactants.into_iter()).take(species_names.len()-1).map(|(&a, &b)| a as i8 - b as i8).collect();
+		let net = products.into_iter().zip(reactants.into_iter()).take(active).map(|(&a, &b)| a as i8 - b as i8).collect();
 		let [Σreactants, Σproducts] = [reactants.iter().sum(), products.iter().sum()];
 		let Σnet = Σproducts as i8 - Σreactants as i8;
 		let from = |efficiencies:&Map<_,_>| map(species_names, |&specie| *efficiencies.get(specie).unwrap_or(&1.));
@@ -119,6 +119,21 @@ impl Reaction {
 			}}
 		}
 	}
+}
+
+pub fn new(model: &'t model::Model) -> (Box<[&'t str]>, Species, usize, Box<[Reaction]>, State) {
+	let species_names = map(&*model.species, |(name,_)| *name);
+	let species = Species::new(&model.species);
+	let active = {
+		let ref mut iter = species_names.iter().map(
+			|specie| model.reactions.iter().any(|model::Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)) );
+		let active = iter.take_while(|is_active| *is_active).count();
+		assert!(iter.all(|is_active| !is_active));
+		active
+	};
+	let reactions = map(&*model.reactions, |r| Reaction::new(&species_names, active, r));
+	let initial_state = initial_state(&model);
+	(species_names, species, active, reactions, initial_state)
 }
 
 pub mod reaction;

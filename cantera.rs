@@ -1,31 +1,29 @@
-#![feature(format_args_capture,array_map)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
-use std::os::raw::c_char;
-#[link(name = "cantera")]
-extern "C" {
-fn thermo_newFromFile(file_name: *const c_char, phase_name: *const c_char) -> i32;
-fn thermo_nSpecies(n: i32) -> usize;
-fn thermo_setTemperature(n: i32, t: f64) -> i32;
-fn thermo_setMoleFractions(n: i32, len: usize, x: *const f64, norm: i32) -> i32;
-fn thermo_getSpeciesName(n: i32, m: usize, len: usize, buffer: *mut c_char) -> i32;
-fn thermo_setPressure(n: i32, p: f64) -> i32;
-fn kin_newFromFile(file_name: *const c_char, phase_name: *const c_char, reactingPhase: i32, neighbor0: i32, neighbor1: i32, neighbor2: i32, neighbor3: i32) -> i32;
-fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32;
-fn kin_getNetRatesOfProgress(n: i32, len: usize, rates: *mut f64) -> i32;
-}
-use anyhow::Result;
+use {anyhow::Result, iter::{list, map}, itertools::Itertools, device::*};
 fn main() -> Result<()> {
-	let mechanism_file_path = std::env::args().skip(1).next().unwrap();
-	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&mechanism_file_path)?)?)?;
-	let model = yaml::parse(&model);
+	let path = std::env::args().skip(1).next().unwrap();
+	let model = std::str::from_utf8(&std::fs::read(&path)?);
 	use combustion::*;
-	let (ref species_names, ref species) = Species::new(&model.species);
-	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
+	let (ref species_names, ref species, active, reactions, state) = new(model);
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = device::assemble(&rates);
+	let rates = assemble(&rates);
 
-	let file = std::ffi::CString::new(mechanism_file_path.as_str())?;
-	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(b"gri30\0")?.as_ptr();
+	use std::os::raw::c_char;
+	#[link(name = "cantera")]
+	extern "C" {
+	fn thermo_newFromFile(file_name: *const c_char, phase_name: *const c_char) -> i32;
+	fn thermo_nSpecies(n: i32) -> usize;
+	fn thermo_setTemperature(n: i32, t: f64) -> i32;
+	fn thermo_setMoleFractions(n: i32, len: usize, x: *const f64, norm: i32) -> i32;
+	fn thermo_getSpeciesName(n: i32, m: usize, len: usize, buffer: *mut c_char) -> i32;
+	fn thermo_setPressure(n: i32, p: f64) -> i32;
+	fn kin_newFromFile(file_name: *const c_char, phase_name: *const c_char, reactingPhase: i32, neighbor0: i32, neighbor1: i32, neighbor2: i32, neighbor3: i32) -> i32;
+	fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32;
+	fn kin_getNetRatesOfProgress(n: i32, len: usize, rates: *mut f64) -> i32;
+	}
+	let file = std::ffi::CString::new(path.as_str())?;
+	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(b"gas\0")?.as_ptr(); //gri30
 	let phase = unsafe{thermo_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr)};
 	let cantera_species_names = map(0..species.len(), |k| {
 		let mut specie = [0; 8];
@@ -35,20 +33,12 @@ fn main() -> Result<()> {
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
-	let ref state = initial_state(&model);
-	use {iter::{list, map}, ast::let_};
 	assert!(state.volume == 1.);
 	let test = move |state: &State| -> Result<_> {
-		use itertools::Itertools;
-
 		let State{temperature, pressure_R, amounts, ..} = state;
-
 		let total_amount = amounts.iter().sum::<f64>();
-		let active_amounts = &amounts[0..amounts.len()-1];
-		let input = list([total_amount, *temperature].iter().chain(active_amounts).copied().map(|input| vec![input as _; 1].into_boxed_slice()));
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &map(&*input, |input| &**input))? => {
-		let rates = map(&*rates, |v| v[0] as _);
-		assert!(rates.len() == species.len()-1, "{}", rates.len());
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[pressure_R], [&[total_amount, temperature], &amounts[0..amounts.len()-1]].concat())? => {
+		assert!(rates.len() == active, "{}", rates.len());
 		if false { println!("{}", rates.iter().format(" ")); }
 
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
@@ -59,9 +49,9 @@ fn main() -> Result<()> {
 		let cantera = if true { // Species
 			let mut rates = vec![0.; species.len()];
 			unsafe{kin_getNetProductionRates(kinetics, rates.len(), rates.as_mut_ptr())};
-			let order = |o: &[f64]| map(&species_names[0..species.len()-1], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
+			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			let species_rates = order(&map(rates, |c| c*1000.)); // kmol -> mol
-			assert!(species_rates.len() == species.len()-1);
+			assert!(species_rates.len() == active);
 			species_rates
 		} else { // Reactions
 			let mut rates = vec![0.; reactions.len()];
@@ -88,7 +78,7 @@ fn main() -> Result<()> {
 			//assert!(std::process::Command::new("make").current_dir("../nekRK/build").arg("-j").status()?.success());
 			let code = std::path::Path::new("/var/tmp/main.c");
 			if !code.exists() || std::fs::metadata("../nekRK/main.py")?.modified()? > code.metadata()?.modified()? {
-				std::fs::write("/var/tmp/main.c", std::process::Command::new("../nekRK/main.py").arg(&mechanism_file_path).output()?.stdout)?;
+				std::fs::write("/var/tmp/main.c", std::process::Command::new("../nekRK/main.py").arg(&path).output()?.stdout)?;
 			}
 			let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK")
 				.args([code.to_str().unwrap(),"Serial","1","1","0",&(pressure_R*(kB*NA)).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output()?;
@@ -116,7 +106,7 @@ fn main() -> Result<()> {
 	for i in 0.. {
 		let volume = 1.;
 		use rand::Rng;
-		let temperature = random.gen_range(1000. .. 1200.);
+		let temperature = random.gen_range(1000. .. 3500.);
 		let pressure = random.gen_range(0. .. 1e5);
 		let pressure_R = pressure/(kB*NA); //random.gen_range(0. .. 10e6)/(kB*NA);
 		let total_amount = pressure_R * volume / temperature;

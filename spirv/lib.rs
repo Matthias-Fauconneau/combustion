@@ -71,8 +71,8 @@ fn push(&mut self, s: &Statement) {
 }
 }
 
-pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rspirv::Error> {
-	assert!(uniform_len==1);
+pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rspirv::Error> {
+	assert!(constants_len==1);
 	let mut b = rspirv::Builder::new();
 	b.set_version(1, 5);
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
@@ -106,7 +106,7 @@ pub fn compile(uniform_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rs
 	b.decorate(bsaf, Block, []);
 	b.member_decorate(bsaf, 0, Offset, [0u32.into()]);
 	let sbsaf = b.type_pointer(None, StorageClass::StorageBuffer, bsaf);
-	let input = map(0..ast.input-uniform_len, |_| {
+	let input = map(0..ast.input-constants_len, |_| {
 		let v = b.variable(sbsaf, None, StorageClass::StorageBuffer, None);
 		b.decorate(v, NonWritable, []);
 		v

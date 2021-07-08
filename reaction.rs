@@ -1,4 +1,4 @@
-//#![feature(associated_type_bounds,bindings_after_at,iter_is_partitioned,array_map,format_args_capture,trait_alias)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
+//#![feature(associated_type_bounds,bindings_after_at,array_map,format_args_capture,trait_alias)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
 fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, Vec<usize>)> {
 	let mut map = linear_map::LinearMap::<_, Vec<_>>::new();
 	for (index, key) in iter.into_iter().enumerate() { map.entry(key).or_insert(Default::default()).push(index) }
@@ -59,7 +59,7 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 		else if temperature_exponent >= 1.5 { (Some(T2), temperature_exponent-2.) }
 		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
 		else { (None, temperature_exponent) };
-	const T0: f64 = 1000.;
+	const T0: f64 = 1024.;
 	[Some(float(A*f64::powf(T0,ln_T_coefficient)).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
 	 (ln_T_coefficient != 0.).then(|| ln_T_coefficient * (ln_T-f64::ln(T0))),
 	 (activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
@@ -121,11 +121,12 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 
 pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let active = {
-		let active = map(0..species.len()-1, |k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
-		assert!(active.iter().is_partitioned(|&active| active));
-		active.iter().position(|active| !active).unwrap_or(species.len()-1)
+		let ref mut iter = (0..species.len()-1).map(|k| reactions.iter().any(|Reaction{net,..}| net[k] != 0));
+		let active = iter.take_while(|&is_active| is_active).count();
+		assert!(iter.all(|is_active| !is_active));
+		active
 	};
-	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref active_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
+	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut values = ["pressure_","total_amount","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
@@ -141,9 +142,9 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let T = T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2};
 	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, f, "exp_Gibbs0_RT");
 	let ref density = l!(f total_concentration / total_amount);
-	let active_concentrations = map(0..active, |k| l!(f density*max(0., &active_amounts[k])));
-	let inert_concentration = l!(f total_concentration - sum(&*active_concentrations));
-	let concentrations = list(active_concentrations.into_vec().into_iter().chain([inert_concentration].into_iter()));
+	let nonbulk_concentrations = map(0..active, |k| l!(f density*max(0., &nonbulk_amounts[k])));
+	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations));
+	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
 	let rates = map(0..active, |specie| l!(f idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
 	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, f, "enthalpy_RT");
