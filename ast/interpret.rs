@@ -9,13 +9,17 @@ impl DataValue {
 }
 impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
+impl From<DataValue> for f32 { fn from(v: DataValue) -> Self { if let DataValue::F32(v) = v { v } else { panic!("{v:?}"); } } }
+impl From<DataValue> for f64 { fn from(v: DataValue) -> Self { if let DataValue::F64(v) = v { v } else { panic!("{v:?}"); } } }
+impl From<f32> for DataValue { fn from(v: f32) -> Self { DataValue::F32(v) } }
+impl From<f64> for DataValue { fn from(v: f64) -> Self { DataValue::F64(v) } }
+
 #[derive(Clone)] struct State<'t> {
 	values: Box<[DataValue]>,
 	debug: &'t [String],
 }
 impl std::ops::Deref for State<'_> { type Target=[DataValue]; fn deref(&self) -> &Self::Target { &self.values} }
 impl std::ops::DerefMut for State<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.values} }
-
 
 fn to_string(state: &State, expression: &Expression) -> String {
 	use Expression::*;
@@ -37,7 +41,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		&Expression::I32(value) => I32(value),
 		&Expression::F32(value) => F32(value),
 		&Expression::F64(value) => F64(value),
-		&Expression::Float(value) => F32({assert!((value as f32).is_finite()); value as _}),
+		&Expression::Float(value) => {assert!((value as f32).is_finite()); (value as float).into()},
 		Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
@@ -112,16 +116,18 @@ fn run(state: &mut State, statements: &[Statement]) {
 	}
 }
 
-pub fn call(f: &Function, input: &[f32], output: &mut [f32]) {
+pub fn call(f: &Function, input: &[float], output: &mut [float]) {
 	assert!(input.len() == f.input);
 	let mut state = State{
-		values: input.iter().map(|&v| DataValue::F32(v)).chain((0..f.values.len()).map(|_| DataValue::None)).collect(),
+		values: input.iter().map(|&v| v.into()).chain((0..f.values.len()).map(|_| DataValue::None)).collect(),
 		debug: &f.values
 	};
 	run(&mut state, &f.statements);
-	for (slot, e) in output.iter_mut().zip(&*f.output) { if let DataValue::F32(v) = eval(&mut state, e) { *slot = v; } else { panic!("{e:?}"); } }
+	for (slot, e) in output.iter_mut().zip(&*f.output) { *slot = eval(&state, e).into(); }
 }
 
-impl FnOnce<(&[f32], &mut [f32])> for Function { type Output = (); extern "rust-call" fn call_once(mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call_mut(args) } }
-impl FnMut<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) } }
-impl Fn<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); } }
+impl FnOnce<(&[float], &mut [float])> for Function {
+	type Output = (); extern "rust-call" fn call_once(mut self, args: (&[float], &mut [float])) -> Self::Output { self.call_mut(args) }
+}
+impl FnMut<(&[float], &mut [float])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[float], &mut [float])) -> Self::Output { self.call(args) } }
+impl Fn<(&[float], &mut [float])> for Function { extern "rust-call" fn call(&self, (input, output): (&[float], &mut [float])) -> Self::Output { call(&self, input, output); } }

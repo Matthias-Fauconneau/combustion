@@ -1,12 +1,12 @@
-use {anyhow::Result, iter::map};
-type Output = Result<Box<[Box<[f32]>]>>;
-#[cfg(not(feature="gpu"))] mod device {
+use {anyhow::Result, iter::map, ast::float};
+type Output = Result<Box<[Box<[float]>]>>;
+#[cfg(not(feature="vpu"))] mod device {
 	use {iter::{list, map}, ast::*};
-	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[f32], &[&[f32]]) -> super::Output {
+	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[float], &[&[float]]) -> super::Output {
 		let input_len = function.input;
 		let output_len = function.output.len();
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(function));
-		move |constants:&[f32], inputs:&[&[f32]]| {
+		move |constants:&[float], inputs:&[&[float]]| {
 			assert!(constants.len() == 1 && constants.len()+inputs.len() == input_len);
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![0.; states_len].into_boxed_slice());
@@ -24,7 +24,7 @@ type Output = Result<Box<[Box<[f32]>]>>;
 		}
 	}
 }
-#[cfg(feature="gpu")] mod device {
+#[cfg(feature="vpu")] mod device {
 use {iter::{list, map}, ast::*, vulkan::*, super::Result};
 pub struct Function<Device: AsRef<Device>> {
 	device: Device,
@@ -56,12 +56,12 @@ pub fn call(Function{input_len, output_len, device, function}: Function, constan
 	Function{device: vulkan::Device::new()?, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function).unwrap()}
 }
 
-impl FnOnce<(&[f32], &mut [f32])> for Function { type Output = super::Output; extern "rust-call" fn call_once(mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call_mut(args) } }
-impl FnMut<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[f32], &mut [f32])) -> Self::Output { self.call(args) } }
-impl Fn<(&[f32], &mut [f32])> for Function { extern "rust-call" fn call(&self, (input, output): (&[f32], &mut [f32])) -> Self::Output { call(&self, input, output); } }
+impl FnOnce<(&[float], &mut [float])> for Function { type Output = super::Output; extern "rust-call" fn call_once(mut self, args: (&[float], &mut [float])) -> Self::Output { self.call_mut(args) } }
+impl FnMut<(&[float], &mut [float])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[float], &mut [float])) -> Self::Output { self.call(args) } }
+impl Fn<(&[float], &mut [float])> for Function { extern "rust-call" fn call(&self, (input, output): (&[float], &mut [float])) -> Self::Output { call(&self, input, output); } }
 }
 pub use {device::*, ast::let_};
-pub fn all_same(array:&[f32], times: usize) -> f32 { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
-pub fn with_repetitive_input(f: impl Fn(&[f32],&[&[f32]])->Output, times: usize) -> impl Fn(&[f64],&[f64])->Result<Box<[f64]>> {
-	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times) as _))
+pub fn all_same(array:&[float], times: usize) -> float { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
+pub fn with_repetitive_input(f: impl Fn(&[float],&[&[float]])->Output, times: usize) -> impl Fn(&[float],&[float])->Result<Box<[float]>> {
+	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times)))
 }

@@ -171,8 +171,8 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials
 	let ref VT = l!(f sqrt(T));
 	let ref TVTIP = l!(f T*VT/(pressure_R*NA*kB));
 	Function{output: list([
-		VT*viscosityIVT(molar_mass, &polynomials.VviscosityIVVT, lnT, mole_fractions, f),
 		(VT/2.)*thermal_conductivityIVTI2(&polynomials.thermal_conductivityIVT, lnT, mole_fractions, f),
+		VT*viscosityIVT(molar_mass, &polynomials.VviscosityIVVT, lnT, mole_fractions, f),
 	].into_iter().chain(
 		PITVT_mixture_diffusion_coefficients(&polynomials.binary_thermal_diffusionITVT, lnT, mole_fractions, mass_fractions, f).map(|PITVTID| TVTIP*PITVTID)
 	)), statements: function.statements.into(), input: input.len(), values: values.into()}
