@@ -39,7 +39,6 @@ fn main() -> Result<()> {
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
-	assert!(state.volume == 1.);
 	let test = move |state: &State| -> Result<_> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
@@ -49,10 +48,10 @@ fn main() -> Result<()> {
 		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
-		let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 		let cantera = if true { // Species
 			let mut rates = vec![0.; species.len()];
 			unsafe{kin_getNetProductionRates(kinetics, rates.len(), rates.as_mut_ptr())};
+			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			let species_rates = order(&map(rates, |c| c*1000.)); // kmol -> mol
 			assert!(species_rates.len() == active);
 			species_rates
@@ -67,20 +66,22 @@ fn main() -> Result<()> {
     let ref cantera_mixture_diffusion_coefficients = {
 			let mut array = vec![0.; species.len()];
 			assert!(unsafe{trans_getMixDiffCoeffs(transport, array.len() as i32, array.as_mut_ptr())} == 0);
+			let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			order(&array)
 		};
+		eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion_coefficients.iter().format(" "));
 
 		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
 		assert!(rates.len() == active, "{}", rates.len());
-		if false { println!("{}", rates.iter().format(" ")); }
 		#[cfg(feature="transport")] {
-		let transport = transport::properties::<4>(&species);
+		let transport = transport::properties::<5>(&species);
 		let transport = with_repetitive_input(assemble(&transport), 1);
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let_!{ [thermal_conductivity, viscosity, mixture_diffusion_coefficients @ ..] = &*transport(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
-    println!("λ: {:.0e}", num::relative_error(*thermal_conductivity, cantera_thermal_conductivity));
-    println!("μ: {:.0e}", num::relative_error(*viscosity, cantera_viscosity));
+		eprintln!("λ: {thermal_conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
+    print!("λ: {:.0e}, ", num::relative_error(*thermal_conductivity, cantera_thermal_conductivity));
+    print!("μ: {:.0e}, ", num::relative_error(*viscosity, cantera_viscosity));
     let e = mixture_diffusion_coefficients.iter().zip(cantera_mixture_diffusion_coefficients.iter()).map(|(a,b)| num::relative_error(*a, *b)).reduce(f64::max).unwrap();
     println!("D: {e:.0e}");
 		}}}
@@ -91,14 +92,14 @@ fn main() -> Result<()> {
 			let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 		};
 		//let error = |a,b| num::relative_error(a,b);
-		let max = if true {
-			let max = rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-			if max.1 > 1e-4 {
+		let (k, e) = if true {
+			let (k, e)= rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			if e > 1e-4 {
 				println!("{:.0}", cantera.iter().format(" "));
 				println!("{}", rates.iter().format(" "));
-				println!("{} {}", rates[max.0], cantera[max.0]);
+				println!("{} {}", rates[k], cantera[k]);
 			}
-			max
+			(k, e)
 		}
 		else {
 			//assert!(std::process::Command::new("make").current_dir("../nekRK/build").arg("-j").status()?.success());
@@ -116,33 +117,38 @@ fn main() -> Result<()> {
 			assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
 			let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 			assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
-			let max = cantera.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-			if max.1 > 1e-4 {
+			let (k, e) = cantera.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			if e > 1e-4 {
 				println!("{:.0}", cantera.iter().format(" "));
 				println!("{:.0}", nekrk.iter().format(" "));
 				println!("{:>6}", cantera.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));
-				println!("{} {}", cantera[max.0], nekrk[max.0]);
+				println!("{} {}", cantera[k], nekrk[k]);
 			}
-			max
+			(k, e)
 		};
-		Ok(max)
+		Ok((k, e))
 	}}};
-	let mut random= rand::thread_rng();
-	let mut max = 0.;
-	for i in 0.. {
-		let volume = 1.;
-		use rand::Rng;
-		let temperature = random.gen_range(1000. .. 3500.);
-		let pressure = random.gen_range(0. .. 1e5);
-		let pressure_R = pressure/(kB*NA); //random.gen_range(0. .. 10e6)/(kB*NA);
-		let total_amount = pressure_R * volume / temperature;
-		let amount_proportions = map(0..species.len(), |_| random.gen());
-		let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());
-		let amount_fractions = map(&*amounts, |n| n/total_amount);
-		let e = test(&State{temperature, pressure_R, volume, amounts})?;
-		assert!(e.1 < 1e-4, "T:{temperature} P:{pressure} X:{amount_fractions:?} E:{}:{:e}(vs{max:e})", species_names[e.0], e.1);
-		let e = e.1;
-		if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100==0 { println!("{i}") }
+	if false {
+		let mut random= rand::thread_rng();
+		let mut max = 0.;
+		for i in 0.. {
+			assert!(state.volume == 1.);
+			let volume = state.volume;
+			use rand::Rng;
+			let temperature = random.gen_range(1000. .. 3500.);
+			let pressure = random.gen_range(0. .. 1e5);
+			let pressure_R = pressure/(kB*NA); //random.gen_range(0. .. 10e6)/(kB*NA);
+			let total_amount = pressure_R * volume / temperature;
+			let amount_proportions = map(0..species.len(), |_| random.gen());
+			let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());
+			let amount_fractions = map(&*amounts, |n| n/total_amount);
+			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
+			assert!(e < 1e-13, "T:{temperature} P:{pressure} X:{amount_fractions:?} E:{}:{:e}(vs{max:e})", species_names[k], e);
+			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100==0 { println!("{i}") }
+		}
+	} else {
+			let (_, e) = test(&state)?;
+			assert!(e < 1e-13);
 	}
 	Ok(())
 }

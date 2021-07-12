@@ -1,16 +1,13 @@
 use super::*;
 
 #[derive(PartialEq, Debug, Clone)] enum DataValue { None, Bool(bool), I32(u32), F32(f32), F64(f64) }
-impl DataValue {
-	fn bool(self) -> bool { if let Self::Bool(v) = self { v } else { panic!("{self:?}") } }
-	fn i32(self) -> u32 { if let Self::I32(v) = self { v } else { panic!("{self:?}") } }
-	fn f32(self) -> f32 { if let Self::F32(v) = self { v } else { panic!("{self:?}") } }
-	//#[track_caller] fn f64(self) -> f64 { if let Self::F64(v) = self { v } else { panic!("{self:?}") } }
-}
 impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
-impl From<DataValue> for f32 { fn from(v: DataValue) -> Self { if let DataValue::F32(v) = v { v } else { panic!("{v:?}"); } } }
-impl From<DataValue> for f64 { fn from(v: DataValue) -> Self { if let DataValue::F64(v) = v { v } else { panic!("{v:?}"); } } }
+impl From<&DataValue> for f32 { fn from(v: &DataValue) -> Self { if let DataValue::F32(v) = v { *v } else { f64::from(v) as _ } } }
+impl From<&DataValue> for f64 { fn from(v: &DataValue) -> Self { if let DataValue::F64(v) = v { *v } else { panic!("{v:?}"); } } }
+impl From<DataValue> for bool { fn from(v: DataValue) -> Self { if let DataValue::Bool(v) = v { v } else { panic!("{v:?}") } } }
+impl From<DataValue> for f32 { fn from(v: DataValue) -> Self { (&v).into() } }
+impl From<DataValue> for f64 { fn from(v: DataValue) -> Self { (&v).into() } }
 impl From<f32> for DataValue { fn from(v: f32) -> Self { DataValue::F32(v) } }
 impl From<f64> for DataValue { fn from(v: f64) -> Self { DataValue::F64(v) } }
 
@@ -35,6 +32,14 @@ fn to_string(state: &State, expression: &Expression) -> String {
 	}
 }
 
+impl DataValue {
+	fn is_valid(&self) -> bool { match self {
+		Self::F32(x) => x.is_finite(),
+		Self::F64(x) => x.is_finite(),
+		_ => true,
+	} }
+}
+
 fn eval(state: &State, expression: &Expression) -> DataValue {
 	use {Expression::*, DataValue::{Bool, I32, F64, F32}};
 	let result = match expression {
@@ -42,10 +47,10 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		&Expression::F32(value) => F32(value),
 		&Expression::F64(value) => F64(value),
 		&Expression::Float(value) => {assert!((value as f32).is_finite()); (value as float).into()},
-		Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
+		/*Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
-		Or(a,b) => I32(eval(state, a).i32()|eval(state, b).i32()),
+		Or(a,b) => I32(eval(state, a).i32()|eval(state, b).i32()),*/
 		//IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FPromote(_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!("{e:?}"),
 		Value(id) => state[id.0].clone(),
 		//Load(variable) => { self.variables[variable.0].unwrap() }
@@ -88,7 +93,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		},
 		expression => panic!("{expression:?}"),
 	};
-	if let F32(x) = result { assert!(false || x.is_finite(), "{x}: {expression:?} {}", to_string(state, expression)); }
+	assert!(result.is_valid(), "{result}: {expression:?} {}", to_string(state, expression));
 	result
 }
 
@@ -99,14 +104,14 @@ fn run(state: &mut State, statements: &[Statement]) {
 			Value { id, value: expression } => {
 				let result= eval(state, expression);
 				assert!(state[id.0] == DataValue::None);
-				if let DataValue::F32(x) = result { assert!(x.is_finite() /*&& f32::abs(x)<1e28*/, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression)); }
+				assert!(result.is_valid() /*&& f32::abs(x)<1e28*/, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression));
 				state[id.0] = result;
 			},
 			Select { condition, true_exprs, false_exprs, results } => {
-				let expressions = if eval(state, condition).bool() { true_exprs } else { false_exprs };
+				let expressions = if eval(state, condition).into() { true_exprs } else { false_exprs };
 				for (id, expression) in results.iter().zip(&**expressions) {
 					let result = eval(state, expression);
-					if let DataValue::F32(x) = result { assert!(x.is_finite() /*&& f32::abs(x)<1e28*/, "{} = {result}: {}", state.debug[id.0], to_string(state, expression)); }
+					assert!(result.is_valid() /*&& f32::abs(x)<1e28*/, "{} = {result}: {}", state.debug[id.0], to_string(state, expression));
 					assert!(state[id.0] == DataValue::None);
 					state[id.0] = result;
 				}

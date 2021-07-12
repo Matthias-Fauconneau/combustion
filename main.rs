@@ -19,12 +19,12 @@ fn main() -> Result<()> {
 		}}
 	}
 	#[cfg(feature="transport")] {
-		let transport = transport::properties::<4>(&species);
+		let transport = transport::properties::<5>(&species);
 		let transport = with_repetitive_input(assemble(&transport), 1);
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
-		let_!{ [viscosity, thermal_conductivity, mixture_diffusion_coefficients @ ..] = &*transport(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
-			eprintln!("μ: {viscosity:.4e}, λ: {thermal_conductivity:.4}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
+		let_!{ [thermal_conductivity, viscosity, mixture_diffusion_coefficients @ ..] = &*transport(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
+			eprintln!("λ: {thermal_conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
 		}}
 	}
 	Ok(())

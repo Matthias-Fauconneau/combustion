@@ -116,10 +116,12 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 			}
 		}
 	});
-	let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
+	// Commented out for easier Cantera comparison. /!\ Breaks rates /!\
+	/*let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
+	let specie = [&*active, &*inert].concat().into_boxed_slice();*/
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
-		species: [&*active, &*inert].concat().into_boxed_slice(),
+		species,
 		reactions,
 		time_step: 1e-5,
 	}
