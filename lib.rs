@@ -2,7 +2,8 @@
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints)]
 pub mod model;
 pub use model::{kB, NA};
-const Cm_per_Debye : f64 = 3.33564e-30; //C·m (Coulomb=A⋅s)
+const light_speed : f64 = 299_792_458.;
+const Cm_per_Debye : f64 = 1e-21 / light_speed; //C·m (Coulomb=A⋅s)
 
 #[derive(PartialEq, Debug)] pub struct NASA7 {
 	pub temperature_split : f64,
@@ -19,7 +20,7 @@ impl NASA7 {
 
 use {std::lazy::SyncLazy, linear_map::LinearMap as Map, model::Element};
 static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(||
-	{use Element::*; [(H, 1.008), (C, 12.011), (N, 14.0067), (O, 15.999), (Ar, 39.95)]}.map(|(e,g)| (e, g/1e3/*kg/g*/)).into_iter().collect()
+	{use Element::*; [(H, 1.008), (He, 4.002602), (C, 12.011), (N, 14.007), (O, 15.999), (F, 18.998403163), (Cl, 35.45), (Ar, 39.95)]}.map(|(e,g)| (e, g/1e3/*kg/g*/)).into_iter().collect()
 );
 
 #[derive(Debug)] pub struct Species {

@@ -67,11 +67,12 @@ fn main() -> Result<()> {
 			let mut array = vec![0.; species.len()];
 			assert!(unsafe{trans_getMixDiffCoeffs(transport, array.len() as i32, array.as_mut_ptr())} == 0);
 			let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
-			order(&array)
+			order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 		};
 		eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion_coefficients.iter().format(" "));
 
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
+		let nonbulk_amounts = &amounts[0..amounts.len()-1];
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &[&[total_amount, *temperature], nonbulk_amounts].concat())? => {
 		assert!(rates.len() == active, "{}", rates.len());
 		#[cfg(feature="transport")] {
 		let transport = transport::properties::<5>(&species);
