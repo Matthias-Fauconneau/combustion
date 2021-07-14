@@ -13,7 +13,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 	use nalgebra::{DMatrix, DVector, SVD};
 	let ref w = DVector::from_iterator(N, w.into_iter());
 	let ref x = x.collect();
-	if false {
+	if true {
 		let A = DMatrix::from_iterator(N, D, (0..D).map(|k| x.iter().zip(w.iter()).map(move |(x, w)| w*x.powi(k as i32))).flatten());
 		let b = DVector::from_iterator(N, y.into_iter().zip(w.iter()).map(|(y, w)| w*y));
 		SVD::new(A, true, true).solve(&b, f64::EPSILON).unwrap().as_slice().try_into().unwrap()
