@@ -186,6 +186,6 @@ pub fn ln_approx(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression
 pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expression::Exp(box_(x.into())) } else { exp_approx(x, f) } }
 pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expression::Ln{x0, x: box_(x.into())} } else { ln_approx(x0, x, f) } }
 
-#[allow(non_camel_case_types)] pub type float = f64;
+#[allow(non_camel_case_types)] pub type float = f32;
 
 pub mod interpret;
