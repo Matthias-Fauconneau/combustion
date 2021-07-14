@@ -41,12 +41,6 @@ use std::lazy::SyncLazy;
 /*const*/static Ω⃰22: SyncLazy<[[f64; 6]; 37]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::Ω⃰22));
 /*const*/static A⃰: SyncLazy<[[f64; 6]; 39]> = SyncLazy::new(|| polynomial_regression_δ⃰(&collision_integrals::A⃰));
 
-use std::cell::RefCell;
-thread_local! {
-	static debug_data: RefCell<f64> = Default::default();
-	static debug_info: RefCell<String> = Default::default();
-}
-
 use super::Species;
 impl Species {
 	fn	reduced_mass(&self, a: usize, b: usize) -> f64 {
@@ -77,7 +71,6 @@ impl Species {
 		let ln_T⃰ = f64::ln(self.T⃰ (a, b, T));
 		/*const*/let header_ln_T⃰ = header_T⃰.each_ref().map(|&T| f64::ln(T));
 		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, I0+table.len()-3);
-		debug_data.with(|d| d.replace((interpolation_start_index-I0) as f64));
 		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		assert!(*header_ln_T⃰ .first().unwrap() <= ln_T⃰  && ln_T⃰  <= *header_ln_T⃰ .last().unwrap());
 		let polynomials: &[_; 3] = &fit[interpolation_start_index-I0..][..3].try_into().unwrap();
@@ -85,7 +78,6 @@ impl Species {
 		assert!(*header_δ⃰ .first().unwrap() <= δ⃰  && δ⃰  <= *header_δ⃰ .last().unwrap(),"{a} {b} {δ⃰}");
 		let table : [_; 3] = table[interpolation_start_index-I0..][..3].try_into().unwrap();
 		let y = if δ⃰ == 0. { table.map(|row| row[0]) } else { polynomials.each_ref().map(|P| polynomial::evaluate(P, δ⃰ )) };
-		debug_info.with(|d| d.replace(format!("{:?} {header_ln_T⃰:?} {y:?} {a} {b} {T} {} {ln_T⃰}", header_ln_T⃰.each_ref().map(|&x| f64::exp(x)), self.T⃰ (a, b, T))));
 		let image = quadratic_interpolation(header_ln_T⃰, &y, ln_T⃰);
 		assert!(image > 0.);
 		image
@@ -184,11 +176,6 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials
 	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
 	let ref rcp_mean_molar_mass = l!(f 1./dot(&molar_mass, &mole_fractions));
 	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
-	//d[k] = (mmw - m_molefracs[k] * m_mw[k])/(p * mmw * sum2);
-	//d[k] = (1 - (m_molefracs[k] * m_mw[k])/mmw)/(p * sum2);
-	//d[k] = [T√T/p] (1 - (m_molefracs[k] * m_mw[k])/mmw)/([T√T*]sum2);
-	// sum2 = sum m_molefracs[j] / m_bdiff(j,k) [/T√T];
-	// sum2 += [T√T*] m_molefracs[j] / m_bdiff(j,k);
 	let ref VT = l!(f sqrt(T));
 	let ref TVTIP = l!(f T*VT/(pressure_R*NA*kB));
 	Function{output: list([
