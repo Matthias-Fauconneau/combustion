@@ -5,7 +5,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 	map
 }
 
-use ast::{*, dbg};
+use ast::{*/*, dbg*/};
 
 fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Expression {
 	let (num, div) : (Vec::<_>,Vec::<_>) = n.iter().map(|&n| n.into()).zip(b).filter(|&(n,_)| n!=0).partition(|&(n,_)| n>0);
@@ -101,7 +101,7 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 		let forward = product_of_exponentiations(concentrations, reactants);
 		let coefficient = if let ReactionModel::Irreversible = model { forward } else {
 			let rcp_equilibrium_constant_0 = product_of_exponentiations(exp_Gibbs0_RT, net);
-			dbg!(f; rcp_equilibrium_constant_0);
+			//dbg!(f; rcp_equilibrium_constant_0);
 			//let rcp_equilibrium_constant_0 = exp2(idot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0.into(),
@@ -109,12 +109,12 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_
 				-1 => rcp_C0 * rcp_equilibrium_constant_0,
 				_ => unreachable!()
 			};
-			dbg!(f; rcp_equilibrium_constant);
+			//dbg!(f; rcp_equilibrium_constant);
 			let reverse = rcp_equilibrium_constant * product_of_exponentiations(concentrations, products);
-			dbg!(f; forward, reverse);
+			//dbg!(f; forward, reverse);
 			forward - reverse
 		};
-		dbg!(f; forward_rate_constant, coefficient);
+		//dbg!(f; forward_rate_constant, coefficient);
 		l!(f forward_rate_constant * coefficient)
 	})
 }

@@ -116,9 +116,10 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 			}
 		}
 	});
-	// Commented out for easier Cantera comparison. /!\ Breaks rates /!\
-	/*let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
-	let specie = [&*active, &*inert].concat().into_boxed_slice();*/
+	let species = if true { species } else { // Easier Cantera comparison /!\ Breaks rates /!\
+		let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
+		[&*active, &*inert].concat().into_boxed_slice()
+	};
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
 		species,

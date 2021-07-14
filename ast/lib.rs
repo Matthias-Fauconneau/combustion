@@ -42,7 +42,7 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[derive(Debug)] pub enum Statement {
 	Value { id: Value, value: Expression },
 	Select { condition: Expression, true_exprs: Box<[Expression]>, false_exprs: Box<[Expression]>, results: Box<[Value]> },
-	Display(Value)
+	//Display(Value)
 }
 
 //pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
@@ -123,11 +123,11 @@ pub fn def(value: impl Into<Expression>, block: &mut Block, debug: String) -> Va
 	id
 }
 #[macro_export] macro_rules! l { ($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))) ) }
-pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
+/*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
 	values
 }
-#[macro_export] macro_rules! dbg { ($f:ident; $($id:ident),* ) => { let [$(ref $id),*] = display([$(l!($f $id)),*], $f); } }
+#[macro_export] macro_rules! dbg { ($f:ident; $($id:ident),* ) => { let [$(ref $id),*] = display([$(l!($f $id)),*], $f); } }*/
 
 pub struct Function {
 	pub input: usize,

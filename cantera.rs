@@ -1,4 +1,4 @@
-#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
 use {anyhow::Result, iter::{list, map}, itertools::Itertools, device::*};
 fn main() -> Result<()> {
@@ -8,8 +8,6 @@ fn main() -> Result<()> {
 	let model = yaml::parse(&model);
 	use combustion::*;
 	let (ref species_names, ref species, active, reactions, state) = new(&model);
-	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = with_repetitive_input(assemble(&rates), 1);
 
 	use std::os::raw::c_char;
 	#[link(name = "cantera")]
@@ -29,7 +27,7 @@ fn main() -> Result<()> {
 	fn trans_getMixDiffCoeffs(n: i32, ldt: i32, dt: *mut f64) -> i32;
 	}
 	let file = std::ffi::CString::new(path.as_str())?;
-	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(b"gas\0")?.as_ptr(); //gri30
+	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(if path.contains("gri30") { b"gri30\0" } else { b"gas\0" })?.as_ptr();
 	let phase = unsafe{thermo_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr)};
 	let cantera_species_names = map(0..species.len(), |k| {
 		let mut specie = [0; 8];
@@ -48,18 +46,6 @@ fn main() -> Result<()> {
 		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
-		let cantera = if true { // Species
-			let mut rates = vec![0.; species.len()];
-			unsafe{kin_getNetProductionRates(kinetics, rates.len(), rates.as_mut_ptr())};
-			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
-			let species_rates = order(&map(rates, |c| c*1000.)); // kmol -> mol
-			assert!(species_rates.len() == active);
-			species_rates
-		} else { // Reactions
-			let mut rates = vec![0.; reactions.len()];
-			unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
-			map(rates, |c| c*1000.) // kmol -> mol
-		};
 		let transport = unsafe{trans_newDefault(phase, 0)};
     let cantera_thermal_conductivity  = unsafe{trans_thermalConductivity(transport)};
     let cantera_viscosity = unsafe{trans_viscosity(transport)};
@@ -69,23 +55,50 @@ fn main() -> Result<()> {
 			let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 			order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 		};
+		eprintln!("Cantera");
 		eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion_coefficients.iter().format(" "));
 
-		let nonbulk_amounts = &amounts[0..amounts.len()-1];
-		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R], &[&[total_amount, *temperature], nonbulk_amounts].concat())? => {
-		assert!(rates.len() == active, "{}", rates.len());
+		let ref nonbulk_amounts = map(&amounts[0..amounts.len()-1], |&n| n as _);
 		#[cfg(feature="transport")] {
-		let transport = transport::properties::<5>(&species);
-		let transport = with_repetitive_input(assemble(&transport), 1);
+		eprintln!("Fit");
+		let transport = /*if false {
+			let transport = transport::properties::<5>(&species);
+			let transport = with_repetitive_input(assemble(&transport), 1);
+			|pressure_R: f64, total_amount: f64, temperature: f64, nonbulk_amounts: &[f64]| -> (f64, f64, Box<[f64]>) {
+				let_!{ [thermal_conductivity, viscosity, mixture_diffusion_coefficients @ ..] = &*transport(&[pressure_R as _], &([&[total_amount as _, temperature as _], &*nonbulk_amounts].concat())).unwrap() => {
+					(*thermal_conductivity, *viscosity, mixture_diffusion_coefficients.into())
+				}}
+			}
+		} else {*/
+			transport::properties_rust::<5>(&species)
+		//}
+		;
 		let State{temperature, pressure_R, amounts, ..} = state;
+		let temperature = *temperature;
+		let pressure_R = *pressure_R;
 		let total_amount = amounts.iter().sum::<f64>();
-		let_!{ [thermal_conductivity, viscosity, mixture_diffusion_coefficients @ ..] = &*transport(&[*pressure_R], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
+		eprintln!("Evaluate");
+		let (thermal_conductivity, viscosity, mixture_diffusion_coefficients) = transport(pressure_R, total_amount, temperature, nonbulk_amounts);
 		eprintln!("λ: {thermal_conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
-    print!("λ: {:.0e}, ", num::relative_error(*thermal_conductivity, cantera_thermal_conductivity));
-    print!("μ: {:.0e}, ", num::relative_error(*viscosity, cantera_viscosity));
-    let e = mixture_diffusion_coefficients.iter().zip(cantera_mixture_diffusion_coefficients.iter()).map(|(a,b)| num::relative_error(*a, *b)).reduce(f64::max).unwrap();
+    print!("λ: {:.0e}, ", num::relative_error(thermal_conductivity as _, cantera_thermal_conductivity));
+    print!("μ: {:.0e}, ", num::relative_error(viscosity as _, cantera_viscosity));
+    let e = mixture_diffusion_coefficients.iter().zip(cantera_mixture_diffusion_coefficients.iter()).map(|(&a,&b)| num::relative_error(a as _, b)).reduce(f64::max).unwrap();
     println!("D: {e:.0e}");
-		}}}
+		}
+		let (k, e) = if false {
+			let cantera_rates = if true { // Species
+				let mut rates = vec![0.; species.len()];
+				unsafe{kin_getNetProductionRates(kinetics, rates.len(), rates.as_mut_ptr())};
+				let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
+				let species_rates = order(&map(rates, |c| c*1000.)); // kmol -> mol
+				assert!(species_rates.len() == active);
+				species_rates
+			} else { // Reactions
+				let mut rates = vec![0.; reactions.len()];
+				unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
+				map(rates, |c| c*1000.) // kmol -> mol
+			};
+
 		// Rates
 		let error = |a,b| {
 			let m=f64::abs(f64::max(a,b));
@@ -93,12 +106,16 @@ fn main() -> Result<()> {
 			let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 		};
 		//let error = |a,b| num::relative_error(a,b);
-		let (k, e) = if true {
-			let (k, e)= rates.iter().zip(&*cantera).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+		let rates = reaction::rates(&species.thermodynamics, &reactions);
+		let rates = with_repetitive_input(assemble(&rates), 1);
+		let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &([&[total_amount as _, *temperature as _], &**nonbulk_amounts].concat()))? => {
+		assert!(rates.len() == active, "{}", rates.len());
+		if true {
+			let (k, e)= rates.iter().zip(&*cantera_rates).map(|(&a,&b)| error(a as _,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 			if e > 1e-4 {
-				println!("{:.0}", cantera.iter().format(" "));
+				println!("{:.0}", cantera_rates.iter().format(" "));
 				println!("{}", rates.iter().format(" "));
-				println!("{} {}", rates[k], cantera[k]);
+				println!("{} {}", rates[k], cantera_rates[k]);
 			}
 			(k, e)
 		}
@@ -118,17 +135,18 @@ fn main() -> Result<()> {
 			assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
 			let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 			assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
-			let (k, e) = cantera.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			let (k, e) = cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 			if e > 1e-4 {
-				println!("{:.0}", cantera.iter().format(" "));
+				println!("{:.0}", cantera_rates.iter().format(" "));
 				println!("{:.0}", nekrk.iter().format(" "));
-				println!("{:>6}", cantera.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));
-				println!("{} {}", cantera[k], nekrk[k]);
+				println!("{:>6}", cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));
+				println!("{} {}", cantera_rates[k], nekrk[k]);
 			}
 			(k, e)
-		};
+		}}}
+		} else { (0, 0.) };
 		Ok((k, e))
-	}}};
+	};
 	if false {
 		let mut random= rand::thread_rng();
 		let mut max = 0.;

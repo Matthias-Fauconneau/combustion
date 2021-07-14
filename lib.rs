@@ -129,9 +129,10 @@ pub fn new(model: &'t model::Model) -> (Box<[&'t str]>, Species, usize, Box<[Rea
 		let ref mut iter = species_names.iter().map(
 			|specie| model.reactions.iter().any(|model::Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)) );
 		let active = iter.take_while(|is_active| *is_active).count();
+		if !iter.all(|is_active| !is_active) { 0 } else { // For Cantera debugging /!\ Breaks rates
 		assert!(iter.all(|is_active| !is_active));
 		active
-	};
+	}};
 	let reactions = map(&*model.reactions, |r| Reaction::new(&species_names, active, r));
 	let initial_state = initial_state(&model);
 	(species_names, species, active, reactions, initial_state)

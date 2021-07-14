@@ -116,7 +116,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 					state[id.0] = result;
 				}
 			},
-			Display(id) => if false { println!("{} = {}", state.debug[id.0], state.values[id.0]); },
+			//Display(id) => if false { println!("{} = {}", state.debug[id.0], state.values[id.0]); },
 		}
 	}
 }
