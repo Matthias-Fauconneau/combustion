@@ -31,4 +31,4 @@ cvode={optional=true, path='cvode'}
 ir={optional=true, path='ir', features=['jit']}
 ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
-png={optional=true, package= 'image', version='', default-features=false, features= ['png']}
+png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
