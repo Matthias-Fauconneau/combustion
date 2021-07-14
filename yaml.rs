@@ -116,7 +116,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 			}
 		}
 	});
-	let species = if true { species } else { // Easier Cantera comparison /!\ Breaks rates /!\
+	let species = if false { species } else { // Easier Cantera comparison /!\ Breaks rates /!\
 		let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 		[&*active, &*inert].concat().into_boxed_slice()
 	};
