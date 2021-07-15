@@ -43,10 +43,11 @@ impl Builder<'_> {
 fn f32(&mut self, value: f32) -> Value {
 	let f32 = self.type_float(32);
 	let value = if value == -0. { 0. } else { value };
-	match self.constants_f32.entry(value.to_bits()) {
+	/*match self.constants_f32.entry(value.to_bits()) {
 		std::collections::hash_map::Entry::Occupied(value) => *value.get(),
 		std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.constant_f32(f32, value))
-	}
+	}*/
+	*self.constants_f32.entry(value.to_bits()).or_insert_with(|| self.builder.constant_f32(f32, value))
 }
 /*fn f64(&mut self, value: f64) -> Value {
 	let f64 = self.type_float(64);

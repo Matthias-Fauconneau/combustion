@@ -7,7 +7,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 
 use ast::{*/*, dbg*/};
 
-fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
+fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut ast::Block) {
 	if *a == *b && LeafValue::new(a).is_none() {
 		let ref common = l!(f std::mem::take(a));
 		*a = common.into();
@@ -28,7 +28,7 @@ fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mu
 	}
 }
 
-fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut Block) {
+fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut ast::Block) {
 	for a in &mut *a {
 		for b in &mut *b {
 			eliminate_common_subexpression(a, b, f);
@@ -49,10 +49,10 @@ fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Express
 }
 
 type Error = String;
-use {fehler::throws, iter::{list, map}, super::*};
+use {std::default::default, fehler::throws, iter::{list, map}, super::*};
 
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
-fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
+fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut ast::Block)->Expression, T: T<'_>, f: &mut ast::Block, debug: &str) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())) {
 		let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
@@ -71,15 +71,15 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 	map(specie_results.into_vec().into_iter(), Option::unwrap)
 }
 
-fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T, _: &mut Block) -> Expression { dot(&a[1..5], [T,T2,T3,T4]).map(|y| a[0]+y).unwrap_or(a[0].into()) }
-fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Expression { a[0]+dot(&[a[1]/2.,a[2]/3.,a[3]/4.,a[4]/5.,a[5]], [T,T2,T3,T4,rcp_T]).unwrap() }
-fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Expression {
+fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T, _: &mut ast::Block) -> Expression { dot(&a[1..5], [T,T2,T3,T4]).map(|y| a[0]+y).unwrap_or(a[0].into()) }
+fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut ast::Block) -> Expression { a[0]+dot(&[a[1]/2.,a[2]/3.,a[3]/4.,a[4]/5.,a[5]], [T,T2,T3,T4,rcp_T]).unwrap() }
+fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut ast::Block) -> Expression {
 	dot(&[(a[0]-a[6])-a[0], -a[1]/2., (1./3.-1./2.)*a[2], (1./4.-1./3.)*a[3], (1./5.-1./4.)*a[4], a[5]], [ln_T, T, T2, T3, T4, rcp_T]).unwrap()
 }
-fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
+fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut ast::Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
 
 // A.T^β.exp(-Ea/kT)
-#[track_caller]#[throws] fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2}: T<'_>, f: &mut Block) -> Expression {
+#[track_caller]#[throws] fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2}: T<'_>, f: &mut ast::Block) -> Expression {
 	let (temperature_factor, ln_T_coefficient) =
 		/*if temperature_exponent <= -8. { unimplemented!("{temperature_exponent}") }
 		// T~1000: T^-n << 1 so no need to factorize exponent out of exp to reduce input domain
@@ -92,39 +92,57 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 		else if temperature_exponent >= 1.5 { (Some(T2), temperature_exponent-2.) }
 		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
 		else { (None, temperature_exponent) };
-	const T0: f64 = 1024.;
-	[Some(float(A*f64::powf(T0,ln_T_coefficient)).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
-	 (ln_T_coefficient != 0.).then(|| ln_T_coefficient * (ln_T-f64::ln(T0))),
+	//const T0: f64 = 1024.;
+	[Some(float(A/* *f64::powf(T0,ln_T_coefficient)*/).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
+	 (ln_T_coefficient != 0.).then(|| ln_T_coefficient * (ln_T/*-f64::ln(T0)*/)),
 	 (activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
 	].into_iter().filter_map(|x| x).sum::<Option<_>>().map(|x| exp(x, f))].into_iter().filter_map(|x| x).product::<Option<_>>().unwrap()
+}
+
+#[derive(derive_more::Deref,derive_more::DerefMut)] struct Block<'t> {
+	#[deref]#[deref_mut] block: ast::Block<'t>,
+	concentrations: Box<[std::collections::HashMap<u64, Option<Value>>]>,
+}
+
+fn efficiency(efficiencies: &[f64], concentrations: &[Value], f: &mut Block) -> Expression {
+	efficiencies.iter().zip(concentrations).enumerate().map(|(k, (&e, C))| {
+		f.concentrations[k].entry(e.to_bits()).or_insert_with({let f = &mut f.block; || if e==0. { None } else if e==1. { Some(C.clone()) } else { Some(l!(f e*C)) }})
+		.as_ref().map(|value| value.into())
+	}).filter_map(|x:Option<Expression>| x).sum()
 }
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => arrhenius(k_inf, T, f).unwrap(),
-		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * dot(efficiencies, concentrations).unwrap(),
-		PressureModification{efficiencies, k0} => f.block(|f|{
-			let ref C_k0 = l!(f dot(efficiencies, concentrations).unwrap() * arrhenius(k0, T, f).unwrap());
-			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
-			(C_k0 * k_inf) / (C_k0 + k_inf)
-		}),
-		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|f|{
-			let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
-			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
-			let ref Pr = l!(f dot(efficiencies, concentrations).unwrap() * k0 / k_inf);
-			let Fcent = {let T{T,rcp_T,..}=T; sum([
-				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
-				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
-				(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
-			].into_iter().filter_map(|x| x))};
-			let ref lnFcent = l!(f ln(1./2., Fcent, f)); // 0.1-0.7 => e-3
-			let C =-0.67*lnFcent - 0.4*f64::ln(10.);
-			let N = -1.27*lnFcent + 0.75*f64::ln(10.);
-			let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
-			let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
-			let F = exp(lnFcent/(f1*f1+1.), f);
-			k_inf * Pr / (Pr + 1.) * F
-		})}
+		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * efficiency(efficiencies, concentrations, f),
+		PressureModification{efficiencies, k0} => {
+			let efficiency = efficiency(efficiencies, concentrations, f);
+			f.block(|f|{
+				let ref C_k0 = l!(f efficiency * arrhenius(k0, T, f).unwrap());
+				let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
+				(C_k0 * k_inf) / (C_k0 + k_inf)
+			})
+		},
+		Falloff{efficiencies, k0, troe} => {
+			let efficiency = efficiency(efficiencies, concentrations, f);
+			f.block(|f|{
+				let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
+				let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
+				let ref Pr = l!(f efficiency * k0 / k_inf);
+				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcp_T,..}=T; sum([
+					(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
+					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
+					(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
+				].into_iter().filter_map(|x| x))};
+				let ref lnFcent = l!(f ln(1./2., Fcent, f)); // 0.1-0.7 => e-3
+				let C =-0.67*lnFcent - 0.4*f64::ln(10.);
+				let N = -1.27*lnFcent + 0.75*f64::ln(10.);
+				let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
+				let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
+				let F = exp(lnFcent/(f1*f1+1.), f);
+				k_inf * Pr / (Pr + 1.) * F
+			})
+		}
 	}
 }
 
@@ -161,7 +179,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	};
 	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut values = ["pressure_","total_amount","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
-	let mut function = Block::new(&mut values);
+	let mut function = Block{block: ast::Block::new(&mut values), concentrations: vec![default(); species.len()].into()};
 	let ref mut f = function;
 	let ref ln_T = l!(f ln(1024., T, f));
 	let ref T2 = l!(f T*T);
@@ -185,5 +203,5 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
 	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
 	let dtT_T = - energy_rate_RT / Cp;
-	Function{output: list([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.statements.into(), input: input.len(), values: values.into()}
+	Function{output: list([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.block.statements.into(), input: input.len(), values: values.into()}
 }}}

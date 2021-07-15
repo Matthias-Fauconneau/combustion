@@ -95,6 +95,7 @@ impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Express
 impl<E:Into<Expression>> std::ops::Mul<E> for Expression { type Output = Expression; fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl<E:Into<Expression>> std::ops::Div<E> for Expression { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 
+//impl From<Value> for Expression { fn from(value: Value) -> Expression { Expression::Value(value) } }
 impl From<&Value> for Expression { fn from(value: &Value) -> Expression { Expression::Value(value.clone()) } }
 impl std::ops::Neg for &Value { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for &Value { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
@@ -126,7 +127,7 @@ pub struct Block<'t> {
 pub fn push(s: Statement, block: &mut Block) { block.statements.push(s) }
 impl Block<'t> {
 	pub fn new(values: &'t mut Vec<String>) -> Self { Self{statements: vec![], values} }
-	pub fn block(&mut self, build: impl Fn(&mut Block)->Expression) -> Expression {
+	pub fn block(&mut self, build: impl FnOnce(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ statements: vec![], values: &mut self.values };
 		let result = build(&mut block);
 		Expression::Block { statements: block.statements.into(), result: box_(result) }
