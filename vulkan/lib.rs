@@ -22,6 +22,7 @@ impl Device {
 	#[throws] pub fn new() -> Self {
 		let ref main = CStr::from_bytes_with_nul(b"main\0").unwrap();
 		unsafe {
+			dbg!();
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(
 				&InstanceCreateInfo::builder().application_info(
@@ -74,7 +75,9 @@ impl<T> Drop for MapMut<'_, T> { fn drop(&mut self) { unsafe { self.device.unmap
 impl<T> std::ops::Deref for MapMut<'t, T> { type Target = &'t mut [T]; fn deref(&self) -> &Self::Target { &self.map } }
 impl<T> std::ops::DerefMut for MapMut<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.map } }
 
-pub trait Plain {}
+pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+
+pub trait Plain: Copy {}
 impl Plain for f32 {}
 impl<T:Plain> Buffer<T> {
 	#[throws] pub fn map(&'t self, device: &'t Device) -> Map<T> {
@@ -85,22 +88,35 @@ impl<T:Plain> Buffer<T> {
 		MapMut{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts_mut(device.map_memory(self.memory, 0, (self.len * size_of::<T>())as u64, default())? as *mut T, self.len)} }
 	}
 
-	#[throws] pub fn new<I: IntoIterator<IntoIter:ExactSizeIterator,Item=T>>(device: &Device, iter: I) -> Self {
-		let iter = iter.into_iter();
-		let len = iter.len();
+	#[throws] pub fn new(device: &Device, data: &[T]) -> Self {
 		let mut buffer = unsafe {
-			let buffer = device.create_buffer(&BufferCreateInfo{size: (len * size_of::<I::Item>()) as u64,
+			let buffer = device.create_buffer(&BufferCreateInfo{size: (data.len() * size_of::<T>()) as u64,
 				usage: BufferUsageFlags::STORAGE_BUFFER|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
-			let flags = MemoryPropertyFlags::DEVICE_LOCAL|MemoryPropertyFlags::HOST_VISIBLE;
+			let flags = MemoryPropertyFlags::DEVICE_LOCAL;
+			//let flags = MemoryPropertyFlags::HOST_VISIBLE;
 			let memory_type_index = device.memory_properties.memory_types[..device.memory_properties.memory_type_count as _].iter().enumerate().position(
 				|(index, memory_type)| (1 << index) & memory_requirements.memory_type_bits != 0 && memory_type.property_flags & flags == flags).unwrap() as _;
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index, ..default()}, None)?;
 			device.bind_buffer_memory(buffer, memory, 0)?;
-			Self{len, buffer, memory, _type: default()}
+			Self{len: data.len(), buffer, memory, _type: default()}
 		};
-		for (item, cell) in iter.zip(&mut **buffer.map_mut(device)?) { *cell = item; }
+		if false { buffer.map_mut(device)?.copy_from_slice(data); }
+		else {
+			let Device{device, command_pool, queue, fence, ..} = device;
+			unsafe {
+				let command_buffer = device.allocate_command_buffers(&CommandBufferAllocateInfo{command_pool: *command_pool, level: CommandBufferLevel::PRIMARY, command_buffer_count: 1, ..default()})?[0];
+				device.begin_command_buffer(command_buffer, &default())?;
+				device.cmd_update_buffer(command_buffer, buffer.buffer, 0, as_u8(data));
+				device.end_command_buffer(command_buffer)?;
+				//eprint!("Update buffer [{}; {}]", std::any::type_name::<T>(), data.len());
+				device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], *fence)?;
+				//eprintln!(".");
+				device.wait_for_fences(&[*fence], true, !0)?;
+				device.reset_fences(&[*fence])?;
+			}
+		}
 		buffer
 	}
 }
@@ -116,29 +132,35 @@ pub struct Pipeline {
 
 impl Device {
 	#[throws] pub fn pipeline<T>(&self, code: &[u32], local_size: u32, constants: &[u8], buffers: &[&Buffer<T>]) -> Pipeline {
+		dbg!();
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
 		let bindings = (0..buffers.len()).map(|binding| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: 1, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{device, ..} = self;
 		unsafe {
+			dbg!();
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
+			dbg!();
 			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.len() as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
+			dbg!();
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder()
 				.set_layouts(&descriptor_set_layouts)
 				.push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
-			pub fn as_bytes<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())} }
+			pub fn as_u8<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())} }
+			dbg!();
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module)
 				.name(&CStr::from_bytes_with_nul(b"main\0").unwrap())
-				.specialization_info(&SpecializationInfo::builder().map_entries(&[SpecializationMapEntry{constant_id:0, offset: 0, size: std::mem::size_of::<u32>()}]).data(as_bytes(&local_size))) .build(),
+				.specialization_info(&SpecializationInfo::builder().map_entries(&[SpecializationMapEntry{constant_id:0, offset: 0, size: std::mem::size_of::<u32>()}]).data(as_u8(&local_size))) .build(),
 				layout, ..default() }];
-			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
-			//std::fs::write("/var/tmp/spv", &rspirv::binary::Disassemble::disassemble(&{let mut loader = rspirv::dr::Loader::new(); rspirv::binary::parse_words(code, &mut loader).unwrap(); loader}.module())).unwrap();
-			//{use spirv_tools::{*, val::*}; create(Some(TargetEnv::Vulkan_1_2)).validate(code, None)}.map_err(|e| e.diagnostic.unwrap().message).expect("");
-			//#[cfg(feature="naga")] {use naga::{front::spv::*, valid::*}; Validator::new(default(), Capabilities::all()).validate(&Parser::new(code.iter().copied(), &Options{strict_capabilities:true, ..default()}).parse()?)}.unwrap();
-			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
-			std::fs::write("/var/tmp/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
+			dbg!();
+			//let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			//dbg!();
+			let pipeline = device.create_compute_pipelines(default()/*pipeline_cache*/, &pipeline, None).map_err(|(_,e)| e)?[0];
+			dbg!();
+			//std::fs::write(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
+			dbg!();
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
 		}
 	}

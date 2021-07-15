@@ -38,10 +38,10 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 	map(specie_results.into_vec().into_iter(), Option::unwrap)
 }
 
-fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T, _: &mut Block) -> Expression { a[0]+a[1]*T+a[2]*T2+a[3]*T3+a[4]*T4 }
-fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Expression { a[0]+a[1]/2.*T+a[2]/3.*T2+a[3]/4.*T3+a[4]/5.*T4+a[5]*rcp_T }
+fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T, _: &mut Block) -> Expression { dot(&a[1..5], [T,T2,T3,T4]).map(|y| a[0]+y).unwrap_or(a[0].into()) }
+fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Expression { a[0]+dot(&[a[1]/2.,a[2]/3.,a[3]/4.,a[4]/5.,a[5]], [T,T2,T3,T4,rcp_T]).unwrap() }
 fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, _: &mut Block) -> Expression {
-	(a[0]-a[6])-a[0]*ln_T-a[1]/2.*T+(1./3.-1./2.)*a[2]*T2+(1./4.-1./3.)*a[3]*T3+(1./5.-1./4.)*a[4]*T4+a[5]*rcp_T
+	dot(&[(a[0]-a[6])-a[0], -a[1]/2., (1./3.-1./2.)*a[2], (1./4.-1./3.)*a[3], (1./5.-1./4.)*a[4], a[5]], [ln_T, T, T2, T3, T4, rcp_T]).unwrap()
 }
 fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
 
@@ -69,20 +69,20 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => arrhenius(k_inf, T, f).unwrap(),
-		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * dot(efficiencies, concentrations),
+		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * dot(efficiencies, concentrations).unwrap(),
 		PressureModification{efficiencies, k0} => f.block(|f|{
-			let ref C_k0 = l!(f dot(efficiencies, concentrations) * arrhenius(k0, T, f).unwrap());
+			let ref C_k0 = l!(f dot(efficiencies, concentrations).unwrap() * arrhenius(k0, T, f).unwrap());
 			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
 			(C_k0 * k_inf) / (C_k0 + k_inf)
 		}),
 		Falloff{efficiencies, k0, troe} => {let Troe{A, T3, T1, T2} = *troe;/*ICE inside*/ f.block(|f|{
 			let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
 			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
-			let ref Pr = l!(f dot(efficiencies, concentrations) * k0 / k_inf);
+			let ref Pr = l!(f dot(efficiencies, concentrations).unwrap() * k0 / k_inf);
 			let Fcent = {let T{T,rcp_T,..}=T; sum([
 				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
 				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
-				(T2 != 0.).then(|| exp((-T2)*rcp_T, f))
+				(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
 			].into_iter().filter_map(|x| x))};
 			let ref lnFcent = l!(f ln(1./2., Fcent, f)); // 0.1-0.7 => e-3
 			let C =-0.67*lnFcent - 0.4*f64::ln(10.);
@@ -146,7 +146,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations));
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
-	let rates = map(0..active, |specie| l!(f idot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates))));
+	let rates = map(0..active, |specie| l!(f zdot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates)).unwrap()));
 	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, f, "enthalpy_RT");
 	let dot = |a:&[Value], b:&[Value]| iter::dot(a.iter().zip(b.iter()));
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);

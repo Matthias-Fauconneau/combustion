@@ -1,29 +1,57 @@
-#![feature(array_map,format_args_capture)]
-use {iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
+#![feature(array_map,format_args_capture,default_free_fn)]
+use {std::default::default, iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
+
+type Value = Word;
 
 struct Builder {
 	builder: rspirv::Builder,
 	gl: Word,
 	values: linear_map::LinearMap<ast::Value, Word>,
+	//constants_u32: std::collections::HashMap<u32, Value>,
+	constants_f32: std::collections::HashMap<u32, Value>,
+	//constants_f64: std::collections::HashMap<u64, Value>,
 }
 impl std::ops::Deref for Builder { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
 impl std::ops::DerefMut for Builder { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
 impl Builder {
-fn expr(&mut self, e: &Expression) -> Word {
+/*fn u32(&mut self, value: u32) -> Value {
+	match self.constants_u32.entry(value) {
+		std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+		std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.constant_u32(u32, value))
+	}
+}*/
+fn f32(&mut self, value: f32) -> Value {
+	let f32 = self.type_float(32);
+	let value = if value == -0. { 0. } else { value };
+	match self.constants_f32.entry(value.to_bits()) {
+		std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+		std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.constant_f32(f32, value))
+	}
+}
+/*fn f64(&mut self, value: f64) -> Value {
+	let f64 = self.type_float(64);
+	match self.constants_f64.entry(value.to_bits()) {
+		std::collections::hash_map::Entry::Occupied(value) => *value.get(),
+		std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.constant_f64(f64, value))
+	}
+}*/
+fn expr(&mut self, e: &Expression) -> Value {
 	let [bool, f32, gl] = [self.type_bool(), self.type_float(32), self.gl];
 	use Expression::*;
 	match e {
-		&F32(value) => self.constant_f32(f32, value),
+		&F32(value) => self.f32(value),
 		//&F64(value) => self.constant_f32(f32, value as f32),
-		&Float(value) => self.constant_f32(f32, value as f32),
+		&Float(value) => self.f32(value as f32),
 		Value(v) => self.values[v],
 		Neg(x) => { let x = self.expr(x); self.f_negate(f32, None, x).unwrap() }
 		Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(f32, None, gl, GLOp::FMax as u32, operands).unwrap() }
 		Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(f32, None, a, b).unwrap() }
 		Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(f32, None, a, b).unwrap() }
 		LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
-		Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
+		Mul(a, b) => {
+			for x in [&a,&b] { if let Float(x) = x.as_ref() { let x = *x as f32; assert!(x.is_finite() && x != 0. && x != 1.); } }
+			let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
 		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
 		Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
 		Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Exp as u32, [x]).unwrap() }
@@ -131,7 +159,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		b.load(f32, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap()
 	});
 	let values = [push_constant_0].iter().chain(&*input_values).enumerate().map(|(value, &input)| (Value(value), input)).collect();
-	let mut b = Builder{builder: b, gl, values};
+	let mut b = Builder{builder: b, gl, values, /*&constants_u32: default(),*/ constants_f32: default(), /*constants_f64: default()*/};
 	for s in &*ast.statements { b.push(s); }
 	for (expr, &output) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);
@@ -141,5 +169,26 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	b.ret()?;
 	b.end_function()?;
 	b.entry_point(spirv::ExecutionModel::GLCompute, f, "main", [&[global_invocation_id_ref, push_constants] as &[_],&input,&output].concat());
-	Ok(::rspirv::binary::Assemble::assemble(&b.builder.module()).into())
+	let code = ::rspirv::binary::Assemble::assemble(&b.builder.module());
+	let path = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv";
+	let path = std::path::Path::new(&path);
+	pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+	let code = as_u8(&code);
+	if !path.exists() || code != std::fs::read(path).unwrap() {
+		std::fs::write(path, code).unwrap();
+		/*{use spirv_tools::{*, opt::*, binary::*};
+			let code = create(Some(TargetEnv::Vulkan_1_2)).optimize(code, &mut |_| {}, Some(Options{preserve_spec_constants: true, ..Default::default()})).map_err(|e| e.diagnostic.unwrap().message).unwrap();
+			if let Binary::OwnedU32(code) = code { Ok(code.into()) } else { unreachable!() }
+		}*/
+	}
+	let opt = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt";
+	let opt = std::path::Path::new(&opt);
+	if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
+		let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
+		eprint!("spirv-opt");
+		assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","--target-env=vulkan1.2","-O",path,"-o",opt]).status().unwrap().success());
+		eprintln!(".");
+	}
+	pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
+	Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt").unwrap()).into())
 }

@@ -56,11 +56,29 @@ pub fn iadd(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { 
 pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::ISub(box_(a.into()), box_(b.into())) }*/
 fn neg(x: impl Into<Expression>) -> Expression { Expression::Neg(box_(x.into())) }
 pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Max(box_(a.into()), box_(b.into())) }
-fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Add(box_(a.into()), box_(b.into())) }
-fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Sub(box_(a.into()), box_(b.into())) }
+fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	let [a,b] = [a.into(), b.into()];
+	for x in [&a,&b] { if let Expression::Float(x) = x { let x = *x as f32; assert!(x.is_finite() && x != 0.); } }
+	Expression::Add(box_(a), box_(b))
+}
+fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	let [a,b] = [a.into(), b.into()];
+	for x in [&a,&b] { if let Expression::Float(x) = x { let x = *x as f32; assert!(x.is_finite() && x != 0.); } }
+	Expression::Sub(box_(a), box_(b))
+}
 pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::LessOrEqual(box_(a.into()), box_(b.into())) }
-fn mul(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Mul(box_(a.into()), box_(b.into())) }
-fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::Div(box_(a.into()), box_(b.into())) }
+#[track_caller] fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
+	let [a,b] = [a.into(), b.into()];
+	for x in [&a,&b] { if let Expression::Float(x) = x { let x = *x as f32; assert!(x.is_finite() && x != 0. && x != 1., "{x}"); } }
+	if let [Expression::Float(a), Expression::Float(b)] = [&a,&b] { Expression::Float(a*b) }
+	else { Expression::Mul(box_(a), box_(b)) }
+}
+fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	let [a,b] = [a.into(), b.into()];
+	for x in [&a,&b] { if let Expression::Float(x) = x { let x = *x as f32; assert!(x.is_finite() && x != 0.); } }
+	if let Expression::Float(x) = &b { let x = *x as f32; assert!(x != 1.); }
+	Expression::Div(box_(a), box_(b))
+}
 /*pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
 pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
 pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
@@ -84,7 +102,7 @@ impl<E:Into<Expression>> std::ops::Mul<E> for &Value { type Output = Expression;
 impl std::ops::Div<Expression> for &Value { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 impl std::ops::Div<&Value> for &Value { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 //impl std::ops::Div<f32> for &Value { type Output = Expression; fn div(self, b: f32) -> Self::Output { mul(1./b, self) } }
-impl std::ops::Div<f64> for &Value { type Output = Expression; #[track_caller] fn div(self, b: f64) -> Self::Output { assert!(f64::abs(b)>1e-28); mul(1./b, self) } }
+impl std::ops::Div<f64> for &Value { type Output = Expression; #[track_caller] fn div(self, b: f64) -> Self::Output { mul(1./b, self) } }
 
 //impl From<f32> for Expression { fn from(v: f32) -> Self { Expression::F32(v) } }
 impl From<f64> for Expression { fn from(v: f64) -> Self { float(v).unwrap() } }
@@ -94,7 +112,7 @@ impl std::ops::Mul<Expression> for f64 { type Output = Expression; fn mul(self, 
 impl std::ops::Div<Expression> for f64 { type Output = Expression; fn div(self, b: Expression) -> Self::Output { div(self, b) } }
 impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
-impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
+impl std::ops::Mul<&Value> for f64 { type Output = Expression; #[track_caller] fn mul(self, b: &Value) -> Self::Output { assert!(self.is_finite() && self != 0. && self != 1., "{self}"); mul(self, b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
 //type FunctionBuilder = Vec<String>;
@@ -154,15 +172,15 @@ impl Product<Expression> for Option<Expression> { fn product<I:Iterator<Item=Exp
 impl<E:Into<Expression>> Product<E> for Expression { fn product<I:Iterator<Item=E>>(iter: I) -> Self { Π(iter).unwrap() } }
 pub fn product(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().product() }
 
-#[track_caller] pub fn idot<'t>(iter: impl IntoIterator<Item=(f64, &'t Value)>) -> Expression {
+pub fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Option<Expression> {
 	iter.into_iter().fold(None, |sum, (c, e)|
 		if c == 0. { sum }
 		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
-		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => -e }) } // fixme: reorder -a+b -> b-a to avoid neg
-		else { Some(match sum { Some(sum) => c * e + sum, None => c * e }) }
-	).unwrap()
+		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => neg(e) }) } // fixme: reorder -a+b -> b-a to avoid neg
+		else { Some(match sum { Some(sum) => mul(float(c).unwrap(), e) + sum, None => mul(float(c).unwrap(), e) }) }
+	)
 }
-pub fn dot(c: &[f64], v: &[Value]) -> Expression { idot(c.iter().copied().zip(v)) }
+#[track_caller] pub fn dot(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> { zdot(c.iter().copied().zip(v)) }
 
 pub fn exp_approx(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,1/) (-9->-7)
 	let ref x = l!(f (1./2048.)*x.into());

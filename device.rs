@@ -33,19 +33,20 @@ pub struct Function<D: Borrow<Device>> {
 	function: Box<[u32]>,
 }
 pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}: &Function<D>, constants: &[float], input: &[&[float]]) -> super::Output {
-	assert!(constants.len() == 1 && constants.len()+input.len() == *input_len);
+	assert!(std::mem::size_of::<float>() == 4 && constants.len() == 1 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let local_size = std::cmp::min(512, states_len as u32);
 	let device = device.borrow();
-	let input = map(&*input, |array| Buffer::new(device, array.iter().copied()).unwrap());
-	let output = map(0..*output_len, |_| Buffer::new(device, vec![0.; states_len]).unwrap());
+	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
+	let output = map(0..*output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
 	let buffers = list(input.iter().chain(&*output));
-	pub fn cast<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-	let pipeline = device.pipeline(&function, local_size, cast(&constants), &buffers)?;
+	let pipeline = device.pipeline(&function, local_size, as_u8(&constants), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;
-	let command_buffer = device.command_buffer(&pipeline, cast(&constants), (states_len as u32)/local_size)?;
-	let time = device.submit_and_wait(command_buffer)?;
-	println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
+	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/local_size)?;
+	for _ in 0..3 { // First iteration loads from host visible to device local memory
+		let time = device.submit_and_wait(command_buffer)?;
+		println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
+	}
 	Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 }
 

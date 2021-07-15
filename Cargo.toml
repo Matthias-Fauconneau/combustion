@@ -3,7 +3,7 @@ package={name= 'combustion', description= 'Chemical reaction kinetics and specie
 lib={path='lib.rs'}
 bin=[
 	{name='main', path='main.rs', required-features=['anyhow','yaml','itertools']},
-	{name='cantera', path='cantera.rs', required-features=['anyhow','yaml','itertools','rand']},
+	{name='cantera', path='cantera.rs', required-features=['anyhow','yaml','itertools','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['anyhow','yaml','plot']}
 ]
 
@@ -12,6 +12,7 @@ yaml=['dep:yaml','pest_derive','pest']
 transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow']
 plot=['cvode','ui','image','png','anyhow']
+cantera=[]
 default=['anyhow','yaml','itertools','rand']
 
 [dependencies]
@@ -38,3 +39,4 @@ ir={optional=true, path='ir', features=['jit']}
 ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
+libc='*'

@@ -11,6 +11,7 @@ linear-map='*'
 ast= {path='../ast'}
 spirv= {package='spirv_headers', git='https://github.com/Matthias-Fauconneau/rspirv'}
 rspirv={git='https://github.com/Matthias-Fauconneau/rspirv'}
+spirv-tools={version='*', default-features=false, features=['use-installed-tools']}
 
 [lib]
 path= 'lib.rs'

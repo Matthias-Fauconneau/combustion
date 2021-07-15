@@ -109,7 +109,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 						A: reaction["Troe"]["A"].as_f64().unwrap(),
 						T1: reaction["Troe"]["T1"].as_f64().unwrap(),
 						T3: reaction["Troe"]["T3"].as_f64().unwrap(),
-						T2: reaction["Troe"]["T2"].as_f64().unwrap_or(0.)
+						T2: reaction["Troe"]["T2"].as_f64().unwrap_or(f64::INFINITY)
 					}},
 					_ => unimplemented!()
 				}
