@@ -3,23 +3,24 @@
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
-#[derive(PartialEq, Eq, Debug, Clone)] pub struct Value(pub usize);
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)] pub struct Value(pub usize);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)] pub enum Type { I32, F32, F64 }
 
-#[derive(Debug)] pub enum Expression {
-	I32(u32),
+#[derive(Debug, PartialEq)] pub enum Expression {
+	/*#[default]*/ Poison,
+	//I32(u32),
 	F32(f32),
 	F64(f64),
 	Float(f64),
 	Value(Value),
-	Cast(Type, Box<Expression>),
+	/*Cast(Type, Box<Expression>),
 	And(Box<Expression>, Box<Expression>),
 	Or(Box<Expression>, Box<Expression>),
 	IShLImm(Box<Expression>, u8),
 	UShRImm(Box<Expression>, u8),
 	IAdd(Box<Expression>, Box<Expression>),
-	ISub(Box<Expression>, Box<Expression>),
+	ISub(Box<Expression>, Box<Expression>),*/
 	//Load(Variable),
 	Neg(Box<Expression>),
 	Max(Box<Expression>, Box<Expression>),
@@ -27,19 +28,20 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 	Sub(Box<Expression>, Box<Expression>),
 	LessOrEqual(Box<Expression>, Box<Expression>),
 	Mul(Box<Expression>, Box<Expression>),
-	MulAdd(Box<Expression>, Box<Expression>, Box<Expression>),
+	//MulAdd(Box<Expression>, Box<Expression>, Box<Expression>),
 	Div(Box<Expression>, Box<Expression>),
-	FPromote(Box<Expression>),
+	/*FPromote(Box<Expression>),
 	FDemote(Box<Expression>),
 	FCvtToSInt(Box<Expression>),
-	FCvtFromSInt(Box<Expression>),
+	FCvtFromSInt(Box<Expression>),*/
 	Sqrt(Box<Expression>),
 	Exp(Box<Expression>),
 	Ln { x0: f64, x: Box<Expression> },
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
+impl Default for Expression { fn default() -> Self { Self::Poison } }
 
-#[derive(Debug)] pub enum Statement {
+#[derive(Debug,PartialEq)] pub enum Statement {
 	Value { id: Value, value: Expression },
 	Select { condition: Expression, true_exprs: Box<[Expression]>, false_exprs: Box<[Expression]>, results: Box<[Value]> },
 	//Display(Value)
@@ -129,14 +131,14 @@ impl Block<'t> {
 		let result = build(&mut block);
 		Expression::Block { statements: block.statements.into(), result: box_(result) }
 	}
-	pub fn value(&mut self, debug: String) -> Value {
+	pub fn value(&mut self, name: String) -> Value {
 		let id = Value(self.values.len());
-		self.values.push(debug);
+		self.values.push(name);
 		id
 	}
 }
-pub fn def(value: impl Into<Expression>, block: &mut Block, debug: String) -> Value {
-	let id = block.value(debug);
+pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Value {
+	let id = block.value(name);
 	push(Statement::Value{id: id.clone(), value: value.into()}, block);
 	id
 }
@@ -207,3 +209,20 @@ pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if t
 #[allow(non_camel_case_types)] pub type float = f32;
 
 pub mod interpret;
+
+#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)] pub enum LeafValue { Float(u64), Value(Value), }
+impl LeafValue {
+pub fn new(e: &Expression) -> Option<Self> { use Expression::*; match e {
+	&F32(value) => Some(LeafValue::Float((value as f64).to_bits())),
+	&F64(value)|&Float(value) => Some(LeafValue::Float(value.to_bits())),
+	Value(v) => Some(LeafValue::Value(v.clone())),
+	Neg(_)|Max(_,_)|Add(_,_)|Sub(_,_)|LessOrEqual(_,_)|Mul(_,_)|Div(_,_)|Sqrt(_)|Exp(_)|Ln{..}|Block{..} => None,
+	Poison => panic!("{e:?}")
+}}
+pub fn to_string(&self, names: &[String]) -> String {
+	use LeafValue::*; match self {
+		&Float(x) => format!("{:e}", f64::from_bits(x)),
+		Value(id) => names[id.0].clone(),
+	}
+}
+}

@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(PartialEq, Debug, Clone)] enum DataValue { None, Bool(bool), I32(u32), F32(f32), F64(f64) }
+#[derive(PartialEq, Debug, Clone)] enum DataValue { None, Bool(bool), /*I32(u32),*/ F32(f32), F64(f64) }
 impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
 impl From<&DataValue> for f32 { fn from(v: &DataValue) -> Self { if let DataValue::F32(v) = v { *v } else { f64::from(v) as _ } } }
@@ -41,9 +41,9 @@ impl DataValue {
 }
 
 fn eval(state: &State, expression: &Expression) -> DataValue {
-	use {Expression::*, DataValue::{Bool, I32, F64, F32}};
+	use {Expression::*, DataValue::{Bool, /*I32,*/ F64, F32}};
 	let result = match expression {
-		&Expression::I32(value) => I32(value),
+		//&Expression::I32(value) => I32(value),
 		&Expression::F32(value) => F32(value),
 		&Expression::F64(value) => F64(value),
 		&Expression::Float(value) => {assert!((value as f32).is_finite()); (value as float).into()},

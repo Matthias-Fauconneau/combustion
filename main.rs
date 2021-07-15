@@ -2,7 +2,6 @@
 mod yaml; mod device;
 use {iter::map, anyhow::Result, itertools::Itertools, std::env::*, device::*};
 fn main() -> Result<()> {
-	dbg!();
 	let path = args().skip(1).next().unwrap();
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
 	let model = yaml::parse(&model);

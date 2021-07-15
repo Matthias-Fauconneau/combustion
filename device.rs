@@ -43,7 +43,7 @@ pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}
 	let pipeline = device.pipeline(&function, local_size, as_u8(&constants), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;
 	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/local_size)?;
-	for _ in 0..3 { // First iteration loads from host visible to device local memory
+	for _ in 0..1 { // First iteration loads from host visible to device local memory
 		let time = device.submit_and_wait(command_buffer)?;
 		println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time);
 	}

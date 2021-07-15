@@ -22,7 +22,6 @@ impl Device {
 	#[throws] pub fn new() -> Self {
 		let ref main = CStr::from_bytes_with_nul(b"main\0").unwrap();
 		unsafe {
-			dbg!();
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(
 				&InstanceCreateInfo::builder().application_info(

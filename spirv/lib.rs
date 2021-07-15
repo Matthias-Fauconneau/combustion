@@ -1,20 +1,39 @@
-#![feature(array_map,format_args_capture,default_free_fn)]
+#![allow(incomplete_features)]#![feature(array_map,format_args_capture,default_free_fn,if_let_guard)]
 use {std::default::default, iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
+
+#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)] enum Op { Neg, Max, Add, Sub, LessOrEqual, Mul, Div, Sqrt, Exp, Ln }
+impl From<&Expression>	for Op { fn from(e: &Expression) -> Self { use Expression::*; match e {
+	/*&I32(_)|*/F32(_)|&F64(_)|&Float(_)|&Value(_) => panic!(),
+	Neg(_) => Op::Neg,
+	Max(_,_) => Op::Max,
+	Add(_,_) => Op::Add,
+	Sub(_,_) => Op::Sub,
+	LessOrEqual(_,_) => Op::LessOrEqual,
+	Mul(_,_) => Op::Mul,
+	Div(_,_) => Op::Div,
+	Sqrt(_) => Op::Sqrt,
+	Exp(_) => Op::Exp,
+	Ln{..}  => Op::Ln,
+	Block{..} => panic!(),
+	Poison => panic!(),
+}}}
 
 type Value = Word;
 
-struct Builder {
+struct Builder<'t> {
 	builder: rspirv::Builder,
 	gl: Word,
-	values: linear_map::LinearMap<ast::Value, Word>,
+	values: linear_map::LinearMap<ast::Value, Value>,
 	//constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<u32, Value>,
 	//constants_f64: std::collections::HashMap<u64, Value>,
+	expressions: std::collections::HashSet<(Op, LeafValue, Option<LeafValue>)>,
+	names: &'t [String],
 }
-impl std::ops::Deref for Builder { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
-impl std::ops::DerefMut for Builder { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
+impl std::ops::Deref for Builder<'_> { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
+impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
-impl Builder {
+impl Builder<'_> {
 /*fn u32(&mut self, value: u32) -> Value {
 	match self.constants_u32.entry(value) {
 		std::collections::hash_map::Entry::Occupied(value) => *value.get(),
@@ -39,6 +58,15 @@ fn f32(&mut self, value: f32) -> Value {
 fn expr(&mut self, e: &Expression) -> Value {
 	let [bool, f32, gl] = [self.type_bool(), self.type_float(32), self.gl];
 	use Expression::*;
+	if let Some((op,a,b)) = match e {
+		F32(_)|F64(_)|Float(_)|Value(_) => None,
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => LeafValue::new(x).map(|x|(e.into(), x, None)),
+		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => {
+			if let [Some(a),Some(b)] = [a,b].map(|x| LeafValue::new(x)) { Some((e.into(), a, Some(b))) } else { None }
+		}
+		Block{..} => None,
+		Poison => panic!(),
+	} { assert!(self.expressions.insert((op,a,b)),"{op:?} {} {:?}", a.to_string(self.names), b.map(|b| b.to_string(self.names))); }
 	match e {
 		&F32(value) => self.f32(value),
 		//&F64(value) => self.constant_f32(f32, value as f32),
@@ -159,8 +187,8 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		b.load(f32, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap()
 	});
 	let values = [push_constant_0].iter().chain(&*input_values).enumerate().map(|(value, &input)| (Value(value), input)).collect();
-	let mut b = Builder{builder: b, gl, values, /*&constants_u32: default(),*/ constants_f32: default(), /*constants_f64: default()*/};
-	for s in &*ast.statements { b.push(s); }
+	let mut b = Builder{builder: b, gl, values, /*&constants_u32: default(),*/ constants_f32: default(), /*constants_f64: default(),*/ expressions: default(), names: &ast.values};
+	for (i,s) in ast.statements.iter().enumerate() { if (i+1)%512 == 0 { println!("{}",i*100/ast.statements.len()); } b.push(s); }
 	for (expr, &output) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);
 		let output = b.access_chain(sbf, None, output, [index0, id]).unwrap();

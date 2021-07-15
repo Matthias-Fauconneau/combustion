@@ -7,6 +7,35 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl IntoIterator<Item=(I::Item, 
 
 use ast::{*/*, dbg*/};
 
+fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
+	if *a == *b && LeafValue::new(a).is_none() {
+		let ref common = l!(f std::mem::take(a));
+		*a = common.into();
+		*b = common.into();
+	} else {
+		fn visit(mut f: impl FnMut(&mut Expression), e: &mut Expression) {
+			use Expression::*;
+			match e {
+				F32(_)|F64(_)|Float(_)|Value(_) => {},
+				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => f(x),
+				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { f(a); f(b); }
+				Block{..} => unimplemented!(),
+				Poison => panic!(),
+			}
+		}
+		visit(|a| eliminate_common_subexpression(a, b, f), a);
+		visit(|b| eliminate_common_subexpression(a, b, f), b);
+	}
+}
+
+fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut Block) {
+	for a in &mut *a {
+		for b in &mut *b {
+			eliminate_common_subexpression(a, b, f);
+		}
+	}
+}
+
 fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>]) -> Expression {
 	let (num, div) : (Vec::<_>,Vec::<_>) = n.iter().map(|&n| n.into()).zip(b).filter(|&(n,_)| n!=0).partition(|&(n,_)| n>0);
 	let num : Option<Expression> = num.into_iter().fold(None, |mut p, (n,e)|{ for _ in 0..n { p = Some(match p { Some(p) => p*e, None => e.into() }); } p });
@@ -28,10 +57,14 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| s.temperature_split.to_bits())) {
 		let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
+		let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f));
+		let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f));
+		dbg!();
+		eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
+		dbg!();
 		push(Statement::Select{
 			condition: less_or_equal(T.T, f64::from_bits(temperature_split)),
-			true_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f)),
-			false_exprs: map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f)),
+			true_exprs, false_exprs,
 			results
 		}, f);
 	}

@@ -51,7 +51,12 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
 		thermodynamic: (|thermo:&Yaml| NASA7{
 			temperature_ranges: map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap()),
-			pieces: map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap())
+			pieces: {
+				let pieces = map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap());
+				fn has_duplicates<T:PartialEq>(slice:&[T]) -> bool { (1..slice.len()).any(|i| slice[i..].contains(&slice[i - 1])) }
+				assert!(!has_duplicates(&pieces));
+				pieces
+			}
 		})(&specie["thermo"]),
 		transport: (|transport:&Yaml| Transport{
 			well_depth_K: transport["well-depth"].as_f64().unwrap(),
