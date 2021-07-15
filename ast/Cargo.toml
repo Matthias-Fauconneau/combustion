@@ -6,8 +6,10 @@ version= '0.0.0'
 edition= '2021'
 
 [dependencies]
+num-traits='*'
+ordered-float='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
-linear-map= '*'
+linear-map='*'
 num= {optional=true, git='https://github.com/Matthias-Fauconneau/num'}
 
 [lib]

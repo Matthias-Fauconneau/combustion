@@ -13,16 +13,11 @@ fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mu
 		*a = common.into();
 		*b = common.into();
 	} else {
-		fn visit(mut f: impl FnMut(&mut Expression), e: &mut Expression) {
-			use Expression::*;
-			match e {
+		fn visit(mut f: impl FnMut(&mut Expression), e: &mut Expression) { use Expr::*; match &mut **e {
 				F32(_)|F64(_)|Float(_)|Value(_) => {},
 				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => f(x),
 				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { f(a); f(b); }
-				Block{..} => unimplemented!(),
-				Poison => panic!(),
-			}
-		}
+		}}
 		visit(|a| eliminate_common_subexpression(a, b, f), a);
 		visit(|b| eliminate_common_subexpression(a, b, f), b);
 	}
@@ -99,16 +94,24 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut ast::Block) -> Expression { exp(Gib
 	].into_iter().filter_map(|x| x).sum::<Option<_>>().map(|x| exp(x, f))].into_iter().filter_map(|x| x).product::<Option<_>>().unwrap()
 }
 
+use std::collections::HashMap;
+
 #[derive(derive_more::Deref,derive_more::DerefMut)] struct Block<'t> {
 	#[deref]#[deref_mut] block: ast::Block<'t>,
-	concentrations: Box<[std::collections::HashMap<u64, Option<Value>>]>,
+	concentrations: Box<[HashMap<u64, Option<Value>>]>,
+	values: HashMap<Expression, Value>
+}
+
+pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>, partial_sums: &mut HashMap<Expression, Value>, f: &mut ast::Block) -> Option<Expression> {
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Expr::Float(e) = &**e {*e!=0.} else {true}).reduce(|a,b| partial_sums.entry(a+b).or_insert_with_key(|e| l!(f e.clone())).into())
 }
 
 fn efficiency(efficiencies: &[f64], concentrations: &[Value], f: &mut Block) -> Expression {
-	efficiencies.iter().zip(concentrations).enumerate().map(|(k, (&e, C))| {
+	let efficiencies = list(efficiencies.iter().zip(concentrations).enumerate().map(|(k, (&e, C))| {
 		f.concentrations[k].entry(e.to_bits()).or_insert_with({let f = &mut f.block; || if e==0. { None } else if e==1. { Some(C.clone()) } else { Some(l!(f e*C)) }})
 		.as_ref().map(|value| value.into())
-	}).filter_map(|x:Option<Expression>| x).sum()
+	}).filter_map(|x:Option<Expression>| x));
+	sum(efficiencies.to_vec(), &mut f.values, &mut f.block).unwrap()
 }
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
@@ -129,7 +132,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 				let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
 				let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
 				let ref Pr = l!(f efficiency * k0 / k_inf);
-				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcp_T,..}=T; sum([
+				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcp_T,..}=T; ast::sum([
 					(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
 					(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
@@ -179,7 +182,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	};
 	let_!{ input@[ref pressure_R, ref total_amount, ref T, ref nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut values = ["pressure_","total_amount","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
-	let mut function = Block{block: ast::Block::new(&mut values), concentrations: vec![default(); species.len()].into()};
+	let mut function = Block{block: ast::Block::new(&mut values), concentrations: vec![default(); species.len()].into(), values: default()};
 	let ref mut f = function;
 	let ref ln_T = l!(f ln(1024., T, f));
 	let ref T2 = l!(f T*T);
@@ -194,7 +197,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, f, "exp_Gibbs0_RT");
 	let ref density = l!(f total_concentration / total_amount);
 	let nonbulk_concentrations = map(0..active, |k| l!(f density*max(0., &nonbulk_amounts[k])));
-	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations));
+	let bulk_concentration = l!(f total_concentration - ast::sum(&*nonbulk_concentrations));
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
 	let rates = map(0..active, |specie| l!(f zdot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates)).unwrap()));

@@ -21,7 +21,7 @@ impl std::ops::DerefMut for State<'_> { fn deref_mut(&mut self) -> &mut Self::Ta
 fn to_string(state: &State, expression: &Expression) -> String {
 	use Expression::*;
 	match expression {
-		Float(x) => format!("{:e}", x),
+		Float(x) => x.to_string(),
 		Value(id) => format!("{} = {}", state.debug[id.0], state.values[id.0]),
 		Add(a, b) => format!("{} + {}", to_string(state, a), to_string(state, b)),
 		Sub(a, b) => format!("{} - {}", to_string(state, a), to_string(state, b)),
@@ -44,9 +44,9 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 	use {Expression::*, DataValue::{Bool, /*I32,*/ F64, F32}};
 	let result = match expression {
 		//&Expression::I32(value) => I32(value),
-		&Expression::F32(value) => F32(value),
-		&Expression::F64(value) => F64(value),
-		&Expression::Float(value) => {assert!((value as f32).is_finite()); (value as float).into()},
+		&Expression::F32(value) => F32(*value),
+		&Expression::F64(value) => F64(*value),
+		&Expression::Float(value) => {assert!((*value as f32).is_finite()); (*value as float).into()},
 		/*Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),

@@ -20,24 +20,9 @@ impl Builder<'t> {
 			constants_f32: default(),
 			constants_f64: default(),
 	} }
-	fn u32(&mut self, value: u32) -> Value {
-		match self.constants_u32.entry(value) {
-			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
-			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.ins().iconst(I32, value as i64))
-		}
-	}
-	fn f32(&mut self, value: f32) -> Value {
-		match self.constants_f32.entry(value.to_bits()) {
-			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
-			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.ins().f32const(value))
-		}
-	}
-	fn f64(&mut self, value: f64) -> Value {
-		match self.constants_f64.entry(value.to_bits()) {
-			std::collections::hash_map::Entry::Occupied(value) => *value.get(),
-			std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(self.builder.ins().f64const(value))
-		}
-	}
+	//fn u32(&mut self, value: u32) -> Value { *self.constants_u32.entry(value).or_insert_with(|| self.builder.ins().iconst(I32, value as i64)) }
+	//fn f32(&mut self, value: f32) -> Value { *self.constants_f32.entry(value.to_bits()).or_insert_with(|| self.builder.ins().f32const(value)) }
+	fn f64(&mut self, value: f64) -> Value { *self.constants_f64.entry(value.to_bits()).or_insert_with(|| self.builder.ins().f64const(value)) }
 }
 
 trait CType { const CTYPE: Type; }
