@@ -83,9 +83,11 @@ fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, f: &mut Block) -> Exp
 		else if temperature_exponent >= 1.5 { (Some(T2), temperature_exponent-2.) }
 		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
 		else { (None, temperature_exponent) };
+	let ln_T_coefficient = ln_T_coefficient as f32 as f64;
 	//const T0: f64 = 1024.;
+	//eprintln!("{temperature_exponent}, {ln_T_coefficient}");
 	[Some(float(A/* *f64::powf(T0,ln_T_coefficient)*/).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
-	 (ln_T_coefficient != 0.).then(|| ln_T_coefficient * (ln_T/*-f64::ln(T0)*/)),
+	 (ln_T_coefficient != 0.).then(|| (&le!(f ln_T_coefficient * (ln_T/*-f64::ln(T0)*/))).into()),
 	 (activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
 	].into_iter().filter_map(|x| x).sum::<Option<_>>().map(|x| (&le!(f exp(x, f))).into())].into_iter().filter_map(|x| x).product::<Option<_>>().unwrap()
 }
