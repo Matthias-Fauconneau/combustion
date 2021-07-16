@@ -31,7 +31,7 @@ pub fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>, f: &mut 
 		if c == 0. { sum }
 		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
 		else if c == -1. { Some(match sum { Some(sum) => sum - e, None => (&le!(f -e.into())).into() }) } // fixme: reorder -a+b -> b-a to avoid some neg
-		else { Some(match sum { Some(sum) => &le!(f float(c).unwrap()*e) + sum, None => (&le!(f float(c).unwrap()*e)).into() }) }
+		else { Some(match sum { Some(sum) => &le!(f c*e.into()) + sum, None => (&le!(f c*e.into())).into() }) }
 	)
 }
 #[track_caller] pub fn dot(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>, f: &mut Block) -> Option<Expression> { zdot(c.iter().copied().zip(v), f) }
@@ -90,10 +90,15 @@ fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, f: &mut Block) -> Exp
 	let ln_T_coefficient = ln_T_coefficient as f32 as f64;
 	//const T0: f64 = 1024.;
 	//eprintln!("{temperature_exponent}, {ln_T_coefficient}");
-	[Some(float(A/* *f64::powf(T0,ln_T_coefficient)*/).ok_or(format!("A:{A:e}"))?), temperature_factor.map(|x| x.into()), [
-	 (ln_T_coefficient != 0.).then(|| (&le!(f ln_T_coefficient * (ln_T/*-f64::ln(T0)*/))).into()),
-	 (activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
-	].into_iter().filter_map(|x| x).sum::<Option<_>>().map(|x| (&le!(f exp(x, f))).into())].into_iter().filter_map(|x| x).product::<Option<_>>().unwrap()
+	[
+		Some(A.into()/* *f64::powf(T0,ln_T_coefficient)*/),
+		temperature_factor.map(|x| x.into()),
+		[
+			(ln_T_coefficient != 0.).then(|| (&le!(f ln_T_coefficient * (ln_T/*-f64::ln(T0)*/))).into()),
+			(activation_temperature != 0.).then(|| -activation_temperature * rcp_T)
+		].into_iter().filter_map(|x| x).sum::<Option<Expression>>()
+		.map(|x| (&le!(f exp(x, f))).into())
+	].into_iter().filter_map(|x:Option<Expression>| x).product::<Option<Expression>>().unwrap()
 }
 
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>, f: &mut Block) -> Option<Expression> {
@@ -142,7 +147,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
 					(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
 				].into_iter().filter_map(|x| x))};
-				let ref lnFcent = if let Some(x) = Fcent.f64() { float(x).unwrap() } else { (&l!(f ln(1./2., Fcent, f))).into() }; // 0.1-0.7 => e-3
+				let ref lnFcent: Expression = if let Some(x) = Fcent.f64() { x.into() } else { (&l!(f ln(1./2., Fcent, f))).into() }; // 0.1-0.7 => e-3
 				let C: Expression = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
 				let N: Expression = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
 				let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
