@@ -49,13 +49,21 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 	assert!(units["length"].as_str()==Some("cm") && units["time"].as_str()==Some("s") && units["quantity"].as_str()==Some("mol"));
 	let species = map(data["species"].as_vec().unwrap(), |specie| (specie["name"].as_str().unwrap(), Specie{
 		composition: specie["composition"].as_hash().unwrap().iter().map(|(k,v)| (Element::from_str(k.as_str().unwrap()).unwrap(), v.as_i64().unwrap().try_into().unwrap())).collect(),
-		thermodynamic: (|thermo:&Yaml| NASA7{
-			temperature_ranges: map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap()),
-			pieces: {
-				let pieces = map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap());
-				fn has_duplicates<T:PartialEq>(slice:&[T]) -> bool { (1..slice.len()).any(|i| slice[i..].contains(&slice[i - 1])) }
-				assert!(!has_duplicates(&pieces));
-				pieces
+		thermodynamic: (|thermo:&Yaml| {
+			let temperature_ranges = map(thermo["temperature-ranges"].as_vec().unwrap(), |limit| limit.as_f64().unwrap());
+			let pieces = map(thermo["data"].as_vec().unwrap(), |piece| map(piece.as_vec().unwrap().iter(), |v| v.as_f64().unwrap()).into_vec().try_into().unwrap());
+			fn has_duplicates<T:PartialEq>(slice:&[T]) -> bool { (1..slice.len()).any(|i| slice[i..].contains(&slice[i - 1])) }
+			if {
+				struct NASA7([f64; 7]);
+				impl PartialEq for NASA7 { fn eq(&self, b: &Self) -> bool { self.0[0..6]==b.0[0..6] && f64::abs(self.0[6]-b.0[6])<3e-8 } }
+				has_duplicates(&*map(&*pieces, |&x| NASA7(x)))
+			} {
+				assert!(pieces.len() == 2);
+				let temperature_ranges: Box<_> = temperature_ranges.try_into().unwrap();
+				let [min, _, max]: [f64; 3] = *temperature_ranges;
+				NASA7{temperature_ranges: list([min, max]), pieces: list([pieces[0]])}
+			} else {
+				NASA7{temperature_ranges, pieces}
 			}
 		})(&specie["thermo"]),
 		transport: (|transport:&Yaml| Transport{

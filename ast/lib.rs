@@ -1,4 +1,4 @@
-#![allow(incomplete_features,non_snake_case)]
+#![allow(incomplete_features,non_snake_case,mixed_script_confusables)]
 #![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map,if_let_guard)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
@@ -16,7 +16,6 @@ pub type R64 = ordered_float::NotNan<f64>;
 	//I32(u32),
 	F32(R32),
 	F64(R64),
-	Float(R64),
 	Value(Value),
 	/*Cast(Type, Box<Expression>),
 	And(Box<Expression>, Box<Expression>),
@@ -42,11 +41,15 @@ pub type R64 = ordered_float::NotNan<f64>;
 	Exp(Box<Expression>),
 	Ln { x0: R64, x: Box<Expression> },
 }
+impl From<R32> for Expr { fn from(v: R32) -> Self { Self::F32(v) } }
+impl From<R64> for Expr { fn from(v: R64) -> Self { Self::F64(v) } }
 impl Expr {
-	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Float(_)|Value(_)) }
+	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Value(_)) }
+	pub fn f32(&self) -> Option<f32> { use Expr::*; match self { F32(x) => Some(f32::from(*x)), F64(x) => Some(f64::from(*x) as _), _ => None } }
+	pub fn f64(&self) -> Option<f64> { use Expr::*; match self { F32(x) => Some(f32::from(*x) as _), F64(x) => Some(f64::from(*x)), _ => None } }
 	pub fn to_string(&self, names: &[String]) -> String {
 		use Expr::*; match self {
-			&Float(x) => x.to_string(),
+			&F64(x) => x.to_string(),
 			Value(id) => names[id.0].clone(),
 			Add(a, b) => format!("{} + {}", a.to_string(names), b.to_string(names)),
 			Sub(a, b) => format!("{} - {}", a.to_string(names), b.to_string(names)),
@@ -79,17 +82,17 @@ impl Expression {
 	fn visit<T>(&self, visitor: impl Fn(&Self)->T) -> [Option<T>; 2] {
 		match self {
 			Self::Expr(e) => {use Expr::*; match e {
-				F32(_)|F64(_)|Float(_)|Value(_) => [None, None],
+				F32(_)|F64(_)|Value(_) => [None, None],
 				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
 				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 			}}
 			Self::Block{..} => [None, None]//unimplemented!()
 		}
 	}
-	fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Self)) {
+	pub fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Self)) {
 		match self {
 			Self::Expr(e) => {use Expr::*; match e {
-				F32(_)|F64(_)|Float(_)|Value(_) => {},
+				F32(_)|F64(_)|Value(_) => {},
 				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => visitor(x),
 				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { visitor(a); visitor(b); }
 			}}
@@ -115,8 +118,10 @@ impl Statement {
 }
 
 //pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
-#[track_caller] pub fn float(float: impl Into<f64>) -> Option<Expression> { let float = float.into(); /*assert!((float as f32).is_finite(), "{float:e}");*/ (float as f32).is_finite().then(|| Expr::Float(float.try_into().unwrap()).into()) }
-
+#[track_caller] pub fn float(float: impl Into<f64>) -> Option<Expression> {
+	let float = float.into();
+	(float as f32).is_finite().then(|| Expr::from(R64::new(float).unwrap()).into() )
+}
 //impl From<Value> for Expression { fn from(value: Value) -> Expression {  Expr::Value(value).into() } }
 impl From<&Value> for Expression { fn from(value: &Value) -> Expression { Expr::Value(value.clone()).into() } }
 impl From<&mut Value> for Expression { fn from(value: &mut Value) -> Expression { Expr::Value(value.clone()).into() } }
@@ -128,37 +133,54 @@ pub fn ishl_imm(a: impl Into<Expression>, b: u8) -> Expression { Expression::ISh
 pub fn ushr_imm(a: impl Into<Expression>, b: u8) -> Expression { Expression::UShRImm(box_(a.into()), b) }
 pub fn iadd(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::IAdd(box_(a.into()), box_(b.into())) }
 pub fn isub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::ISub(box_(a.into()), box_(b.into())) }*/
-fn neg(x: impl Into<Expression>) -> Expression { Expr::Neg(box_(x.into())).into() }
-pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expr::Max(box_(a.into()), box_(b.into())).into() }
-pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expr::LessOrEqual(box_(a.into()), box_(b.into())).into() }
+fn neg(x: impl Into<Expression>) -> Expression {
+	Expr::Neg(box_(x.into())).into()
+}
+
+pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	Expr::Max(box_(a.into()), box_(b.into())).into()
+}
+
+pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	Expr::LessOrEqual(box_(a.into()), box_(b.into())).into()
+}
+
 fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	for x in [&a,&b] { if let &Expr::Float(x) = &**x { assert!(f64::from(x) as f32 != 0.); } }
+	for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0.); } }
 	Expr::Add(box_(a), box_(b)).into()
 }
+
 fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	for x in [&a,&b] { if let &Expr::Float(x) = &**x { assert!(f64::from(x) as f32 != 0.); } }
+	for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0.); } }
 	Expr::Sub(box_(a), box_(b)).into()
 }
+
 fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	for x in [&a,&b] { if let &Expression::Expr(Expr::Float(x)) = x { let x = f64::from(x) as f32; assert!(x != 0. && x != 1.); } }
-	if let [&Expression::Expr(Expr::Float(a)), &Expression::Expr(Expr::Float(b))] = [&a,&b] { float(a*b).unwrap() }
+	for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0. && x != 1.); } }
+	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { float(a*b).unwrap() }
 	else { Expr::Mul(box_(a), box_(b)).into() }
 }
+
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	for x in [&a,&b] { if let &Expr::Float(x) = &**x { assert!(f64::from(x) as f32 != 0.); } }
-	if let &Expr::Float(x) = &*b { assert!(f64::from(x) as f32 != 1.); }
+	for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0.); } }
+	if let Some(x) = b.f32() { assert!(x != 1.); }
 	Expr::Div(box_(a), box_(b)).into()
 }
+
+pub fn sqrt(x: impl Into<Expression>) -> Expression {
+	Expr::Sqrt(box_(x.into())).into()
+}
+
 /*pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
 pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
 pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }*/
-pub fn sqrt(x: impl Into<Expression>) -> Expression { Expr::Sqrt(box_(x.into())).into() }
+
 
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 
@@ -188,8 +210,6 @@ impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &
 impl std::ops::Mul<&Value> for f64 { type Output = Expression; #[track_caller] fn mul(self, b: &Value) -> Self::Output { assert!(self.is_finite() && self != 0. && self != 1., "{self}"); mul(self, b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
-//type FunctionBuilder = Vec<String>;
-//impl FunctionBuilder { pub fn new(input: &[&str]) -> Self { Self { values: input.iter().map(|s| s.to_string()).collect() } } }
 pub struct Block<'t> {
 	pub statements: Vec<Statement>,
 	pub names: &'t mut Vec<String>,
@@ -227,19 +247,19 @@ pub struct Function {
 	pub values: Box<[String]>,
 }
 
-use std::iter::{Sum, Product};
-
 // cannot impl Sum<Option<Expression>> for Option<Expression> as std:iter_arith_traits_option defines impl Sum<Option> for Option<Sum>
 // Forgetting .filter_map(|x| x) will compile with unexpected results
 pub fn Σ(iter: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> {
-	iter.into_iter().map(|e| e.into()).filter(|e| if let Expr::Float(e) = &**e {*e!=0.} else {true}).reduce(add)
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Some(x) = e.f32() {x!=0.} else {true}).reduce(add)
 }
+use std::iter::Sum;
 impl Sum<Expression> for Option<Expression> { fn sum<I:Iterator<Item=Expression>>(iter: I) -> Self { Σ(iter) } }
 impl<E:Into<Expression>> Sum<E> for Expression { fn sum<I:Iterator<Item=E>>(iter: I) -> Self { Σ(iter).unwrap() } }
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().sum() }
 
+use std::iter::Product;
 pub fn Π(iter: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> {
-	iter.into_iter().map(|e| e.into()).filter(|e| if let Expr::Float(e) = &**e {*e!=1.} else {true}).reduce(mul)
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Some(x) = e.f32() {x!=1.} else {true}).reduce(mul)
 }
 impl Product<Expression> for Option<Expression> { fn product<I:Iterator<Item=Expression>>(iter: I) -> Self { Π(iter) } }
 impl<E:Into<Expression>> Product<E> for Expression { fn product<I:Iterator<Item=E>>(iter: I) -> Self { Π(iter).unwrap() } }
@@ -274,10 +294,12 @@ pub fn ln_approx(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression
 	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x4*x2 + (1./9.)*x6*x2)
 }
 
-pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expr::Exp(box_(x.into())).into() } else { exp_approx(x, f) } }
+pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression {
+	let x = x.into();
+	assert!(x.f32().is_none());
+	if true { Expr::Exp(box_(x)).into() } else { exp_approx(x, f) }
+}
 pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expr::Ln{x0: x0.try_into().unwrap(), x: box_(x.into())}.into() } else { ln_approx(x0, x, f) } }
-
-#[allow(non_camel_case_types)] pub type float = f32;
 
 pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {

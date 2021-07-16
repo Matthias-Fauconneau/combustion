@@ -1,7 +1,22 @@
-use {anyhow::Result, iter::map, ast::float};
+use {anyhow::Result, iter::map};
+#[allow(non_camel_case_types)] pub type float = f32;
 type Output = Result<Box<[Box<[float]>]>>;
+use ast::*;
+fn demote(mut f: ast::Function) -> ast::Function {
+	use Expr::*;
+	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = F32(R32::new(f64::from(*x) as _).unwrap()).into() } else { e.visit_mut(demote) } }
+	for s in &mut *f.statements { use Statement::*; match s {
+		Value{value,..} => demote(value),
+		Select { condition, true_exprs, false_exprs, .. } => {
+			demote(condition);
+			for e in &mut **true_exprs { demote(e); }
+			for e in &mut **false_exprs { demote(e); }
+		}
+	}}
+	f
+}
 #[cfg(not(feature="vpu"))] mod device {
-	use {iter::{list, map}, ast::*};
+	use {iter::{list, map}, ast::*, super::*};
 	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[float], &[&[float]]) -> super::Output {
 		let input_len = function.input;
 		let output_len = function.output.len();
@@ -25,7 +40,7 @@ type Output = Result<Box<[Box<[float]>]>>;
 	}
 }
 #[cfg(feature="vpu")] mod device {
-use {std::borrow::Borrow, iter::{list, map}, ast::*, vulkan::*};
+use {std::borrow::Borrow, iter::{list, map}, vulkan::*, super::*};
 pub struct Function<D: Borrow<Device>> {
 	device: D,
 	input_len: usize,
@@ -53,8 +68,8 @@ pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}
 /*#[throws] pub fn assemble<'t>(device: &'t Device, function: &ast::Function) -> Function<&'t Device> {
 	Function{device, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function)?}
 }*/
-pub fn assemble(function: &ast::Function) -> Function<Device> {
-	Function{device: vulkan::Device::new().unwrap(), input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function).unwrap()}
+pub fn assemble(function: ast::Function) -> Function<Device> {
+	Function{device: vulkan::Device::new().unwrap(), input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, &demote(function)).unwrap()}
 }
 
 impl<D: Borrow<Device>> FnOnce<(&[float], &[&[float]])> for Function<D> { type Output = super::Output; extern "rust-call" fn call_once(mut self, args: (&[float], &[&[float]])) -> Self::Output { self.call_mut(args) } }

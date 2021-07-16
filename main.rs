@@ -1,4 +1,6 @@
-#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]
+#![allow(non_snake_case,non_upper_case_globals)]
+#![recursion_limit="16"]
 mod yaml; mod device;
 use {iter::map, anyhow::Result, itertools::Itertools, std::env::*, device::*};
 fn main() -> Result<()> {
@@ -10,7 +12,7 @@ fn main() -> Result<()> {
 
 	for i in 0..1 {
 		let rates = reaction::rates(&species.thermodynamics, &reactions);
-		let rates = with_repetitive_input(assemble(&rates), 1<<0);
+		let rates = with_repetitive_input(assemble(rates), 1<<0);
 		assert!(state.volume == 1.);
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();

@@ -42,7 +42,7 @@ impl Species {
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
-			[_, _] => NASA7{temperature_split: f64::INFINITY, pieces: [pieces[0]; 2]},
+			[_, _] => NASA7{temperature_split: f64::NAN, pieces: [pieces[0]; 2]},
 			ref ranges => panic!("{ranges:?}, {species:?}"),
 		});
 		let diameter = map(species, |(_,s)| s.transport.diameter_Å*1e-10);

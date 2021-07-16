@@ -42,17 +42,21 @@ use {std::default::default, fehler::throws, iter::{list, map}, super::*};
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
 fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
 	let mut specie_results = map(thermodynamics, |_| None);
-	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| R64::new(s.temperature_split).unwrap())) {
-		let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
-		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
-		let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f));
-		let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f));
-		eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
-		push(Statement::Select{
-			condition: (&le!(f less_or_equal(T.T, f64::from(temperature_split)))).into(),
-			true_exprs, false_exprs,
-			results
-		}, f);
+	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| ordered_float::OrderedFloat(s.temperature_split))) {
+		if temperature_split.is_nan() {
+			for &specie in species { assert!(specie_results[specie].replace(l!(f expression(&thermodynamics[specie].pieces[0], T, f))).is_none()) }
+		} else {
+			let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
+			for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
+			let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f));
+			let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f));
+			eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
+			push(Statement::Select{
+				condition: (&le!(f less_or_equal(T.T, f64::from(temperature_split)))).into(),
+				true_exprs, false_exprs,
+				results
+			}, f);
+		}
 	}
 	map(specie_results.into_vec().into_iter(), Option::unwrap)
 }
@@ -61,9 +65,9 @@ fn add(a: f64, b: Option<Expression>) -> Expression { b.map(|b| a+b).unwrap_or(a
 fn molar_heat_capacity_at_constant_pressure_R(a: &[f64], T{T,T2,T3,T4,..}: T, f: &mut Block) -> Expression { add(a[0], dot(&a[1..5], [T,T2,T3,T4], f)) }
 fn enthalpy_RT(a: &[f64], T{T,T2,T3,T4,rcp_T,..}: T<'_>, f: &mut Block) -> Expression { add(a[0], dot(&[a[1]/2.,a[2]/3.,a[3]/4.,a[4]/5.,a[5]], [T,T2,T3,T4,rcp_T], f)) }
 fn Gibbs_RT(a: &[f64], T{ln_T,T,T2,T3,T4,rcp_T,..}: T<'_>, f: &mut Block) -> Expression {
-	dot(&[(a[0]-a[6])-a[0], -a[1]/2., (1./3.-1./2.)*a[2], (1./4.-1./3.)*a[3], (1./5.-1./4.)*a[4], a[5]], [ln_T, T, T2, T3, T4, rcp_T], f).unwrap()
+	add(a[0]-a[6], dot(&[-a[0], -a[1]/2., (1./3.-1./2.)*a[2], (1./4.-1./3.)*a[3], (1./5.-1./4.)*a[4], a[5]], [ln_T, T, T2, T3, T4, rcp_T], f))
 }
-fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
+//fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT(a, T, f), f) }
 
 // A.T^β.exp(-Ea/kT)
 #[track_caller]#[throws] fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activation_temperature}: &RateConstant, T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2}: T<'_>, f: &mut Block) -> Expression {
@@ -87,7 +91,7 @@ fn exp_Gibbs_RT(a: &[f64], T: T<'_>, f: &mut Block) -> Expression { exp(Gibbs_RT
 }
 
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>, f: &mut Block) -> Option<Expression> {
-	iter.into_iter().map(|e| e.into()).filter(|e| if let Expr::Float(e) = &**e {*e!=0.} else {true}).reduce(|a,b| (&le!(f a+b)).into())
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Some(x) = e.f32() {x!=0.} else {true}).reduce(|a,b| (&le!(f a+b)).into())
 }
 
 fn product_of_exponentiations(b: &[Value], n: &[impl Copy+Into<i16>], f: &mut Block) -> Value {
@@ -189,7 +193,8 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let ref C0 = l!(f NASA7::reference_pressure * rcp_T);
 	let ref total_concentration = l!(f pressure_R / T); // Constant pressure
 	let T = T{ln_T,T,T2,T3,T4,rcp_T,rcp_T2};
-	let ref exp_Gibbs0_RT = thermodynamics(&species[0..active], exp_Gibbs_RT, T, f, "exp_Gibbs0_RT");
+	let Gibbs0_RT = thermodynamics(&species[0..active], Gibbs_RT, T, f, "Gibbs0_RT");
+	let ref exp_Gibbs0_RT = map(&*Gibbs0_RT, |g| l!(f exp(g, f)));
 	let ref density = l!(f total_concentration / total_amount);
 	let nonbulk_concentrations = map(0..active, |k| l!(f density*max(0., &nonbulk_amounts[k])));
 	let bulk_concentration = l!(f total_concentration - ast::sum(&*nonbulk_concentrations));

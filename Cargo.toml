@@ -16,6 +16,7 @@ cantera=[]
 default=['anyhow','yaml','itertools','rand']
 
 [dependencies]
+ordered-float='*'
 derive_more='*'
 fehler='*'
 anyhow={optional=true, version='*' }
