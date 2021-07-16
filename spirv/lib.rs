@@ -166,25 +166,27 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	b.end_function()?;
 	b.entry_point(spirv::ExecutionModel::GLCompute, f, "main", [&[global_invocation_id_ref, push_constants] as &[_],&input,&output].concat());
 	let code = ::rspirv::binary::Assemble::assemble(&b.builder.module());
-	let path = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv";
-	let path = std::path::Path::new(&path);
-	pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-	let code = as_u8(&code);
-	if !path.exists() || code != std::fs::read(path).unwrap() {
-		std::fs::write(path, code).unwrap();
-		/*{use spirv_tools::{*, opt::*, binary::*};
-			let code = create(Some(TargetEnv::Vulkan_1_2)).optimize(code, &mut |_| {}, Some(Options{preserve_spec_constants: true, ..Default::default()})).map_err(|e| e.diagnostic.unwrap().message).unwrap();
-			if let Binary::OwnedU32(code) = code { Ok(code.into()) } else { unreachable!() }
-		}*/
+	if true {
+		Ok(code.into())
+	} else {
+		let path = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv.spv";
+		let path = std::path::Path::new(&path);
+		pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
+		let code = as_u8(&code);
+		if !path.exists() || code != std::fs::read(path).unwrap() {
+			std::fs::write(path, code).unwrap();
+			/*{use spirv_tools::{*, opt::*, binary::*};
+				let code = create(Some(TargetEnv::Vulkan_1_2)).optimize(code, &mut |_| {}, Some(Options{preserve_spec_constants: true, ..Default::default()})).map_err(|e| e.diagnostic.unwrap().message).unwrap();
+				if let Binary::OwnedU32(code) = code { Ok(code.into()) } else { unreachable!() }
+			}*/
+		}
+		let opt = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv";
+		let opt = std::path::Path::new(&opt);
+		if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
+			let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
+			assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","-O","--target-env=vulkan1.2",path,"-o",opt]).status().unwrap().success());
+		}
+		pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
+		Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv").unwrap()).into())
 	}
-	let opt = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt";
-	let opt = std::path::Path::new(&opt);
-	if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
-		let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
-		eprint!("spirv-opt");
-		assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","--target-env=vulkan1.2","-O",path,"-o",opt]).status().unwrap().success());
-		eprintln!(".");
-	}
-	pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
-	Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt").unwrap()).into())
 }

@@ -122,19 +122,26 @@ fn efficiency(efficiencies: &[f64], concentrations: &[Value], f: &mut Block) -> 
 	sum(&*efficiencies, f).unwrap()
 }
 
-fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Expression {
+struct Ratio(Expression, Expression);
+impl From<Expression> for Ratio { fn from(e: Expression) -> Ratio { Ratio(e, (1.).into()) } }
+impl std::ops::Mul<Ratio> for &Value { type Output = Expression; fn mul(self, Ratio(n, d): Ratio) -> Expression {
+	if let Some(d) = d.f64() { if d == 1. { return self*n } }
+	(self*n)/d
+}}
+
+fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Ratio {
 	use ReactionModel::*; match model {
-		Elementary|Irreversible => arrhenius(k_inf, T, f).unwrap(),
-		ThreeBody{efficiencies} => arrhenius(k_inf, T, f).unwrap() * efficiency(efficiencies, concentrations, f),
+		Elementary|Irreversible => arrhenius(k_inf, T, f).unwrap().into(),
+		ThreeBody{efficiencies} => (arrhenius(k_inf, T, f).unwrap() * efficiency(efficiencies, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
 			let k0 = arrhenius(k0, T, f);
 			let k_inf = arrhenius(k_inf, T, f);
-			f.block(|f|{
+			//f.block(|f|{
 				let ref C_k0 = l!(f efficiency * k0.unwrap());
 				let ref k_inf = l!(f k_inf.unwrap());
-				(C_k0 * k_inf) / (C_k0 + k_inf)
-			})
+				Ratio(C_k0 * k_inf, C_k0 + k_inf)
+			//})
 		},
 		Falloff{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
@@ -153,7 +160,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 				let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
 				let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
 				let F = exp(lnFcent.shallow()/(f1*f1+1.), f);
-				k_inf * Pr / (Pr + 1.) * F
+				Ratio(F * k_inf * Pr, Pr + 1.)
 			//})
 		}
 	}
@@ -161,25 +168,21 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 
 fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Value]> {
 	map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
-		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f); // todo: CSE
+		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f);
 		let forward = product_of_exponentiations(concentrations, reactants, f);
 		let ref coefficient = if let ReactionModel::Irreversible = model { forward } else {
 			let rcp_equilibrium_constant_0 = product_of_exponentiations(exp_Gibbs0_RT, net, f);
-			//dbg!(f; rcp_equilibrium_constant_0);
-			//let rcp_equilibrium_constant_0 = exp2(idot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
+			//let rcp_equilibrium_constant_0 = exp(dot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => (&rcp_equilibrium_constant_0).into(),
 				1 => C0 * &rcp_equilibrium_constant_0,
 				-1 => rcp_C0 * &rcp_equilibrium_constant_0,
 				_ => unreachable!()
 			};
-			//dbg!(f; rcp_equilibrium_constant);
 			let ref reverse = le!(f rcp_equilibrium_constant * &product_of_exponentiations(concentrations, products, f));
-			//dbg!(f; forward, reverse);
 			le!(f &forward - reverse)
 		};
-		//dbg!(f; forward_rate_constant, coefficient);
-		l!(f forward_rate_constant * coefficient)
+		l!(f coefficient * forward_rate_constant)
 	})
 }
 
@@ -216,6 +219,6 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let dot = |a:&[Value], b:&[Expression]| iter::dot(a.iter().zip(b.iter()));
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
 	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
-	let dtT_T = - energy_rate_RT / Cp;
+	let dtT_T = Ratio(- energy_rate_RT, Cp);
 	Function{output: list([T.T * dtT_T].into_iter().chain(rates.iter().map(|v| v.into()))), statements: function.block.statements.into(), input: input.len(), values: values.into()}
 }}}
