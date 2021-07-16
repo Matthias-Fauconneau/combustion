@@ -47,9 +47,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &
 		for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
 		let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f));
 		let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f));
-		dbg!();
 		eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
-		dbg!();
 		push(Statement::Select{
 			condition: (&le!(f less_or_equal(T.T, f64::from(temperature_split)))).into(),
 			true_exprs, false_exprs,
@@ -127,7 +125,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 			let efficiency = efficiency(efficiencies, concentrations, f);
 			let k0 = arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}"));
 			let ref k_inf = l!(f arrhenius(k_inf, T, f).unwrap());
-			f.block(|f|{
+			//f.block(|f|{
 				let ref Pr = l!(f efficiency * k0 / k_inf);
 				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcp_T,..}=T; ast::sum([
 					(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * exp(T/(-T3), f) } else { y.into() }}),
@@ -141,7 +139,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 				let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
 				let F = exp(lnFcent/(f1*f1+1.), f);
 				k_inf * Pr / (Pr + 1.) * F
-			})
+			//})
 		}
 	}
 }

@@ -1,21 +1,6 @@
 #![allow(incomplete_features)]#![feature(array_map,format_args_capture,default_free_fn,if_let_guard)]
 use {std::default::default, iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
 
-#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)] enum Op { Neg, Max, Add, Sub, LessOrEqual, Mul, Div, Sqrt, Exp, Ln }
-impl From<&Expr>	for Op { fn from(e: &Expr) -> Self { use Expr::*; match e {
-	/*&I32(_)|*/F32(_)|&F64(_)|&Float(_)|&Value(_) => panic!(),
-	Neg(_) => Op::Neg,
-	Max(_,_) => Op::Max,
-	Add(_,_) => Op::Add,
-	Sub(_,_) => Op::Sub,
-	LessOrEqual(_,_) => Op::LessOrEqual,
-	Mul(_,_) => Op::Mul,
-	Div(_,_) => Op::Div,
-	Sqrt(_) => Op::Sqrt,
-	Exp(_) => Op::Exp,
-	Ln{..}  => Op::Ln,
-}}}
-
 type Value = Word;
 
 struct Builder<'t> {
@@ -25,7 +10,7 @@ struct Builder<'t> {
 	//constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<R32, Value>,
 	//constants_f64: std::collections::HashMap<F64, Value>,
-	expressions: std::collections::HashSet<(Op, LeafValue, Option<LeafValue>)>,
+	expressions: std::collections::HashSet<Expr/*(Op, LeafValue, Option<LeafValue>)*/>,
 	names: &'t [String],
 }
 impl std::ops::Deref for Builder<'_> { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
@@ -42,37 +27,32 @@ fn f32(&mut self, value: R32) -> Value {
 	let f64 = self.type_float(64);
 	*self.constants_f64.entry(value).or_insert_with(|| self.builder.constant_f64(f64, *value))
 }*/
-fn expr(&mut self, e: &Expression) -> Value {
+fn expr(&mut self, expr: &Expression) -> Value {
 	let [bool, f32, gl] = [self.type_bool(), self.type_float(32), self.gl];
-	use {Expression::*, ast::Expr::*};
-	if let Some((op,a,b)) = match e { Expr(e) => match e {
-		F32(_)|F64(_)|Float(_)|Value(_) => None,
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => LeafValue::new(x).map(|x|(e.into(), x, None)),
-		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => if let [Expr(a),Expr(b)] = [&**a,&**b] {
-			if let [Some(a),Some(b)] = [a,b].map(|x| LeafValue::new(x)) { Some((e.into(), a, Some(b))) } else { None }
-		} else { None }
-	}
-		Block{..} => None,
-	} { assert!(self.expressions.insert((op,a,b)),"{op:?} {} {:?}", a.to_string(self.names), b.map(|b| b.to_string(self.names))); }
-	match e { Expr(e) => match e {
-		&F32(value) => self.f32(value),
-		&F64(_value) => unimplemented!(),//self.f64(value),
-		&Float(value) => self.f32(value.to_f32().unwrap().try_into().unwrap()),
-		Value(v) => self.values[v],
-		Neg(x) => { let x = self.expr(x); self.f_negate(f32, None, x).unwrap() }
-		Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(f32, None, gl, GLOp::FMax as u32, operands).unwrap() }
-		Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(f32, None, a, b).unwrap() }
-		Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(f32, None, a, b).unwrap() }
-		LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
-		Mul(a, b) => {
-			for x in [&a,&b] { if let &Expr(Float(x)) = x.as_ref() { assert!(x.to_f32().unwrap().is_finite() && x != 0. && x != 1.); } }
-			let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
-		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
-		Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
-		Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Exp as u32, [x]).unwrap() }
-		Ln{x,..} => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Log as u32, [x]).unwrap() }
-		},
-		Block { statements, result } => {
+	match expr {
+		Expression::Expr(e) => {
+			use Expr::*;
+			if let F32(_)|F64(_)|Float(_)|Value(_) = e {} else { assert!(!expr.has_block() && self.expressions.insert(e.clone()),"{}", e.to_string(self.names)); }
+			match e {
+				&F32(value) => self.f32(value),
+				&F64(_value) => unimplemented!(),//self.f64(value),
+				&Float(value) => self.f32(value.to_f32().unwrap().try_into().unwrap()),
+				Value(v) => self.values[v],
+				Neg(x) => { let x = self.expr(x); self.f_negate(f32, None, x).unwrap() }
+				Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(f32, None, gl, GLOp::FMax as u32, operands).unwrap() }
+				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(f32, None, a, b).unwrap() }
+				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(f32, None, a, b).unwrap() }
+				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
+				Mul(a, b) => {
+					for x in [&a,&b] { if let &Expression::Expr(Float(x)) = x.as_ref() { assert!(x.to_f32().unwrap().is_finite() && x != 0. && x != 1.); } }
+					let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
+				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
+				Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
+				Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Exp as u32, [x]).unwrap() }
+				Ln{x,..} => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Log as u32, [x]).unwrap() }
+			}
+		}
+		Expression::Block { statements, result } => {
 			for s in &**statements { self.push(s) }
 			self.expr(result)
 		}

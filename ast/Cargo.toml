@@ -6,6 +6,7 @@ version= '0.0.0'
 edition= '2021'
 
 [dependencies]
+itertools='*'
 num-traits='*'
 ordered-float='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}

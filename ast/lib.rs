@@ -42,6 +42,22 @@ pub type R64 = ordered_float::NotNan<f64>;
 	Exp(Box<Expression>),
 	Ln { x0: R64, x: Box<Expression> },
 }
+impl Expr {
+	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Float(_)|Value(_)) }
+	pub fn to_string(&self, names: &[String]) -> String {
+		use Expr::*; match self {
+			&Float(x) => x.to_string(),
+			Value(id) => names[id.0].clone(),
+			Add(a, b) => format!("{} + {}", a.to_string(names), b.to_string(names)),
+			Sub(a, b) => format!("{} - {}", a.to_string(names), b.to_string(names)),
+			Mul(a, b) => format!("({}) * ({})", a.to_string(names), b.to_string(names)),
+			Div(a, b) => format!("({}) / ({})", a.to_string(names), b.to_string(names)),
+			Exp(x) => format!("exp({})", x.to_string(names)),
+			_ => format!("{self:?}")
+		}
+	}
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)] pub enum Expression {
 	Expr(Expr),
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
@@ -51,11 +67,51 @@ impl std::ops::DerefMut for Expression { fn deref_mut(&mut self) -> &mut Expr { 
 impl From<Expr> for Expression { fn from(e: Expr) -> Self { Self::Expr(e) } }
 impl Default for Expression { fn default() -> Self { Expr::Value(Value(usize::MAX)).into() } }
 impl Clone for Expression { fn clone(&self) -> Self { std::ops::Deref::deref(self).clone().into() } }
+impl Expression {
+	pub fn is_leaf(&self) -> bool { if let Self::Expr(e) = self { e.is_leaf() } else { false } }
+	pub fn to_string(&self, names: &[String]) -> String {
+		use itertools::Itertools;
+		match self {
+			Self::Expr(e) => e.to_string(names),
+			Self::Block{statements, result} => format!("{{{} {}}}", statements.iter().map(|x| x.to_string(names)).format(" "), result.to_string(names))
+		}
+	}
+	fn visit<T>(&self, visitor: impl Fn(&Self)->T) -> [Option<T>; 2] {
+		match self {
+			Self::Expr(e) => {use Expr::*; match e {
+				F32(_)|F64(_)|Float(_)|Value(_) => [None, None],
+				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
+				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
+			}}
+			Self::Block{..} => [None, None]//unimplemented!()
+		}
+	}
+	fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Self)) {
+		match self {
+			Self::Expr(e) => {use Expr::*; match e {
+				F32(_)|F64(_)|Float(_)|Value(_) => {},
+				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => visitor(x),
+				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { visitor(a); visitor(b); }
+			}}
+			Self::Block{..} => unimplemented!()
+		}
+	}
+	pub fn has_block(&self) -> bool { matches!(self, Self::Block{..}) || self.visit(Self::has_block).into_iter().filter_map(|x| x).any(|x| x) }
+}
 
 #[derive(Debug,PartialEq,Eq,Hash)] pub enum Statement {
 	Value { id: Value, value: Expression },
 	Select { condition: Expression, true_exprs: Box<[Expression]>, false_exprs: Box<[Expression]>, results: Box<[Value]> },
 	//Display(Value)
+}
+impl Statement {
+	fn to_string(&self, names: &[String]) -> String {
+		use Statement::*;
+		match self {
+			Value{id, value} => format!("{} = {}", names[id.0], value.to_string(names)),
+			Select{..} => unimplemented!()
+		}
+	}
 }
 
 //pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
@@ -144,7 +200,7 @@ impl Block<'t> {
 	pub fn block(&mut self, build: impl FnOnce(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ statements: vec![], names: &mut self.names };
 		let result = build(&mut block);
-		Expression::Block { statements: block.statements.into(), result: box_(result) }
+		if block.statements.is_empty() { result } else { Expression::Block { statements: block.statements.into(), result: box_(result) } }
 	}
 	pub fn value(&mut self, name: String) -> Value {
 		let id = Value(self.names.len());
@@ -223,35 +279,15 @@ pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if t
 
 #[allow(non_camel_case_types)] pub type float = f32;
 
-#[cfg(feature="interpret")] pub mod interpret;
-
-#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)] pub enum LeafValue { Float(R64), Value(Value), }
-impl LeafValue {
-pub fn new(e: &Expr) -> Option<Self> { use Expr::*; match e {
-	&F32(value) => Some(LeafValue::Float(value.into())),
-	&F64(value)|&Float(value) => Some(LeafValue::Float(value)),
-	Value(v) => Some(LeafValue::Value(v.clone())),
-	Neg(_)|Max(_,_)|Add(_,_)|Sub(_,_)|LessOrEqual(_,_)|Mul(_,_)|Div(_,_)|Sqrt(_)|Exp(_)|Ln{..} => None,
-}}
-pub fn to_string(&self, names: &[String]) -> String {
-	use LeafValue::*; match self {
-		&Float(x) => x.to_string(),
-		Value(id) => names[id.0].clone(),
-	}
-}
-}
 pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
-	if *a == *b && LeafValue::new(a).is_none() {
+	if !a.is_leaf() && !b.is_leaf() && *a == *b {
 		let ref common = l!(f std::mem::take(a));
 		*a = common.into();
 		*b = common.into();
 	} else {
-		fn visit(mut f: impl FnMut(&mut Expression), e: &mut Expression) { use Expr::*; match &mut **e {
-				F32(_)|F64(_)|Float(_)|Value(_) => {},
-				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => f(x),
-				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { f(a); f(b); }
-		}}
-		visit(|a| eliminate_common_subexpression(a, b, f), a);
-		visit(|b| eliminate_common_subexpression(a, b, f), b);
+		a.visit_mut(|a| eliminate_common_subexpression(a, b, f));
+		b.visit_mut(|b| eliminate_common_subexpression(a, b, f));
 	}
 }
+
+#[cfg(feature="interpret")] pub mod interpret;
