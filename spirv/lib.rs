@@ -48,9 +48,9 @@ fn expr(&mut self, e: &Expression) -> Value {
 	if let Some((op,a,b)) = match e { Expr(e) => match e {
 		F32(_)|F64(_)|Float(_)|Value(_) => None,
 		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => LeafValue::new(x).map(|x|(e.into(), x, None)),
-		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => {
+		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => if let [Expr(a),Expr(b)] = [&**a,&**b] {
 			if let [Some(a),Some(b)] = [a,b].map(|x| LeafValue::new(x)) { Some((e.into(), a, Some(b))) } else { None }
-		}
+		} else { None }
 	}
 		Block{..} => None,
 	} { assert!(self.expressions.insert((op,a,b)),"{op:?} {} {:?}", a.to_string(self.names), b.map(|b| b.to_string(self.names))); }
@@ -65,7 +65,7 @@ fn expr(&mut self, e: &Expression) -> Value {
 		Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(f32, None, a, b).unwrap() }
 		LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
 		Mul(a, b) => {
-			for x in [&a,&b] { if let &Float(x) = &**x.as_ref() { assert!(x.to_f32().unwrap().is_finite() && x != 0. && x != 1.); } }
+			for x in [&a,&b] { if let &Expr(Float(x)) = x.as_ref() { assert!(x.to_f32().unwrap().is_finite() && x != 0. && x != 1.); } }
 			let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
 		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
 		Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }

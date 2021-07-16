@@ -46,8 +46,8 @@ pub type R64 = ordered_float::NotNan<f64>;
 	Expr(Expr),
 	Block { statements: Box<[Statement]>, result: Box<Expression> },
 }
-impl std::ops::Deref for Expression { type Target=Expr; fn deref(&self) -> &Expr { if let Self::Expr(e) = self { e } else { panic!() } } }
-impl std::ops::DerefMut for Expression { fn deref_mut(&mut self) -> &mut Expr { if let Self::Expr(e) = self { e } else { panic!() } } }
+impl std::ops::Deref for Expression { type Target=Expr; #[track_caller] fn deref(&self) -> &Expr { if let Self::Expr(e) = self { e } else { panic!("block") } } }
+impl std::ops::DerefMut for Expression { fn deref_mut(&mut self) -> &mut Expr { if let Self::Expr(e) = self { e } else { panic!("block") } } }
 impl From<Expr> for Expression { fn from(e: Expr) -> Self { Self::Expr(e) } }
 impl Default for Expression { fn default() -> Self { Expr::Value(Value(usize::MAX)).into() } }
 impl Clone for Expression { fn clone(&self) -> Self { std::ops::Deref::deref(self).clone().into() } }
@@ -61,7 +61,7 @@ impl Clone for Expression { fn clone(&self) -> Self { std::ops::Deref::deref(sel
 //pub fn u32(integer: u32) -> Expression { Expression::I32(integer) }
 #[track_caller] pub fn float(float: impl Into<f64>) -> Option<Expression> { let float = float.into(); /*assert!((float as f32).is_finite(), "{float:e}");*/ (float as f32).is_finite().then(|| Expr::Float(float.try_into().unwrap()).into()) }
 
-//impl From<Value> for Expression { fn from(value: Value) -> Expression { Expression::Value(value) } }
+//impl From<Value> for Expression { fn from(value: Value) -> Expression {  Expr::Value(value).into() } }
 impl From<&Value> for Expression { fn from(value: &Value) -> Expression { Expr::Value(value.clone()).into() } }
 impl From<&mut Value> for Expression { fn from(value: &mut Value) -> Expression { Expr::Value(value.clone()).into() } }
 
@@ -85,10 +85,10 @@ fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	for x in [&a,&b] { if let &Expr::Float(x) = &**x { assert!(f64::from(x) as f32 != 0.); } }
 	Expr::Sub(box_(a), box_(b)).into()
 }
-#[track_caller] fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
+fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	for x in [&a,&b] { if let &Expr::Float(x) = &**x { let x = f64::from(x) as f32; assert!(x != 0. && x != 1.); } }
-	if let [&Expr::Float(a), &Expr::Float(b)] = [&*a,&*b] { float(a*b).unwrap() }
+	for x in [&a,&b] { if let &Expression::Expr(Expr::Float(x)) = x { let x = f64::from(x) as f32; assert!(x != 0. && x != 1.); } }
+	if let [&Expression::Expr(Expr::Float(a)), &Expression::Expr(Expr::Float(b))] = [&a,&b] { float(a*b).unwrap() }
 	else { Expr::Mul(box_(a), box_(b)).into() }
 }
 fn div(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
@@ -189,7 +189,7 @@ impl Product<Expression> for Option<Expression> { fn product<I:Iterator<Item=Exp
 impl<E:Into<Expression>> Product<E> for Expression { fn product<I:Iterator<Item=E>>(iter: I) -> Self { Π(iter).unwrap() } }
 pub fn product(iter: impl IntoIterator<Item:Into<Expression>>) -> Expression { iter.into_iter().product() }
 
-pub fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Option<Expression> {
+/*fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Option<Expression> {
 	iter.into_iter().fold(None, |sum, (c, e)|
 		if c == 0. { sum }
 		else if c == 1. { Some(match sum { Some(sum) => sum + e, None => e.into() }) }
@@ -197,7 +197,7 @@ pub fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Optio
 		else { Some(match sum { Some(sum) => mul(float(c).unwrap(), e) + sum, None => mul(float(c).unwrap(), e) }) }
 	)
 }
-#[track_caller] pub fn dot(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> { zdot(c.iter().copied().zip(v)) }
+#[track_caller] pub fn dot(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> { zdot(c.iter().copied().zip(v)) }*/
 
 pub fn exp_approx(x: impl Into<Expression>, f: &mut Block) -> Expression { //e-12 (19*,1/) (-9->-7)
 	let ref x = l!(f (1./2048.)*x.into());
@@ -239,4 +239,19 @@ pub fn to_string(&self, names: &[String]) -> String {
 		Value(id) => names[id.0].clone(),
 	}
 }
+}
+pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
+	if *a == *b && LeafValue::new(a).is_none() {
+		let ref common = l!(f std::mem::take(a));
+		*a = common.into();
+		*b = common.into();
+	} else {
+		fn visit(mut f: impl FnMut(&mut Expression), e: &mut Expression) { use Expr::*; match &mut **e {
+				F32(_)|F64(_)|Float(_)|Value(_) => {},
+				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => f(x),
+				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { f(a); f(b); }
+		}}
+		visit(|a| eliminate_common_subexpression(a, b, f), a);
+		visit(|b| eliminate_common_subexpression(a, b, f), b);
+	}
 }
