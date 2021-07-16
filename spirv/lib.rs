@@ -42,7 +42,11 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(f32, None, a, b).unwrap() }
 				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(f32, None, a, b).unwrap() }
 				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
-				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap() }
+				Mul(a, b) => {
+					//if let [Some(a), Some(b)] = [a.f64(),b.f64()] { float(a*b).unwrap() }
+					assert!(!matches!([a.f64(),b.f64()], [Some(_), Some(_)]));
+					let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(f32, None, a, b).unwrap()
+				}
 				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(f32, None, a, b).unwrap() }
 				Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
 				Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(f32, None, gl, GLOp::Exp as u32, [x]).unwrap() }

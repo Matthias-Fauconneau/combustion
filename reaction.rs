@@ -23,7 +23,7 @@ use std::collections::HashMap;
 }
 #[macro_export] macro_rules! le { ($f:ident $e:expr) => ({
 	let e = $e;
-	*$f.values.entry(e).or_insert_with_key(|e| def(e.clone(), &mut $f.block, format!("{}:{}: {}", file!(), line!(), stringify!($e))))
+	*$f.values.entry(e).or_insert_with_key(|e| def(e.clone(), &mut $f.block, format!("{}:{}: {}", file!(), line!(), stringify!($e))).unwrap() )
 })}
 
 pub fn zdot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>, f: &mut Block) -> Option<Expression> {
@@ -40,14 +40,18 @@ type Error = String;
 use {std::default::default, fehler::throws, iter::{list, map}, super::*};
 
 #[derive(Clone, Copy)] struct T<'t> { ln_T: &'t Value, T: &'t Value, T2: &'t Value, T3: &'t Value, T4: &'t Value, rcp_T: &'t Value, rcp_T2: &'t Value}
-fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Value]> {
+fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64], T<'_>, &mut Block)->Expression, T: T<'_>, f: &mut Block, debug: &str) -> Box<[Expression]> {
 	let mut specie_results = map(thermodynamics, |_| None);
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| ordered_float::OrderedFloat(s.temperature_split))) {
 		if temperature_split.is_nan() {
-			for &specie in species { assert!(specie_results[specie].replace(l!(f expression(&thermodynamics[specie].pieces[0], T, f))).is_none()) }
+			for &specie in species {
+				let e = expression(&thermodynamics[specie].pieces[0], T, f);
+				let e = if e.is_leaf() { e } else { (&l!(f e)).into() };
+				assert!(specie_results[specie].replace(e).is_none());
+			}
 		} else {
 			let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
-			for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.clone()).is_none()) }
+			for (&specie, result) in species.iter().zip(&*results) { assert!(specie_results[specie].replace(result.into()).is_none()) }
 			let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], T, f));
 			let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], T, f));
 			eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
@@ -138,12 +142,12 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * exp(T/(-T1), f) } else { y.into() }}),
 					(T2.is_finite()).then(|| exp((-T2)*rcp_T, f))
 				].into_iter().filter_map(|x| x))};
-				let ref lnFcent = l!(f ln(1./2., Fcent, f)); // 0.1-0.7 => e-3
-				let C =-0.67*lnFcent - 0.4*f64::ln(10.);
-				let N = -1.27*lnFcent + 0.75*f64::ln(10.);
+				let ref lnFcent = if let Some(x) = Fcent.f64() { float(x).unwrap() } else { (&l!(f ln(1./2., Fcent, f))).into() }; // 0.1-0.7 => e-3
+				let C: Expression = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
+				let N: Expression = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
 				let ref lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
 				let ref f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
-				let F = exp(lnFcent/(f1*f1+1.), f);
+				let F = exp(lnFcent.shallow()/(f1*f1+1.), f);
 				k_inf * Pr / (Pr + 1.) * F
 			//})
 		}
@@ -204,7 +208,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let rates = reaction_rates(reactions, T, C0, rcp_C0, exp_Gibbs0_RT, &concentrations, f);
 	let rates = map(0..active, |specie| l!(f zdot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates), f).unwrap()));
 	let enthalpy_RT = thermodynamics(&species[0..active], enthalpy_RT, T, f, "enthalpy_RT");
-	let dot = |a:&[Value], b:&[Value]| iter::dot(a.iter().zip(b.iter()));
+	let dot = |a:&[Value], b:&[Expression]| iter::dot(a.iter().zip(b.iter()));
 	let energy_rate_RT : Expression = dot(&rates, &enthalpy_RT);
 	let Cp : Expression = dot(&concentrations, &thermodynamics(species, molar_heat_capacity_at_constant_pressure_R, T, f, "molar_heat_capacity_at_CP_R"));
 	let dtT_T = - energy_rate_RT / Cp;

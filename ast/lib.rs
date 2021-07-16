@@ -1,5 +1,5 @@
 #![allow(incomplete_features,non_snake_case,mixed_script_confusables)]
-#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map,if_let_guard)]
+#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,array_map)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
@@ -43,6 +43,7 @@ pub type R64 = ordered_float::NotNan<f64>;
 }
 impl From<R32> for Expr { fn from(v: R32) -> Self { Self::F32(v) } }
 impl From<R64> for Expr { fn from(v: R64) -> Self { Self::F64(v) } }
+impl From<&Expr> for Expr { fn from(e: &Expr) -> Self { assert!(e.is_leaf()); e.clone() } }
 impl Expr {
 	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Value(_)) }
 	pub fn f32(&self) -> Option<f32> { use Expr::*; match self { F32(x) => Some(f32::from(*x)), F64(x) => Some(f64::from(*x) as _), _ => None } }
@@ -68,10 +69,12 @@ impl Expr {
 impl std::ops::Deref for Expression { type Target=Expr; #[track_caller] fn deref(&self) -> &Expr { if let Self::Expr(e) = self { e } else { panic!("block") } } }
 impl std::ops::DerefMut for Expression { fn deref_mut(&mut self) -> &mut Expr { if let Self::Expr(e) = self { e } else { panic!("block") } } }
 impl From<Expr> for Expression { fn from(e: Expr) -> Self { Self::Expr(e) } }
+impl From<&Expression> for Expression { fn from(e: &Expression) -> Self { let e:Expr=std::ops::Deref::deref(e).into(); e.into() } }
 impl Default for Expression { fn default() -> Self { Expr::Value(Value(usize::MAX)).into() } }
 impl Clone for Expression { fn clone(&self) -> Self { std::ops::Deref::deref(self).clone().into() } }
 impl Expression {
 	pub fn is_leaf(&self) -> bool { if let Self::Expr(e) = self { e.is_leaf() } else { false } }
+	pub fn shallow(&self) -> Expression { assert!(self.is_leaf()); self.clone() }
 	pub fn to_string(&self, names: &[String]) -> String {
 		use itertools::Itertools;
 		match self {
@@ -228,12 +231,14 @@ impl Block<'t> {
 		id
 	}
 }
-pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Value {
+pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<Value, f64> {
+	let value = value.into();
+	if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
 	let id = block.value(name);
-	push(Statement::Value{id: id.clone(), value: value.into()}, block);
-	id
+	push(Statement::Value{id: id.clone(), value}, block);
+	Ok(id)
 }
-#[macro_export] macro_rules! l { ($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))) ) }
+#[macro_export] macro_rules! l { ($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).unwrap() ) }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
 	values
@@ -296,10 +301,14 @@ pub fn ln_approx(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression
 
 pub fn exp(x: impl Into<Expression>, f: &mut Block) -> Expression {
 	let x = x.into();
-	assert!(x.f32().is_none());
+	assert!(x.f64().is_none());
 	if true { Expr::Exp(box_(x)).into() } else { exp_approx(x, f) }
 }
-pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { if true { Expr::Ln{x0: x0.try_into().unwrap(), x: box_(x.into())}.into() } else { ln_approx(x0, x, f) } }
+#[track_caller] pub fn ln(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression {
+	let x = x.into();
+	if let Some(x) = x.f64() { float(f64::ln(x)).unwrap() }
+	else if true { Expr::Ln{x0: x0.try_into().unwrap(), x: box_(x.into())}.into() } else { ln_approx(x0, x, f) }
+}
 
 pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {
