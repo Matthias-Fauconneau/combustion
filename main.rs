@@ -31,5 +31,5 @@ fn main() -> Result<()> {
 		}}
 	}
 	#[cfg(feature="vpu")] unsafe{libc::_exit(0)} // Exit process without running any exit handler (GLX_nvidia/eglReleaseThread/pthread_mutex_lock segfaults)
-	Ok(())
+	#[cfg(not(feature="vpu"))] Ok(())
 }

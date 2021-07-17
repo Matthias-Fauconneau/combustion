@@ -35,7 +35,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
-			assert!(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone())),"redundant: {}", e.to_string(self.names));
+			if !(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone()))) { eprintln!("{}", e.to_string(self.names)) }
 			match e {
 				&F32(value) => self.f32(value),
 				&F64(value) => self.f64(value),

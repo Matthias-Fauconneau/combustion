@@ -159,15 +159,17 @@ pub fn less_or_equal(a: impl Into<Expression>, b: impl Into<Expression>) -> Expr
 fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
 	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a+b).into() } else {
-		for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0.); } }
+		if let Some(a) = a.f32() { if a==0. { return b; } }
+		if let Some(b) = b.f32() { if b==0. { return a; } }
 		Expr::Add(box_(a), box_(b))
 	}.into()
 }
 
-fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+#[track_caller] fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
 	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a-b).into() } else {
-		for x in [&a,&b] { if let Some(x) = x.f32() { assert!(x != 0.); } }
+		if let Some(a) = a.f32() { if a==0. { return -b; } }
+		if let Some(b) = b.f32() { if b==0. { return a; } }
 		Expr::Sub(box_(a), box_(b))
 	}.into()
 }
@@ -176,8 +178,9 @@ fn sub(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	let [a,b] = [a.into(), b.into()];
 	assert!(!matches!(&*a, Expr::Div(_,_)) && !matches!(&*b, Expr::Div(_,_)), "({a:?}) * ({b:?})");
 	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a*b).into() } else {
-		if let Some(a) = a.f32() { if a==1. { return b.into(); } else if a==-1. { return -b } }
-		if let Some(b) = b.f32() { if b==1. { return a.into(); } else if b==-1. { return -a } }
+		for x in [&a,&b] { if let Some(x) = x.f32() { if x == 0. { return f64(0.).unwrap().into() } } }
+		if let Some(a) = a.f32() { if a==1. { return b; } else if a==-1. { return -b } }
+		if let Some(b) = b.f32() { if b==1. { return a; } else if b==-1. { return -a } }
 		Expr::Mul(box_(a), box_(b))
 	}.into()
 }
@@ -206,7 +209,7 @@ fn oadd(a: Option<impl Into<Expression>>, b: impl Into<Expression>) -> Expressio
 
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for Expression { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
-impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
+impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Expression; #[track_caller] fn sub(self, b: E) -> Self::Output { sub(self, b) } }
 impl<E:Into<Expression>> std::ops::Mul<E> for Expression { type Output = Expression; #[track_caller] fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl<E:Into<Expression>> std::ops::Div<E> for Expression { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
 impl std::ops::Neg for Expr { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
@@ -243,7 +246,7 @@ impl std::ops::Mul<&Expr> for f64 { type Output = Expression; fn mul(self, b: &E
 impl std::ops::Div<&Expr> for f64 { type Output = Expression; fn div(self, b: &Expr) -> Self::Output { div(self, b) } }
 impl std::ops::Add<Value> for f64 { type Output = Expression; fn add(self, b: Value) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<Value> for f64 { type Output = Expression; fn sub(self, b: Value) -> Self::Output { sub(self, b) } }
-impl std::ops::Mul<Value> for f64 { type Output = Expression; fn mul(self, b: Value) -> Self::Output { mul(self, b) } }
+impl std::ops::Mul<Value> for f64 { type Output = Expression; #[track_caller] fn mul(self, b: Value) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<Value> for f64 { type Output = Expression; fn div(self, b: Value) -> Self::Output { div(self, b) } }
 impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
