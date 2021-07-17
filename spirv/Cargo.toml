@@ -6,6 +6,7 @@ description= 'Translate AST to SPIRV'
 version= '0.0.0'
 
 [dependencies]
+ordered-float='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map='*'
 ast= {path='../ast'}

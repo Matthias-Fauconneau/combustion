@@ -10,7 +10,6 @@ impl From<&mut Value> for Value { fn from(x: &mut Value) -> Value { x.clone() } 
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)] pub enum Type { I32, F32, F64 }
 
-pub use num_traits::cast::ToPrimitive;
 type R32 = ordered_float::NotNan<f32>;
 type R64 = ordered_float::NotNan<f64>;
 

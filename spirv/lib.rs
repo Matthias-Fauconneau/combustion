@@ -2,6 +2,9 @@
 use {std::default::default, iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
 
 type Value = Word;
+//use num_traits::cast::ToPrimitive;
+type R32 = ordered_float::NotNan<f32>;
+type R64 = ordered_float::NotNan<f64>;
 
 struct Builder<'t> {
 	builder: rspirv::Builder,

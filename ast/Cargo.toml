@@ -5,7 +5,7 @@ features={interpret=[]}
 
 [dependencies]
 itertools='*'
-num-traits='*'
+#num-traits='*'
 ordered-float='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map='*'
