@@ -78,6 +78,7 @@ pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.
 
 pub trait Plain: Copy {}
 impl Plain for f32 {}
+impl Plain for f64 {}
 impl<T:Plain> Buffer<T> {
 	#[throws] pub fn map(&'t self, device: &'t Device) -> Map<T> {
 		Map{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts(device.map_memory(self.memory, 0, (self.len * size_of::<T>()) as u64, default())? as *const T, self.len)} }

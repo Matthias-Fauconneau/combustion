@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(PartialEq, Debug, Clone)] enum DataValue { None, Bool(bool), /*I32(u32),*/ F32(f32), F64(f64) }
+#[derive(PartialEq, Debug, Clone)] pub enum DataValue { None, Bool(bool), /*I32(u32),*/ F32(f32), F64(f64) }
 impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
 
 impl From<&DataValue> for f32 { fn from(v: &DataValue) -> Self { if let DataValue::F32(v) = v { *v } else { f64::from(v) as _ } } }
@@ -122,9 +122,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 	}
 }
 
-#[allow(non_camel_case_types)] type float = f32;
-
-pub fn call(f: &Function, input: &[float], output: &mut [float]) {
+pub fn call<T:Copy+Into<DataValue>+From<DataValue>>(f: &Function, input: &[T], output: &mut [T]) {
 	assert!(input.len() == f.input);
 	let mut state = State{
 		values: input.iter().map(|&v| v.into()).chain((0..f.values.len()).map(|_| DataValue::None)).collect(),
@@ -134,8 +132,8 @@ pub fn call(f: &Function, input: &[float], output: &mut [float]) {
 	for (slot, e) in output.iter_mut().zip(&*f.output) { *slot = eval(&state, e).into(); }
 }
 
-impl FnOnce<(&[float], &mut [float])> for Function {
-	type Output = (); extern "rust-call" fn call_once(mut self, args: (&[float], &mut [float])) -> Self::Output { self.call_mut(args) }
+impl<T:Copy+Into<DataValue>+From<DataValue>> FnOnce<(&[T], &mut [T])> for Function {
+	type Output = (); extern "rust-call" fn call_once(mut self, args: (&[T], &mut [T])) -> Self::Output { self.call_mut(args) }
 }
-impl FnMut<(&[float], &mut [float])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[float], &mut [float])) -> Self::Output { self.call(args) } }
-impl Fn<(&[float], &mut [float])> for Function { extern "rust-call" fn call(&self, (input, output): (&[float], &mut [float])) -> Self::Output { call(&self, input, output); } }
+impl<T:Copy+Into<DataValue>+From<DataValue>> FnMut<(&[T], &mut [T])> for Function { extern "rust-call" fn call_mut(&mut self, args: (&[T], &mut [T])) -> Self::Output { self.call(args) } }
+impl<T:Copy+Into<DataValue>+From<DataValue>> Fn<(&[T], &mut [T])> for Function { extern "rust-call" fn call(&self, (input, output): (&[T], &mut [T])) -> Self::Output { call(&self, input, output); } }

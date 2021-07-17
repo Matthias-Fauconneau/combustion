@@ -1,6 +1,7 @@
 use {anyhow::Result, iter::map};
-#[allow(non_camel_case_types)] pub type float = f32;
 type Output = Result<Box<[Box<[float]>]>>;
+#[cfg(not(feature="demote"))] #[allow(non_camel_case_types)] pub type float = f64;
+#[cfg(feature="demote")] #[allow(non_camel_case_types)] pub type float = f32;
 #[cfg(feature="demote")] fn demote(mut f: ast::Function) -> ast::Function {
 	use {ast::*, Expr::*};
 	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = f32(f64::from(*x) as _).unwrap().into() } else { e.visit_mut(demote) } }

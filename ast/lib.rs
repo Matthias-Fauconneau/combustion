@@ -1,6 +1,6 @@
 #![allow(incomplete_features,non_snake_case,mixed_script_confusables)]
 #![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,if_let_guard)]
-#![recursion_limit="5"]
+//#![recursion_limit="5"]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
 
