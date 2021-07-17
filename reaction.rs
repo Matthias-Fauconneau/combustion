@@ -5,7 +5,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl std::iter::IntoIterator<Item
 	map
 }
 
-use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, generate, list, map, DotN}, std::collections::HashMap, ast::*};
+use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, list, map, DotN}, std::collections::HashMap, ast::*};
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] pub struct Block<'t> {
 	#[deref]#[deref_mut] block: ast::Block<'t>,
@@ -21,9 +21,17 @@ use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, gene
 	($f:ident $e:expr) => (le!($f; $e).into())
 }
 
-fn assert_no_common_subexpressions(e: &Expression, f: &mut Block) {
-	{use itertools::Itertools; let e = e.deref(); assert!(e.is_leaf() || f.after_CSE.insert(e.clone()), "{}: {}", e.to_string(f.names), f.expressions.iter().filter_map(|(k,v)| (k==e).then(||v)).format(" "))};
-	e.visit(|e| assert_no_common_subexpressions(e, f));
+#[track_caller] fn common_subexpression(e: &Expression, f: &mut Block) -> Option<String> {
+	{
+		let e = e.deref();
+		if !(e.is_leaf() || f.after_CSE.insert(e.clone())) {
+			return Some(format!("{}: {}", e.to_string(f.names), {use itertools::Itertools; f.expressions.iter().filter_map(|(k,v)| (k==e).then(||v)).format(" ")}));
+		}
+	}
+	match e.visit(|e| common_subexpression(e, f)) {
+		[Some(Some(e)), _]|[_, Some(Some(e))] => Some(e),
+		_  => None,
+	}
 }
 
 struct Ratio(Expression, Expression);
@@ -78,7 +86,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64; 7], T)->E
 			let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts));
 			let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts));
 			eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
-			for e in true_exprs.iter().chain(&*false_exprs) { assert_no_common_subexpressions(e, f); }
+			for e in true_exprs.iter().chain(&*false_exprs) { common_subexpression(e, f); }
 			push(Statement::Select{
 				condition: le!(f less_or_equal(T, f64::from(temperature_split))),
 				true_exprs, false_exprs,
@@ -90,7 +98,7 @@ fn thermodynamics(thermodynamics: &[NASA7], expression: impl Fn(&[f64; 7], T)->E
 }
 
 fn molar_heat_capacity_at_constant_pressure_R(a: &[f64; 7], T{T,T2,T3,T4,..}: T) -> Expression { (*a.prefix()).dot([Expr::from(1.),T.into(),T2.into(),T3.into(),T4.into()]) }
-fn enthalpy_RT(a: &[f64; 7], T{T,T2,T3,T4,rcp_T,..}: T) -> Expression { generate(|i| a[i]/(i as f64)).dot([T,T2,T3,T4,rcp_T]) }
+fn enthalpy_RT(a: &[f64; 7], T{T,T2,T3,T4,rcp_T,..}: T) -> Expression { a[0] + a[1]/2.*T + a[2]/3.*T2 + a[3]/4.*T3 + a[4]/5.*T4 + a[5]*rcp_T }
 fn Gibbs_RT(a: &[f64; 7], T{ln_T,T,T2,T3,T4,rcp_T,..}: T) -> Expression { -a[0]*ln_T +a[0]-a[6] -a[1]/2.*T +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 +a[5]*rcp_T }
 
 type Error = String;

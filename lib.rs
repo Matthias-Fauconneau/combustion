@@ -1,6 +1,6 @@
 #![feature(once_cell,in_band_lifetimes,array_methods,format_args_capture,associated_type_bounds,bindings_after_at,trait_alias,default_free_fn,type_ascription)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints)]
-#![recursion_limit="9"]
+//#![recursion_limit="9"]
 pub mod model;
 pub use model::{kB, NA};
 const light_speed : f64 = 299_792_458.;

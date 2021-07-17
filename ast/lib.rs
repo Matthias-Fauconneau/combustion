@@ -126,7 +126,7 @@ impl<F> From<F> for Expr where Option<Expr>: From_<F> { fn from(x: F) -> Expr { 
 //impl From<f32> for Expr where Option<Expr>: From_<F> { fn from(x: F) -> Expr { let x:Option<Expr> = From_::from(x); x.unwrap() } }
 impl From<Value> for Expr { fn from(x: Value) -> Expr { Expr::Value(x) } }
 impl From<&Value> for Expr { fn from(x: &Value) -> Expr { x.clone().into() } }
-impl From<&mut Value> for Expr { fn from(x: &mut Value) -> Expr { x.into() } }
+impl From<&mut Value> for Expr { fn from(x: &mut Value) -> Expr { (&*x).into() } }
 
 impl Expr {
 	pub fn f32(&self) -> Option<f32> { use Expr::*; match self { F32(x) => Some(f32::from(*x)), F64(x) => Some(f64::from(*x) as _), _ => None } }

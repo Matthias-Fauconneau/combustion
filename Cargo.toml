@@ -10,7 +10,8 @@ bin=[
 [features]
 yaml=['dep:yaml','pest_derive','pest']
 interpret=['ast/interpret']
-main=['yaml','itertools','anyhow','color-backtrace','libc']
+demote=[]
+main=['yaml','itertools','anyhow','color-backtrace','trace']
 transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow','libc']
 plot=['cvode','ui','image','png','anyhow']
@@ -40,8 +41,9 @@ spirv={optional=true, path='spirv', package='ast-spirv'}
 vulkan={optional=true, path='vulkan'}
 cvode={optional=true, path='cvode'}
 ir={optional=true, path='ir', features=['jit']}
+color-backtrace={optional=true, version='*'}
+trace={optional=true, git='https://github.com/Matthias-Fauconneau/trace'}
 ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
 libc={optional=true, version='*'}
-color-backtrace={optional=true, version='*'}
