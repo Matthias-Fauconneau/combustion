@@ -1,5 +1,6 @@
-#![feature(once_cell,in_band_lifetimes,array_map,array_methods,format_args_capture,associated_type_bounds,bindings_after_at,trait_alias,default_free_fn)]
+#![feature(once_cell,in_band_lifetimes,array_methods,format_args_capture,associated_type_bounds,bindings_after_at,trait_alias,default_free_fn,type_ascription)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints)]
+#![recursion_limit="9"]
 pub mod model;
 pub use model::{kB, NA};
 const light_speed : f64 = 299_792_458.;
@@ -129,10 +130,9 @@ pub fn new(model: &'t model::Model) -> (Box<[&'t str]>, Species, usize, Box<[Rea
 		let ref mut iter = species_names.iter().map(
 			|specie| model.reactions.iter().any(|model::Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)) );
 		let active = iter.take_while(|is_active| *is_active).count();
-		if !iter.all(|is_active| !is_active) { 0 } else { // For Cantera debugging /!\ Breaks rates
 		assert!(iter.all(|is_active| !is_active));
 		active
-	}};
+	};
 	let reactions = map(&*model.reactions, |r| Reaction::new(&species_names, active, r));
 	let initial_state = initial_state(&model);
 	(species_names, species, active, reactions, initial_state)

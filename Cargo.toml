@@ -2,18 +2,20 @@ cargo-features=['edition2021']
 package={name= 'combustion', description= 'Chemical reaction kinetics and species transport properties', version= '0.0.0', edition= '2021', default-run='main'}
 lib={path='lib.rs'}
 bin=[
-	{name='main', path='main.rs', required-features=['anyhow','yaml','itertools']},
-	{name='cantera', path='cantera.rs', required-features=['anyhow','yaml','itertools','rand','cantera']},
-	{name='plot', path='plot.rs', required-features=['anyhow','yaml','plot']}
+	{name='main', path='main.rs', required-features=['main']},
+	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
+	{name='plot', path='plot.rs', required-features=['main','plot']}
 ]
 
 [features]
 yaml=['dep:yaml','pest_derive','pest']
+interpret=['ast/interpret']
+main=['yaml','itertools','anyhow','color-backtrace','libc']
 transport=['nalgebra']
-vpu=['spirv','vulkan','anyhow']
+vpu=['spirv','vulkan','anyhow','libc']
 plot=['cvode','ui','image','png','anyhow']
 cantera=[]
-default=['anyhow','yaml','itertools','rand']
+default=['main','interpret']
 
 [dependencies]
 ordered-float='*'
@@ -41,4 +43,5 @@ ir={optional=true, path='ir', features=['jit']}
 ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['plot']}
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
-libc='*'
+libc={optional=true, version='*'}
+color-backtrace={optional=true, version='*'}

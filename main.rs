@@ -1,9 +1,9 @@
-#![feature(format_args_capture,array_map,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]
 #![allow(non_snake_case,non_upper_case_globals)]
-#![recursion_limit="16"]
 mod yaml; mod device;
 use {iter::map, anyhow::Result, itertools::Itertools, std::env::*, device::*};
 fn main() -> Result<()> {
+	color_backtrace::install();
 	let path = args().skip(1).next().unwrap();
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path)?)?)?;
 	let model = yaml::parse(&model);

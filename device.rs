@@ -1,10 +1,9 @@
 use {anyhow::Result, iter::map};
 #[allow(non_camel_case_types)] pub type float = f32;
 type Output = Result<Box<[Box<[float]>]>>;
-use ast::*;
-fn demote(mut f: ast::Function) -> ast::Function {
-	use Expr::*;
-	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = F32(R32::new(f64::from(*x) as _).unwrap()).into() } else { e.visit_mut(demote) } }
+#[cfg(feature="demote")] fn demote(mut f: ast::Function) -> ast::Function {
+	use {ast::*, Expr::*};
+	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = f32(f64::from(*x) as _).unwrap().into() } else { e.visit_mut(demote) } }
 	for s in &mut *f.statements { use Statement::*; match s {
 		Value{value,..} => demote(value),
 		Select { condition, true_exprs, false_exprs, .. } => {
@@ -17,9 +16,10 @@ fn demote(mut f: ast::Function) -> ast::Function {
 }
 #[cfg(not(feature="vpu"))] mod device {
 	use {iter::{list, map}, ast::*, super::*};
-	pub fn assemble<'t>(function: &'t Function) -> impl 't+Fn(&[float], &[&[float]]) -> super::Output {
+	pub fn assemble(function: Function) -> impl 't+Fn(&[float], &[&[float]]) -> super::Output {
 		let input_len = function.input;
 		let output_len = function.output.len();
+		#[cfg(feature="demote")] let function = demote(function);
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(function));
 		move |constants:&[float], inputs:&[&[float]]| {
 			assert!(constants.len() == 1 && constants.len()+inputs.len() == input_len);
@@ -30,7 +30,8 @@ fn demote(mut f: ast::Function) -> ast::Function {
 			let mut output = vec![0.; output_len].into_boxed_slice();
 			for state_id in 0..states_len {
 				for (input, array) in input[constants.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
-				function(&input, &mut output);
+				#[cfg(any(feature="interpret",feature="ir"))] function(&input, &mut output);
+				#[cfg(not(any(feature="interpret",feature="ir")))] compile_error!("Either feature \"interpret\" or \"ir\" must be enabled for this crate.");
 				for (array, output) in outputs.iter_mut().zip(&*output) { array[state_id] = *output; }
 			}
 			let time= time.elapsed().as_secs_f64();
@@ -69,7 +70,8 @@ pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}
 	Function{device, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function)?}
 }*/
 pub fn assemble(function: ast::Function) -> Function<Device> {
-	Function{device: vulkan::Device::new().unwrap(), input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, &demote(function)).unwrap()}
+	#[cfg(feature="demote")] let function = demote(function);
+	Function{device: vulkan::Device::new().unwrap(), input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, &function).unwrap()}
 }
 
 impl<D: Borrow<Device>> FnOnce<(&[float], &[&[float]])> for Function<D> { type Output = super::Output; extern "rust-call" fn call_once(mut self, args: (&[float], &[&[float]])) -> Self::Output { self.call_mut(args) } }

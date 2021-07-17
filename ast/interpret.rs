@@ -18,10 +18,11 @@ impl From<f64> for DataValue { fn from(v: f64) -> Self { DataValue::F64(v) } }
 impl std::ops::Deref for State<'_> { type Target=[DataValue]; fn deref(&self) -> &Self::Target { &self.values} }
 impl std::ops::DerefMut for State<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.values} }
 
-fn to_string(state: &State, expression: &Expression) -> String {
-	use Expression::*;
-	match expression {
-		Float(x) => x.to_string(),
+fn to_string(state: &State, expr: &Expr) -> String {
+	use Expr::*;
+	match expr{
+		F32(x) => x.to_string(),
+		F64(x) => x.to_string(),
 		Value(id) => format!("{} = {}", state.debug[id.0], state.values[id.0]),
 		Add(a, b) => format!("{} + {}", to_string(state, a), to_string(state, b)),
 		Sub(a, b) => format!("{} - {}", to_string(state, a), to_string(state, b)),
@@ -41,12 +42,11 @@ impl DataValue {
 }
 
 fn eval(state: &State, expression: &Expression) -> DataValue {
-	use {Expression::*, DataValue::{Bool, /*I32,*/ F64, F32}};
-	let result = match expression {
-		//&Expression::I32(value) => I32(value),
-		&Expression::F32(value) => F32(*value),
-		&Expression::F64(value) => F64(*value),
-		&Expression::Float(value) => {assert!((*value as f32).is_finite()); (*value as float).into()},
+	use {Expr::*, DataValue::{Bool, /*I32,*/ F64, F32}};
+	let result = match expression { Expression::Expr(expr) => match expr {
+		//&I32(value) => I32(value),
+		&Expr::F32(value) => F32(*value),
+		&Expr::F64(value) => F64(*value),
 		/*Cast(Type::I32, from) => I32(eval(state, from).f32().to_bits()),
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
@@ -78,7 +78,9 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		Exp(x) if let F64(x) = eval(state, x) => F64(f64::exp(x)),
 		Ln{x,..} if let F32(x) = eval(state, x) => F32(f32::ln(x)),
 		Ln{x,..} if let F64(x) = eval(state, x) => F64(f64::ln(x)),
-		Block { statements, result } => {
+		_ => panic!("{expr:?}"),
+		},
+		Expression::Block { statements, result } => {
 			let ref mut state = (*state).clone();
 			run(state, statements);
 			let result = eval(state, result);
@@ -91,7 +93,6 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 			}*/
 			result
 		},
-		expression => panic!("{expression:?}"),
 	};
 	assert!(result.is_valid(), "{result}: {expression:?} {}", to_string(state, expression));
 	result
@@ -120,6 +121,8 @@ fn run(state: &mut State, statements: &[Statement]) {
 		}
 	}
 }
+
+#[allow(non_camel_case_types)] type float = f32;
 
 pub fn call(f: &Function, input: &[float], output: &mut [float]) {
 	assert!(input.len() == f.input);

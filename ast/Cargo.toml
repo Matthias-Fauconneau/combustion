@@ -1,9 +1,7 @@
 cargo-features=['edition2021']
-[package]
-name= 'ast'
-description= 'AST'
-version= '0.0.0'
-edition= '2021'
+package={name='ast', description='AST', version='0.0.0', edition='2021'}
+lib={path='lib.rs'}
+features={interpret=[]}
 
 [dependencies]
 itertools='*'
@@ -12,6 +10,3 @@ ordered-float='*'
 iter= {git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map='*'
 num= {optional=true, git='https://github.com/Matthias-Fauconneau/num'}
-
-[lib]
-path= 'lib.rs'

@@ -1,4 +1,4 @@
-#![allow(incomplete_features)]#![feature(array_map,format_args_capture,default_free_fn,if_let_guard)]
+#![allow(incomplete_features)]#![feature(format_args_capture,default_free_fn,if_let_guard)]
 use {std::default::default, iter::map, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
 
 type Value = Word;
@@ -32,7 +32,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
-			if let F32(_)|F64(_)|Value(_) = e {} else { assert!(!expr.has_block() && self.expressions.insert(e.clone()),"{}", e.to_string(self.names)); }
+			assert!(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone())),"redundant: {}", e.to_string(self.names));
 			match e {
 				&F32(value) => self.f32(value),
 				&F64(value) => self.f64(value),
