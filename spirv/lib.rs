@@ -21,13 +21,16 @@ impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::
 
 impl Builder<'_> {
 //fn u32(&mut self, value: u32) -> Value { *self.constants_u32.entry(value).or_insert_with(|| self.builder.constant_u32(u32, value)) }
-fn f32(&mut self, value: R32) -> Value {
+fn f32(&mut self, value: f32) -> Value {
 	let f32 = self.type_float(32);
-	let value = if value == -0. { R32::new(0.).unwrap() } else { value };
+	//assert!(value != 0. && value != -0.);
+	let value = R32::new(if value == -0. {0. } else { value }).unwrap();
 	*self.constants_f32.entry(value).or_insert_with(|| self.builder.constant_f32(f32, *value))
 }
-fn f64(&mut self, value: R64) -> Value {
+fn f64(&mut self, value: f64) -> Value {
 	let f64 = self.type_float(64);
+	//assert!(value != 0. && value != -0.);
+	let value = R64::new(if value == -0. {0. } else { value }).unwrap();
 	*self.constants_f64.entry(value).or_insert_with(|| self.builder.constant_f64(f64, *value))
 }
 fn expr(&mut self, expr: &Expression) -> Value {
@@ -35,10 +38,10 @@ fn expr(&mut self, expr: &Expression) -> Value {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
-			if !(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone()))) { eprintln!("{}", e.to_string(self.names)) }
+			if !(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone()))) { panic!("{}", e.to_string(self.names)) }
 			match e {
-				&F32(value) => self.f32(value),
-				&F64(value) => self.f64(value),
+				&F32(value) => self.f32(*value),
+				&F64(value) => self.f64(*value),
 				Value(v) => self.values[v],
 				Neg(x) => { let x = self.expr(x); self.f_negate(f32, None, x).unwrap() }
 				Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(f32, None, gl, GLOp::FMax as u32, operands).unwrap() }
@@ -159,7 +162,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	});
 	let values = [push_constant_0].iter().chain(&*input_values).enumerate().map(|(value, &input)| (Value(value), input)).collect();
 	let mut b = Builder{builder: b, gl, values, /*&constants_u32: default(),*/ constants_f32: default(), constants_f64: default(), expressions: default(), names: &ast.values};
-	for (i,s) in ast.statements.iter().enumerate() { if (i+1)%512 == 0 { println!("{}",i*100/ast.statements.len()); } b.push(s); }
+	for (i,s) in ast.statements.iter().enumerate() { if (i+1)%1024 == 0 { println!("{}",i*100/ast.statements.len()); } b.push(s); }
 	for (expr, &output) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);
 		let output = b.access_chain(sbf, None, output, [index0, id]).unwrap();
