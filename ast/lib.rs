@@ -14,6 +14,7 @@ use ordered_float::NotNan;
 type R32 = NotNan<f32>;
 #[derive(Eq,Hash,Debug,Clone,Copy)] pub struct R64(NotNan<f64>);
 impl PartialEq for R64 { fn eq(&self, b: &R64) -> bool { R32::new(*self.0 as _) == R32::new(*b.0 as _) } }
+//impl PartialEq for R64 { fn eq(&self, b: &R64) -> bool { self.0 == b.0 } }
 impl R64 { fn new(val: f64) -> Self { Self(NotNan::new(val).unwrap()) } }
 //impl std::fmt::Display for R64 { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> { self.0.fmt(f) } }
 impl From<R64> for f64 { fn from(o: R64) -> f64 { o.0.into() } }

@@ -5,6 +5,7 @@ use {iter::map, anyhow::{Result, Context}, itertools::Itertools, std::env::*, de
 fn main() -> Result<()> {
 	color_backtrace::install();
 	let path = args().skip(1).next().unwrap();
+	let states_len = args().skip(2).next().as_ref().map(|a| str::parse(a).unwrap()).unwrap_or(1);
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
 	use combustion::*;
@@ -12,7 +13,7 @@ fn main() -> Result<()> {
 
 	for i in 0..1 {
 		let rates = reaction::rates(&species.thermodynamics, &reactions);
-		let rates = with_repetitive_input(assemble(rates), 1<<0);
+		let rates = with_repetitive_input(assemble(rates), states_len);
 		assert!(state.volume == 1.);
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
