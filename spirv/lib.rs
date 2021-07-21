@@ -190,7 +190,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		let opt = std::path::Path::new(&opt);
 		if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
 			let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
-			assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","-O","--target-env=vulkan1.2",path,"-o",opt]).status().unwrap().success());
+			assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","--target-env=vulkan1.2",&format!("-Oconfig={}/.spirv-opt",std::env::var("HOME").unwrap()),path,"-o",opt]).status().unwrap().success());
 		}
 		pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
 		Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv").unwrap()).into())
