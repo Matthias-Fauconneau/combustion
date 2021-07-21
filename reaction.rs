@@ -250,5 +250,10 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let [molar_heat_capacity_at_CP_R] = thermodynamics(species, [molar_heat_capacity_at_constant_pressure_R], Ts, f, ["molar_heat_capacity_at_CP_R"]);
 	let Cp : Expression = molar_heat_capacity_at_CP_R.dot(concentrations);
 	let dtT_T = Ratio(- energy_rate_RT, Cp);
-	Function{output: list([T * dtT_T].into_iter().chain(rates.iter().map(|v:&Value| v.into()))), statements: function.block.statements.into(), input: input.len(), values: values.into()}
+	Function{
+		output: list([T * dtT_T].into_iter().chain(rates.iter().map(|v:&Value| v.into()))),
+		statements: function.block.statements.into(),
+		input: vec![Type::F64; input.len()].into(),
+		values: values.into()
+	}
 }}}

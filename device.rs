@@ -1,9 +1,10 @@
-use {anyhow::Result, iter::map};
-type Output = Result<Box<[Box<[float]>]>>;
-#[cfg(not(feature="demote"))] #[allow(non_camel_case_types)] pub type float = f64;
-#[cfg(feature="demote")] #[allow(non_camel_case_types)] pub type float = f32;
-#[cfg(feature="demote")] fn demote(mut f: ast::Function) -> ast::Function {
+use {std::default::default,anyhow::Result, iter::map};
+type Output<T> = Result<Box<[Box<[T]>]>>;
+pub trait Convert { fn convert(f: ast::Function) -> ast::Function; }
+impl Convert for f64 { fn convert(f: ast::Function) -> ast::Function { f } }
+impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	use {ast::*, Expr::*};
+	f.input = vec![Type::F32; f.input.len()].into();
 	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = f32(f64::from(*x) as _).unwrap().into() } else { e.visit_mut(demote) } }
 	for s in &mut *f.statements { use Statement::*; match s {
 		Value{value,..} => demote(value),
@@ -13,22 +14,24 @@ type Output = Result<Box<[Box<[float]>]>>;
 			for e in &mut **false_exprs { demote(e); }
 		}
 	}}
+	for e in &mut *f.output{ demote(e); }
 	f
-}
+}}
+
 #[cfg(not(feature="vpu"))] mod device {
 	use {iter::{list, map}, ast::*, super::*};
-	pub fn assemble(function: Function) -> impl 't+Fn(&[float], &[&[float]]) -> super::Output {
-		let input_len = function.input;
+	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function) -> impl 't+Fn(&[T], &[&[T]]) -> super::Output<T> {
+		let input_len = function.input.len();
 		let output_len = function.output.len();
-		#[cfg(feature="demote")] let function = demote(function);
-		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(function));
-		move |constants:&[float], inputs:&[&[float]]| {
+		let function = T::convert(function);
+		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));
+		move |constants:&[T], inputs:&[&[T]]| {
 			assert!(constants.len() == 1 && constants.len()+inputs.len() == input_len);
 			let states_len = inputs[0].len();
-			let mut outputs = map(0..output_len, |_| vec![0.; states_len].into_boxed_slice());
+			let mut outputs = map(0..output_len, |_| vec![default(); states_len].into_boxed_slice());
 			let time = std::time::Instant::now();
-			let mut input = list(constants.iter().copied().chain(inputs.iter().map(|_| 0.)));
-			let mut output = vec![0.; output_len].into_boxed_slice();
+			let mut input = list(constants.iter().copied().chain(inputs.iter().map(|_| default())));
+			let mut output = vec![default(); output_len].into_boxed_slice();
 			for state_id in 0..states_len {
 				for (input, array) in input[constants.len()..].iter_mut().zip(inputs) { *input = array[state_id]; }
 				#[cfg(any(feature="interpret",feature="ir"))] function(&input, &mut output);
@@ -80,7 +83,7 @@ impl<D: Borrow<Device>> FnMut<(&[float], &[&[float]])> for Function<D> { extern 
 impl<D: Borrow<Device>> Fn<(&[float], &[&[float]])> for Function<D> { extern "rust-call" fn call(&self, (constants, input): (&[float], &[&[float]])) -> Self::Output { call(&self, constants, input) } }
 }
 pub use {device::*, ast::let_};
-pub fn all_same(array:&[float], times: usize) -> float { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
-pub fn with_repetitive_input(f: impl Fn(&[float],&[&[float]])->Output, times: usize) -> impl Fn(&[float],&[float])->Result<Box<[float]>> {
+pub fn all_same<T:PartialEq+Copy>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { if v != array[0] {panic!()} } array[0] }
+pub fn with_repetitive_input<T:Copy+PartialEq>(f: impl Fn(&[T],&[&[T]])->Output<T>, times: usize) -> impl Fn(&[T],&[T])->Result<Box<[T]>> {
 	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times)))
 }

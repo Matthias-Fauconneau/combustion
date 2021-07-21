@@ -105,9 +105,13 @@ fn main() -> Result<()> {
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			};
 			//let error = |a,b| num::relative_error(a,b);
+			#[cfg(not(feature="f32"))] type T= f64;
+			#[cfg(feature="f32")] type T = f32;
 			let rates = reaction::rates(&species.thermodynamics, &reactions);
-			let rates = with_repetitive_input(assemble(rates), 1);
+			let rates = with_repetitive_input(assemble::<T>(rates), 1);
+			dbg!();
 			let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &([&[total_amount as _, *temperature as _], &**nonbulk_amounts].concat()))? => {
+			dbg!();
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
 				let (k, e)= rates.iter().zip(&*cantera_rates).map(|(&a,&b)| error(a as _,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();

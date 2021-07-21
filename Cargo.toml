@@ -10,7 +10,7 @@ bin=[
 [features]
 yaml=['dep:yaml','pest_derive','pest']
 interpret=['ast/interpret']
-demote=[]
+f32=[]
 main=['yaml','itertools','anyhow','color-backtrace']
 transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow','libc']

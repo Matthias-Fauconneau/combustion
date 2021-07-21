@@ -301,7 +301,7 @@ pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Res
 #[macro_export] macro_rules! dbg { ($f:ident; $($id:ident),* ) => { let [$(ref $id),*] = display([$(l!($f $id)),*], $f); } }*/
 
 pub struct Function {
-	pub input: usize,
+	pub input: Box<[Type]>,
 	pub statements: Box<[Statement]>,
 	pub output: Box<[Expression]>,
 	pub values: Box<[String]>,
@@ -336,13 +336,13 @@ pub fn Π(iter: impl IntoIterator<Item=Option<impl Into<Expression>>>) -> Option
 	sq(sq(sq(sq(sq(sq(sq(sq(sq(sq(sq((a+b) / (a-b),f),f),f),f),f),f),f),f),f),f),f)
 }
 pub fn ln_approx(x0: f64, x: impl Into<Expression>, f: &mut Block) -> Expression { // -5
-	/*let x = (1./x0)*x.into();
+	let x = (1./x0)*x.into();
 	let ref x = l!(f sqrt(sqrt(sqrt(sqrt(x)))));
 	let ref x = l!(f (x-1.)/(x+1.));
 	let ref x2 = l!(f x*x);
 	let ref x4 = l!(f x2*x2);
 	let ref x6 = l!(f x4*x2);
-	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x4*x2 + (1./9.)*x6*x2)*/unimplemented!()
+	f64::ln(x0) + (16.*2.)*x * (1. + (1./3.)*x2 + (1./5.)*x4 + (1./7.)*x6 + (1./9.)*x6*x2)
 }*/
 
 pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {

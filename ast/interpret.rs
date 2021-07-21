@@ -123,7 +123,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 }
 
 pub fn call<T:Copy+Into<DataValue>+From<DataValue>>(f: &Function, input: &[T], output: &mut [T]) {
-	assert!(input.len() == f.input);
+	assert!(input.len() == f.input.len());
 	let mut state = State{
 		values: input.iter().map(|&v| v.into()).chain((0..f.values.len()).map(|_| DataValue::None)).collect(),
 		debug: &f.values
