@@ -3,7 +3,7 @@
 mod yaml; mod device;
 use {iter::map, anyhow::{Result, Context}, itertools::Itertools, std::env::*, device::*};
 fn main() -> Result<()> {
-	color_backtrace::install(); trace::signal_interrupt()?;
+	color_backtrace::install();
 	let path = args().skip(1).next().unwrap();
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
