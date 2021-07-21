@@ -1,4 +1,4 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias)]
 #![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
 use {iter::map, anyhow::{Result, Context}, itertools::Itertools, std::env::*, device::*};
@@ -13,7 +13,9 @@ fn main() -> Result<()> {
 
 	for i in 0..1 {
 		let rates = reaction::rates(&species.thermodynamics, &reactions);
-		let rates = with_repetitive_input(assemble(rates), states_len);
+		#[cfg(not(feature="f32"))] type T = f64;
+		#[cfg(feature="f32")] type T = f32;
+		let rates = with_repetitive_input(assemble::<T>(rates), states_len);
 		assert!(state.volume == 1.);
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();

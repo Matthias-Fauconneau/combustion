@@ -1,4 +1,5 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits)]#![allow(non_snake_case,non_upper_case_globals)]
+#![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias)]
 mod yaml; mod device;
 use {anyhow::Result, iter::{list, map}, itertools::Itertools, device::*};
 fn main() -> Result<()> {
@@ -105,21 +106,19 @@ fn main() -> Result<()> {
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			};
 			//let error = |a,b| num::relative_error(a,b);
-			#[cfg(not(feature="f32"))] type T= f64;
+			#[cfg(not(feature="f32"))] type T = f64;
 			#[cfg(feature="f32")] type T = f32;
 			let rates = reaction::rates(&species.thermodynamics, &reactions);
 			let rates = with_repetitive_input(assemble::<T>(rates), 1);
-			dbg!();
 			let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &([&[total_amount as _, *temperature as _], &**nonbulk_amounts].concat()))? => {
-			dbg!();
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
 				let (k, e)= rates.iter().zip(&*cantera_rates).map(|(&a,&b)| error(a as _,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > 1e-6 {
-					println!("{:>10}", species_names.iter().format(" "));
+				if e > 1e-3 {
+					/*println!("{:>10}", species_names.iter().format(" "));
 					println!("{:10.0}", cantera_rates.iter().format(" "));
-					println!("{:10.0}", rates.iter().format(" "));
-					println!("{:.0} {:.0}", rates[k], cantera_rates[k]);
+					println!("{:10.0}", rates.iter().format(" "));*/
+					println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_rates[k]);
 				}
 				(k, e)
 			}
@@ -140,10 +139,10 @@ fn main() -> Result<()> {
 				let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 				assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
 				let (k, e) = cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > 1e-6 {
-					println!("{:.0}", cantera_rates.iter().format(" "));
+				if e > 1e-3 {
+					/*println!("{:.0}", cantera_rates.iter().format(" "));
 					println!("{:.0}", nekrk.iter().format(" "));
-					println!("{:>6}", cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));
+					println!("{:>6}", cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));*/
 					println!("{} {}", cantera_rates[k], nekrk[k]);
 				}
 				(k, e)
@@ -167,7 +166,9 @@ fn main() -> Result<()> {
 			let amount_fractions = map(&*amounts, |n| n/total_amount);
 			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
 			let k = species_names[k];
-			assert!(e < 1e-6, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
+			#[cfg(not(feature="f32"))] const ε: f64 = 1e-6;
+			#[cfg(feature="f32")] const ε: f64 = 1e-2;
+			assert!(e < ε, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
 				amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
 			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100==0 { println!("{i}") }
 		}

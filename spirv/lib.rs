@@ -136,7 +136,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	b.decorate(bsaf, Block, []);
 	b.member_decorate(bsaf, 0, Offset, [0u32.into()]);
 	let sbsaf = b.type_pointer(None, StorageClass::StorageBuffer, bsaf);
-	let input = map(0..ast.input-constants_len, |_| {
+	let input = map(0..ast.input.len()-constants_len, |_| {
 		let v = b.variable(sbsaf, None, StorageClass::StorageBuffer, None);
 		b.decorate(v, NonWritable, []);
 		v

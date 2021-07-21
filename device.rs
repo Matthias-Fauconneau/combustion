@@ -1,4 +1,4 @@
-use {std::default::default,anyhow::Result, iter::map};
+use {anyhow::Result, iter::map};
 type Output<T> = Result<Box<[Box<[T]>]>>;
 pub trait Convert { fn convert(f: ast::Function) -> ast::Function; }
 impl Convert for f64 { fn convert(f: ast::Function) -> ast::Function { f } }
@@ -19,8 +19,10 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 }}
 
 #[cfg(not(feature="vpu"))] mod device {
-	use {iter::{list, map}, ast::*, super::*};
-	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function) -> impl 't+Fn(&[T], &[&[T]]) -> super::Output<T> {
+	use {std::default::default, iter::{list, map}, ast::*, super::*};
+	#[cfg(not(feature="interpret"))] pub trait Convert = super::Convert;
+	#[cfg(feature="interpret")] pub trait Convert = super::Convert+Into<interpret::DataValue>+From<interpret::DataValue>;
+	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
 		let input_len = function.input.len();
 		let output_len = function.output.len();
 		let function = T::convert(function);
@@ -45,20 +47,21 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	}
 }
 #[cfg(feature="vpu")] mod device {
-use {std::borrow::Borrow, iter::{list, map}, vulkan::*, super::*};
-pub struct Function<D: Borrow<Device>> {
+use {std::default::default, std::borrow::Borrow, iter::{list, map}, vulkan::*, super::*};
+pub struct Function<D: Borrow<Device>, T:Plain> {
 	device: D,
 	input_len: usize,
 	output_len: usize,
 	function: Box<[u32]>,
+	_marker: std::marker::PhantomData<T>,
 }
-pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}: &Function<D>, constants: &[float], input: &[&[float]]) -> super::Output {
-	assert!(std::mem::size_of::<float>() == 4 && constants.len() == 1 && constants.len()+input.len() == *input_len);
+pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, function,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
+	assert!(std::mem::size_of::<T>() == 4 && constants.len() == 1 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let local_size = std::cmp::min(512, states_len as u32);
 	let device = device.borrow();
 	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
-	let output = map(0..*output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
+	let output = map(0..*output_len, |_| Buffer::new(device, &vec![default(); states_len]).unwrap());
 	let buffers = list(input.iter().chain(&*output));
 	let pipeline = device.pipeline(&function, local_size, as_u8(&constants), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;
@@ -73,14 +76,14 @@ pub fn call<D: Borrow<Device>>(Function{input_len, output_len, device, function}
 /*#[throws] pub fn assemble<'t>(device: &'t Device, function: &ast::Function) -> Function<&'t Device> {
 	Function{device, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function)?}
 }*/
-pub fn assemble(function: ast::Function) -> Function<Device> {
-	#[cfg(feature="demote")] let function = demote(function);
-	Function{device: vulkan::Device::new().unwrap(), input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, &function).unwrap()}
+pub fn assemble<T:Plain+Convert>(function: ast::Function) -> Function<Device, T> {
+	let function = T::convert(function);
+	Function{device: vulkan::Device::new().unwrap(), input_len: function.input.len(), output_len: function.output.len(), function: spirv::compile(1, &function).unwrap(), _marker: default()}
 }
 
-impl<D: Borrow<Device>> FnOnce<(&[float], &[&[float]])> for Function<D> { type Output = super::Output; extern "rust-call" fn call_once(mut self, args: (&[float], &[&[float]])) -> Self::Output { self.call_mut(args) } }
-impl<D: Borrow<Device>> FnMut<(&[float], &[&[float]])> for Function<D> { extern "rust-call" fn call_mut(&mut self, args: (&[float], &[&[float]])) -> Self::Output { self.call(args) } }
-impl<D: Borrow<Device>> Fn<(&[float], &[&[float]])> for Function<D> { extern "rust-call" fn call(&self, (constants, input): (&[float], &[&[float]])) -> Self::Output { call(&self, constants, input) } }
+impl<D: Borrow<Device>, T:Plain+Default> FnOnce<(&[T], &[&[T]])> for Function<D,T> { type Output = self::Output<T>; extern "rust-call" fn call_once(mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call_mut(args) } }
+impl<D: Borrow<Device>, T:Plain+Default> FnMut<(&[T], &[&[T]])> for Function<D,T> { extern "rust-call" fn call_mut(&mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call(args) } }
+impl<D: Borrow<Device>, T:Plain+Default> Fn<(&[T], &[&[T]])> for Function<D,T> { extern "rust-call" fn call(&self, (constants, input): (&[T], &[&[T]])) -> Self::Output { call(&self, constants, input) } }
 }
 pub use {device::*, ast::let_};
 pub fn all_same<T:PartialEq+Copy>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { if v != array[0] {panic!()} } array[0] }
