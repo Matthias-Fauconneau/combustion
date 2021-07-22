@@ -19,6 +19,7 @@ cantera=[]
 default=['main','interpret','rand']
 
 [dependencies]
+iter={git='https://github.com/Matthias-Fauconneau/iter'}
 ordered-float='*'
 derive_more='*'
 fehler='*'
@@ -28,7 +29,6 @@ strum='*'
 strum_macros='*'
 linear-map={version='*', features=['serde_impl']}
 itertools={optional=true, version='*' }
-iter={git='https://github.com/Matthias-Fauconneau/iter'}
 num={git='https://github.com/Matthias-Fauconneau/num'}
 yaml={optional=true, version='*', package='yaml-rust'}
 pest_derive={optional=true, version='*' }

@@ -56,7 +56,7 @@ pub struct Function<D: Borrow<Device>, T:Plain> {
 	_marker: std::marker::PhantomData<T>,
 }
 pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, function,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
-	assert!(std::mem::size_of::<T>() == 4 && constants.len() == 1 && constants.len()+input.len() == *input_len);
+	assert!((std::mem::size_of::<T>() == 4 || std::mem::size_of::<T>() == 8) && constants.len() == 1 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let local_size = std::cmp::min(512, states_len as u32);
 	let device = device.borrow();

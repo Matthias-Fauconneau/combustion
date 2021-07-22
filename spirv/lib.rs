@@ -7,6 +7,8 @@ type Value = Word;
 type R32 = ordered_float::NotNan<f32>;
 type R64 = ordered_float::NotNan<f64>;
 
+fn stype(b: &mut rspirv::Builder, rtype: &ast::Type) -> Type { b.type_float(rtype.bits()) }
+
 struct Builder<'t> {
 	builder: rspirv::Builder,
 	values: Box<[Option<(ast::Type, Value)>]>,
@@ -35,7 +37,7 @@ fn f64(&mut self, value: f64) -> Value {
 	*self.constants_f64.entry(value).or_insert_with(|| self.builder.constant_f64(f64, *value))
 }
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].unwrap().0) }
-fn stype(&mut self, rtype: &ast::Type) -> Type { self.type_float(rtype.bits()) }
+fn stype(&mut self, rtype: &ast::Type) -> Type { stype(self, rtype) }
 fn expr(&mut self, expr: &Expression) -> Value {
 	let rtype = self.rtype(expr);
 	let [bool, gl, stype] = [self.type_bool(), self.gl, self.stype(&rtype)];
@@ -69,9 +71,9 @@ fn push(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
 		Value { id, value } => {
+			let result = self.expr(value);
 			let rtype = self.rtype(value);
-			let value = self.expr(value);
-			assert!(self.values[id.0].replace((rtype,value)).is_none());
+			assert!(self.values[id.0].replace((rtype,result)).is_none());
 		},
 		Select { condition, true_exprs, false_exprs, results } => {
 			let condition = self.expr(condition);
@@ -83,26 +85,24 @@ fn push(&mut self, s: &Statement) {
 
 			let scope = self.values.clone();
 			self.begin_block(Some(true_block)).unwrap();
-			let true_values = map(&**true_exprs, |e| (self.rtype(e), self.expr(e)));
+			let true_values = map(&**true_exprs, |e| (self.expr(e), self.rtype(e)));
 			self.values = scope;
 			assert!(results.len() == true_values.len());
 			self.branch(merge).unwrap();
 
 			let scope = self.values.clone();
 			self.begin_block(Some(false_block)).unwrap();
-			let false_values = map(&**false_exprs, |e| (self.rtype(e), self.expr(e)));
+			let false_values = map(&**false_exprs, |e| (self.expr(e), self.rtype(e)));
 			self.values = scope;
 			assert!(results.len() == false_values.len());
 			self.branch(merge).unwrap();
 
 			self.begin_block(Some(merge)).unwrap();
-			for id in &**results { assert!(self.values[id.0].is_none()); }
-			let phi = map(true_values.iter().zip(&*false_values),|(&(true_type,true_value), &(false_type,false_value))| {
+			for (id, (&(true_value,true_type), &(false_value,false_type))) in results.iter().zip(true_values.iter().zip(&*false_values)) {
 				assert!(true_type == false_type); let rtype = true_type;
 				let stype = self.stype(&rtype);
-				(rtype, self.phi(stype, None, [(true_value, true_block),(false_value,false_block)]).unwrap())
-			});
-			for (id, phi) in results.iter().zip(phi.into_vec()) { assert!(self.values[id.0].replace(phi).is_none()); }
+				assert!(self.values[id.0].replace((rtype, self.builder.phi(stype, None, [(true_value, true_block),(false_value,false_block)]).unwrap())).is_none());
+			}
 		}
 	}
 }
@@ -129,8 +129,15 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let pv3u = b.type_pointer(None, StorageClass::Input, v3u);
 	let global_invocation_id_ref = b.variable(pv3u, None, StorageClass::Input, None);
 	b.decorate(global_invocation_id_ref, BuiltIn, [Operand::BuiltIn(BuiltIn::GlobalInvocationId)]);
-	let mut b = Builder{builder: b, gl, values: default(), constants_f32: default(), constants_f64: default(), expressions: default(), names: &ast.values};
-	let constant0 = b.stype(&ast.input[0]);
+	let output_types = {
+		let mut types = Types(ast.input.iter().copied().map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect());
+		for s in &*ast.statements { types.push(s); }
+		map(&*ast.output, |output| {
+			types.expr(output);
+			types.rtype(output)
+		})
+	};
+	let constant0 = stype(&mut b, &ast.input[0]);
 	let block_struct_constants = b.type_struct([constant0]);
 	b.decorate(block_struct_constants, Block, []);
 	b.member_decorate(block_struct_constants, 0, Offset, [0u32.into()]);
@@ -140,8 +147,8 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 
 	let mut storage_buffer_pointer_to_array = {
 		let mut cache: linear_map::LinearMap<ast::Type, Type> = default();
-		move |b:&mut Builder, rtype:&ast::Type| *cache.entry(*rtype).or_insert_with(|| {
-			let stype = b.stype(&rtype);
+		move |b:&mut rspirv::Builder, rtype:&ast::Type| *cache.entry(*rtype).or_insert_with(|| {
+			let stype = stype(b, &rtype);
 			let array = b.type_runtime_array(stype);
 			b.decorate(array, ArrayStride, [rtype.bytes().into()]);
 			let block_struct_array = b.type_struct([array]);
@@ -157,12 +164,11 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		b.decorate(pointer, NonWritable, []);
 		(*input, pointer)
 	});
-	let output = map(&*ast.output,|output| {
-		let output = b.rtype(output);
+	let output = map(&*output_types,|output| {
 		let pointer_type = storage_buffer_pointer_to_array(&mut b, &output);
 		let pointer = b.variable(pointer_type, None, StorageClass::StorageBuffer, None);
 		b.decorate(pointer, NonReadable, []);
-		(output, pointer)
+		(*output, pointer)
 	});
 	for (binding, &(_,variable)) in input_pointers.iter().chain(&*output).enumerate() {
 		b.decorate(variable, DescriptorSet, [0u32.into()]);
@@ -175,14 +181,14 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let constant0 = b.access_chain(constant_pointer_to_constant0, None, constants, [index0]).unwrap();
 	let constant0 = (ast.input[0], b.load(constant0, None, constant0, None, [])?);
 	let input_values = map(&*input_pointers, |&(rtype, input)| {
-		let stype = b.stype(&rtype);
+		let stype = stype(&mut b, &rtype);
 		let storage_buffer_pointer = b.type_pointer(None, StorageClass::StorageBuffer, stype);
 		let input = b.access_chain(storage_buffer_pointer, None, input, [index0, id]).unwrap();
 		(rtype, b.load(stype, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap())
 	});
-	assert!(b.values.is_empty());
-	b.values = [constant0].into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect();
-	for (i,s) in ast.statements.iter().enumerate() { if (i+1)%1024 == 0 { println!("{}",i*100/ast.statements.len()); } b.push(s); }
+	let mut b = Builder{builder: b, gl, values: [constant0].into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect(),
+																	constants_f32: default(), constants_f64: default(), expressions: default(), names: &ast.values};
+	for s in &*ast.statements { b.push(s); }
 	for (expr, &(rtype, output)) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);
 		let stype = b.stype(&rtype);

@@ -392,7 +392,39 @@ pub fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression
 	for a in &mut *a { for b in &mut *b { eliminate_common_subexpression(a, b, f); } }
 }
 
-//pub fn dot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Option<Expression> { iter.into_iter().map(|(c,e)| c*e.into()).sum() }
-//#[track_caller] pub fn dot(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> { zdot(c.iter().copied().zip(v)) }
+use iter::map;
+
+pub struct Types(pub Box<[Option<Type>]>);
+impl Types {
+	pub fn rtype(&self, e: &Expression) -> Type { e.rtype(&|value| self.0[value.0].unwrap()) }
+	pub fn expr(&mut self, e: &Expression) { use Expression::*; match e {
+		Expr(e) => { e.visit(|e| self.expr(e)); },
+		Block{statements, result} => {
+			for s in &**statements { self.push(s) }
+			self.expr(result);
+		}
+	}}
+	pub fn push(&mut self, s: &Statement) { use Statement::*; match s {
+		Value { id, value } => {
+			self.expr(value);
+			let rtype = self.rtype(value);
+			assert!(self.0[id.0].replace(rtype).is_none());
+		},
+		Select { condition, true_exprs, false_exprs, results } => {
+			self.expr(condition);
+			let scope = self.0.clone();
+			let true_types = map(&**true_exprs, |e| { self.expr(e); self.rtype(e) });
+			self.0 = scope;
+			let scope = self.0.clone();
+			let false_types= map(&**false_exprs, |e| { self.expr(e); self.rtype(e) });
+			self.0 = scope;
+			for (id, (&true_type, &false_type)) in results.iter().zip(true_types.iter().zip(&*false_types)) {
+				assert!(true_type == false_type); let rtype = true_type;
+				assert!(self.0[id.0].replace(rtype).is_none());
+			}
+		}
+	}
+}
+}
 
 #[cfg(feature="interpret")] pub mod interpret;

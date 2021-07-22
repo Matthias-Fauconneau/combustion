@@ -4,5 +4,6 @@ lib={path='lib.rs'}
 features={interpret=[]}
 
 [dependencies]
+iter={git='https://github.com/Matthias-Fauconneau/iter'}
 ordered-float='*'
 itertools='*'

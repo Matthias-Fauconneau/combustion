@@ -29,10 +29,6 @@ impl Builder<'t> {
 	fn f64(&mut self, value: f64) -> Value { *self.constants_f64.entry(R64::new(value).unwrap()).or_insert_with(|| self.builder.ins().f64const(value)) }
 }
 
-trait CType { const CTYPE: Type; }
-impl CType for f32 { const CTYPE: Type = F32; }
-impl CType for f64 { const CTYPE: Type = F64; }
-
 fn load(r#type: Type, base: Value, index: usize, f: &mut Builder) -> Value { f.ins().load(r#type, MemFlags::trusted(), base, (index as u32*r#type.bytes()) as i32) }
 //fn cast(to: Type, x: Value, f: &mut Builder) -> Value { f.ins().bitcast(to, x) }
 /*fn and(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().band(a, b) }

@@ -167,7 +167,7 @@ fn main() -> Result<()> {
 			let amount_fractions = map(&*amounts, |n| n/total_amount);
 			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
 			let k = species_names[k];
-			#[cfg(not(feature="f32"))] const ε: f64 = 1e-6;
+			#[cfg(not(feature="f32"))] const ε: f64 = 9e-5;
 			#[cfg(feature="f32")] const ε: f64 = 1e-2;
 			assert!(e < ε, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
 				amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
