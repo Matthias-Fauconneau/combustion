@@ -23,15 +23,12 @@ impl Device {
 		let ref main = CStr::from_bytes_with_nul(b"main\0").unwrap();
 		unsafe {
 			let entry = Entry::new()?;
-			let instance = entry.create_instance(
-				&InstanceCreateInfo::builder().application_info(
-					&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main)
-				)
+			let instance = entry.create_instance(&InstanceCreateInfo::builder()
+				.application_info(&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main))
 				//.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
 				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
-				, None
-			)?;
+				, None)?;
 			let debug_utils = DebugUtils::new(&entry, &instance);
 			unsafe extern "system" fn vulkan_debug_callback(severity: DebugUtilsMessageSeverityFlagsEXT, r#type: DebugUtilsMessageTypeFlagsEXT, data: *const DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> Bool32 {
 				let data = *data;
@@ -47,14 +44,12 @@ impl Device {
 			let timestamp_period = instance.get_physical_device_properties(device).limits.timestamp_period;
 			let memory_properties = instance.get_physical_device_memory_properties(device);
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
-			let device = instance.create_device(
-				device,
-				&DeviceCreateInfo::builder()
-					.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
-					//.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
-					.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()]),
-				None
-			)?;
+			let device = instance.create_device(device, &DeviceCreateInfo::builder()
+				.queue_create_infos(&[DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
+				.enabled_features(&PhysicalDeviceFeatures{shader_float64: TRUE, ..default()})
+				.enabled_extension_names(&[CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap().as_ptr()])
+				.push_next(&mut PhysicalDeviceVulkanMemoryModelFeatures::builder().vulkan_memory_model(true))
+				, None)?;
 			let queue = device.get_device_queue(queue_family_index, 0);
 			let command_pool = device.create_command_pool(&CommandPoolCreateInfo{flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)?;
 			let query_pool = device.create_query_pool(&vk::QueryPoolCreateInfo{query_type: vk::QueryType::TIMESTAMP, query_count: 2, ..default()}, None)?;
@@ -94,7 +89,6 @@ impl<T:Plain> Buffer<T> {
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
 			let flags = MemoryPropertyFlags::DEVICE_LOCAL;
-			//let flags = MemoryPropertyFlags::HOST_VISIBLE;
 			let memory_type_index = device.memory_properties.memory_types[..device.memory_properties.memory_type_count as _].iter().enumerate().position(
 				|(index, memory_type)| (1 << index) & memory_requirements.memory_type_bits != 0 && memory_type.property_flags & flags == flags).unwrap() as _;
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index, ..default()}, None)?;
@@ -109,9 +103,7 @@ impl<T:Plain> Buffer<T> {
 				device.begin_command_buffer(command_buffer, &default())?;
 				device.cmd_update_buffer(command_buffer, buffer.buffer, 0, as_u8(data));
 				device.end_command_buffer(command_buffer)?;
-				//eprint!("Update buffer [{}; {}]", std::any::type_name::<T>(), data.len());
 				device.queue_submit(*queue, &[SubmitInfo::builder().command_buffers(&[command_buffer]).build()], *fence)?;
-				//eprintln!(".");
 				device.wait_for_fences(&[*fence], true, !0)?;
 				device.reset_fences(&[*fence])?;
 			}

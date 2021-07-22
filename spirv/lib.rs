@@ -8,6 +8,19 @@ type R32 = ordered_float::NotNan<f32>;
 type R64 = ordered_float::NotNan<f64>;
 
 fn stype(b: &mut rspirv::Builder, rtype: &ast::Type) -> Type { b.type_float(rtype.bits()) }
+fn wrap_f32_op(b: &mut rspirv::Builder, rtype: &ast::Type, x: Value, y: impl Fn(&mut rspirv::Builder, Value)->Value) -> Value {
+	use ast::Type::*;
+	match rtype {
+		F32 => x,
+		F64 => {
+			let f32 = b.type_float(32);
+			let x = b.f_convert(f32, None, x).unwrap();
+			let y = y(b, x);
+			let f64 = stype(b, rtype);
+			b.f_convert(f64, None, y).unwrap()
+		}
+	}
+}
 
 struct Builder<'t> {
 	builder: rspirv::Builder,
@@ -40,7 +53,7 @@ fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[valu
 fn stype(&mut self, rtype: &ast::Type) -> Type { stype(self, rtype) }
 fn expr(&mut self, expr: &Expression) -> Value {
 	let rtype = self.rtype(expr);
-	let [bool, gl, stype] = [self.type_bool(), self.gl, self.stype(&rtype)];
+	let [bool, f32, gl, stype] = [self.type_bool(), self.type_float(32), self.gl, self.stype(&rtype)];
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
@@ -56,9 +69,9 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
 				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(stype, None, a, b).unwrap() }
 				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(stype, None, a, b).unwrap() }
-				Sqrt(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(stype, None, gl, GLOp::Sqrt as u32, [x]).unwrap() }
-				Exp(x) => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(stype, None, gl, GLOp::Exp as u32, [x]).unwrap() }
-				Ln{x,..} => { let x = Operand::IdRef(self.expr(x)); self.ext_inst(stype, None, gl, GLOp::Log as u32, [x]).unwrap() }
+				Sqrt(x) => { let x = self.expr(x); self.ext_inst(stype, None, gl, GLOp::Sqrt as u32, [Operand::IdRef(x)]).unwrap() }
+				Exp(x) => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Exp as u32, [Operand::IdRef(x)]).unwrap()) },
+				Ln{x,..} => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Log as u32, [Operand::IdRef(x)]).unwrap()) },
 			}
 		}
 		Expression::Block { statements, result } => {
@@ -113,6 +126,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let mut b = rspirv::Builder::new();
 	b.set_version(1, 5);
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
+	if ast.input.contains(&ast::Type::F64) { b.capability(Capability::Float64); }
 	b.memory_model(AddressingModel::Logical, MemoryModel::Vulkan);
 	let void = b.type_void();
 	let u32 = b.type_int(32, 0);
@@ -121,7 +135,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let local_size = b.spec_constant_u32(u32, 1);
 	b.decorate(local_size, SpecId, [0u32.into()]);
 	let u32_1 = b.constant_u32(u32, 1);
-	b.execution_mode(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
+	b.execution_mode_id(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
 	let gl = b.ext_inst_import("GLSL.std.450");
 	let v3u = b.type_vector(u32, 3);
 	let workgroup_size = b.spec_constant_composite(v3u, [local_size, u32_1, u32_1]);
@@ -137,11 +151,11 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 			types.rtype(output)
 		})
 	};
-	let constant0 = stype(&mut b, &ast.input[0]);
-	let block_struct_constants = b.type_struct([constant0]);
+	let constant0_type = stype(&mut b, &ast.input[0]);
+	let block_struct_constants = b.type_struct([constant0_type]);
 	b.decorate(block_struct_constants, Block, []);
 	b.member_decorate(block_struct_constants, 0, Offset, [0u32.into()]);
-	let constant_pointer_to_constant0 = b.type_pointer(None, StorageClass::PushConstant, constant0);
+	let constant_pointer_to_constant0 = b.type_pointer(None, StorageClass::PushConstant, constant0_type);
 	let constant_pointer_to_block_struct_constants= b.type_pointer(None, StorageClass::PushConstant, block_struct_constants);
 	let constants = b.variable(constant_pointer_to_block_struct_constants, None, StorageClass::PushConstant, None);
 
@@ -178,8 +192,8 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let global_invocation_id3 = b.load(v3u, None, global_invocation_id_ref, None, [])?;
 	let id = b.composite_extract(u32, None, global_invocation_id3, [0])?;
 	let index0 = b.constant_u32(u32, 0);
-	let constant0 = b.access_chain(constant_pointer_to_constant0, None, constants, [index0]).unwrap();
-	let constant0 = (ast.input[0], b.load(constant0, None, constant0, None, [])?);
+	let constant0_pointer = b.access_chain(constant_pointer_to_constant0, None, constants, [index0]).unwrap();
+	let constant0 = (ast.input[0], b.load(constant0_type, None, constant0_pointer, None, [])?);
 	let input_values = map(&*input_pointers, |&(rtype, input)| {
 		let stype = stype(&mut b, &rtype);
 		let storage_buffer_pointer = b.type_pointer(None, StorageClass::StorageBuffer, stype);
@@ -201,27 +215,31 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let interface = [global_invocation_id_ref, constants].into_iter().chain(input_pointers.into_vec().into_iter().map(|(_,v)|v)).chain(output.into_vec().into_iter().map(|(_,v)|v));
 	b.entry_point(spirv::ExecutionModel::GLCompute, f, "main", list(interface));
 	let code = ::rspirv::binary::Assemble::assemble(&b.builder.module());
-	if true {
+	if false {
 		Ok(code.into())
 	} else {
 		let path = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv.spv";
 		let path = std::path::Path::new(&path);
 		pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * std::mem::size_of::<T>())} }
-		let code = as_u8(&code);
-		if !path.exists() || code != std::fs::read(path).unwrap() {
-			std::fs::write(path, code).unwrap();
+		let bytes = as_u8(&code);
+		if !path.exists() || bytes != std::fs::read(path).unwrap() {
+			std::fs::write(path, bytes).unwrap();
 			/*{use spirv_tools::{*, opt::*, binary::*};
 				let code = create(Some(TargetEnv::Vulkan_1_2)).optimize(code, &mut |_| {}, Some(Options{preserve_spec_constants: true, ..Default::default()})).map_err(|e| e.diagnostic.unwrap().message).unwrap();
 				if let Binary::OwnedU32(code) = code { Ok(code.into()) } else { unreachable!() }
 			}*/
 		}
-		let opt = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv";
-		let opt = std::path::Path::new(&opt);
-		if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
-			let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
-			assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","--target-env=vulkan1.2",&format!("-Oconfig={}/.spirv-opt",std::env::var("HOME").unwrap()),path,"-o",opt]).status().unwrap().success());
+		if true {
+			Ok(code.into())
+		} else {
+			let opt = std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv";
+			let opt = std::path::Path::new(&opt);
+			if !opt.exists() || opt.metadata().unwrap().modified().unwrap() < path.metadata().unwrap().modified().unwrap() {
+				let [path,opt] = [path,opt].map(|path| path.to_str().unwrap());
+				assert!(std::process::Command::new("spirv-opt").args(["--skip-validation","--target-env=vulkan1.2",&format!("-Oconfig={}/.spirv-opt",std::env::var("HOME").unwrap()),path,"-o",opt]).status().unwrap().success());
+			}
+			pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
+			Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv").unwrap()).into())
 		}
-		pub fn as_u32(slice: &[u8]) -> &[u32] { unsafe{std::slice::from_raw_parts(slice.as_ptr() as *const u32, slice.len() / std::mem::size_of::<u8>())} }
-		Ok(as_u32(&std::fs::read(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/spirv-opt.spv").unwrap()).into())
 	}
 }
