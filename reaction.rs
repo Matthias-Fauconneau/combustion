@@ -28,12 +28,10 @@ use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, gene
 }
 
 #[track_caller] fn check(e: &Expression, f: &mut Block) -> Result<(),String> {
-	{
+	if !e.is_leaf() {
 		let e = e.deref();
-		if !e.is_leaf() {
-			let new = f.after_CSE.insert(e.clone());
-			if !new { return Err(format!("{}: {}", e.to_string(f.names), {use itertools::Itertools; f.expressions.iter().filter_map(|(k,v)| (k==e).then(||v)).format(" ")})); }
-		}
+		let new = f.after_CSE.insert(e.clone());
+		if !new { return Err(format!("{} already in [{}]", e.to_string(f.names), {use itertools::Itertools; f.expressions.iter().filter_map(|(k,v)| (k==e).then(||v)).format(" ")})); }
 	}
 	match e.visit(|e| check(e, f)) {
 		[Some(Err(e)), _]|[_, Some(Err(e))] => Err(e),
@@ -41,7 +39,7 @@ use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, gene
 	}
 }
 
-#[track_caller] fn chk(e: Expression, f: &mut Block) -> Expression { check(&e, f).unwrap(); e }
+#[track_caller] fn chk(e: Expression, f: &mut Block) -> Expression { check(&e, f).expect("chk"); e }
 
 struct Ratio(Expression, Expression);
 impl<E:Into<Expression>> From<E> for Ratio { fn from(e: E) -> Ratio { Ratio(e.into(), (1.).into()) } }
@@ -143,7 +141,7 @@ type Error = String;
 		].into_iter().filter_map(|x:Option<Expression>| x).sum::<Option<Expression>>()
 		.map(|x| le!(f; exp(x, f)));
 	Π([
-		Some(f64(A).ok_or_else(|| format!("{A:e}"))?/* *f64::powf(T0,ln_T_coefficient)*/),
+		Some(f64(A).unwrap_or_else(|x| {println!("{A:e}"); x})/* *f64::powf(T0,ln_T_coefficient)*/),
 		temperature_factor.map(|x| x.into()),
 		exp
 	]).unwrap()
@@ -158,19 +156,20 @@ fn efficiency(efficiencies: &[f64], concentrations: &[Value], f: &mut Block) -> 
 use super::*;
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Ratio {
+	//fn const_or_value(e:Expression, f: &mut Block) -> Expression { if let Some(x) = e.f64() { x.into() } else { l!(f; e) } }
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => le!(f; arrhenius(k_inf, T, f).unwrap()),
 		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f).unwrap(), f) * efficiency(efficiencies, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
 			let C_k0 = l!(f efficiency * chk(arrhenius(k0, T, f).unwrap(), f));
-			let k_inf = l!(f chk(arrhenius(k_inf, T, f).unwrap(), f));
-			Ratio(C_k0 * k_inf, C_k0 + k_inf)
+			let k_inf:Expr = l!(f; chk(arrhenius(k_inf, T, f).unwrap(), f));
+			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf)
 		},
 		Falloff{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
-			let k0 = chk(arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}")), f);
-			let k_inf = (|e:Expression,f|->Expression{ if let Some(x) = e.f64() { x.into() } else { l!(f; e) }})(chk(arrhenius(k_inf, T, f).unwrap(), f), f);
+			let k0 = l!(f chk(arrhenius(k0, T, f).expect(&format!("{k0:?}/{k_inf:?}")), f));
+			let k_inf:Expr = l!(f; chk(arrhenius(k_inf, T, f).unwrap(), f));
 			//f.block(|f|{
 				let Pr = l!(f efficiency * k0 / k_inf.shallow());
 				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcp_T,..}=T; ast::sum([

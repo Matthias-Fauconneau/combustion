@@ -231,7 +231,7 @@ pub fn compile(ast: &ast::Function) -> Function {
 	f.seal_block(entry_block);
 	let_!{ &[input, output] = f.block_params(entry_block) => {
 	let types = ast.input.iter().enumerate().map(|(i, &r#type)| (Value(i), r#type)).collect();
-	let values = ast.input.iter().enumerate().map(|(i, r#type)| (Value(i), load({use ast::Type::*; match r#type { F32=>self::F32, F64=>self::F64, _=>panic!()}}, input, i, f))).collect();
+	let values = ast.input.iter().enumerate().map(|(i, r#type)| (Value(i), load({use ast::Type::*; match r#type {F32=>self::F32, F64=>self::F64}}, input, i, f))).collect();
 	let ref mut f = AstBuilder{builder: f, types, values};
 	for statement in &*ast.statements { f.check_types_and_load_constants(statement); }
 	for statement in &*ast.statements { f.push(statement); }

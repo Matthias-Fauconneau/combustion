@@ -148,11 +148,11 @@ impl Statement {
 }
 
 pub fn f32(x: f32) -> Option<Expr> { x.is_finite().then(|| Expr::F32(R32::new(x).unwrap()) ) }
-pub fn f64(x: f64) -> Option<Expr> { (x as f32).is_finite().then(|| Expr::F64(R64::new(x)) ) }
+pub fn f64(x: f64) -> Result<Expr,Expr> { assert!(x.is_finite()); let r=Expr::F64(R64::new(x)); if (x as f32).is_finite() { Ok(r) } else { Err(r) } }
 pub trait From_<F> { fn from(_: F) -> Self; }
 //impl From_<f32> for Option<Expr> { fn from(x: f32) -> Option<Expr> { f32(x) } }
-impl From_<f64> for Option<Expr> { fn from(x: f64) -> Option<Expr> { f64(x) } }
-impl<F> From<F> for Expr where Option<Expr>: From_<F> { fn from(x: F) -> Expr { let x:Option<Expr> = From_::from(x); x.unwrap() } }
+impl From_<f64> for Result<Expr,Expr> { fn from(x: f64) -> Result<Expr,Expr> { f64(x) } }
+impl<F> From<F> for Expr where Result<Expr,Expr>: From_<F> { fn from(x: F) -> Expr { let x:Result<Expr,Expr> = From_::from(x); x.unwrap() } }
 //impl From<f32> for Expr where Option<Expr>: From_<F> { fn from(x: F) -> Expr { let x:Option<Expr> = From_::from(x); x.unwrap() } }
 impl From<Value> for Expr { fn from(x: Value) -> Expr { Expr::Value(x) } }
 impl From<&Value> for Expr { fn from(x: &Value) -> Expr { x.clone().into() } }
@@ -312,8 +312,8 @@ pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Res
 	Ok(id)
 }
 #[macro_export] macro_rules! l {
-	($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).unwrap() );
-	($f:ident; $e:expr) => ( l!($f $e).into() );
+	($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!") );
+	($f:ident; $e:expr) => ({ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } });
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));

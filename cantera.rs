@@ -38,6 +38,10 @@ fn main() -> Result<()> {
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
 	let rates = with_repetitive_input(assemble::<T>(rates), 1);
 
+	let ε= 2e-6;
+	#[cfg(feature="f32")] let ε = f64::max(ε, 6e-4);
+	#[cfg(feature="ir")] let ε = f64::max(ε, 5e-2);
+
 	let test = move |state: &State| -> Result<_> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
@@ -107,7 +111,7 @@ fn main() -> Result<()> {
 			// Rates
 			let error = |a,b| {
 				let m=f64::abs(f64::max(a,b));
-				if m < 1e2 { return 0.; }
+				if m < 4e3 { return 0.; }
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			};
 			//let error = |a,b| num::relative_error(a,b);
@@ -115,7 +119,7 @@ fn main() -> Result<()> {
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
 				let (k, e)= rates.iter().zip(&*cantera_rates).map(|(&a,&b)| error(a as _,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > 1e-3 {
+				if e > ε {
 					/*println!("{:>10}", species_names.iter().format(" "));
 					println!("{:10.0}", cantera_rates.iter().format(" "));
 					println!("{:10.0}", rates.iter().format(" "));*/
@@ -140,7 +144,7 @@ fn main() -> Result<()> {
 				let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 				assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
 				let (k, e) = cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > 1e-3 {
+				if e > ε {
 					/*println!("{:.0}", cantera_rates.iter().format(" "));
 					println!("{:.0}", nekrk.iter().format(" "));
 					println!("{:>6}", cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));*/
@@ -167,11 +171,9 @@ fn main() -> Result<()> {
 			let amount_fractions = map(&*amounts, |n| n/total_amount);
 			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
 			let k = species_names[k];
-			#[cfg(not(feature="f32"))] const ε: f64 = 9e-5;
-			#[cfg(feature="f32")] const ε: f64 = 1e-2;
 			assert!(e < ε, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
 				amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
-			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100==0 { println!("{i}") }
+			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%1000==0 { println!("{i}") }
 		}
 	} else {
 			let (_, e) = test(&state)?;

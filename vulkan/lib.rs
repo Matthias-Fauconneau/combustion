@@ -140,7 +140,9 @@ impl Device {
 				.specialization_info(&SpecializationInfo::builder().map_entries(&[SpecializationMapEntry{constant_id:0, offset: 0, size: std::mem::size_of::<u32>()}]).data(as_u8(&local_size))) .build(),
 				layout, ..default() }];
 			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			dbg!();
 			let pipeline = device.create_compute_pipelines(/*default()*/pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
+			dbg!();
 			//std::fs::write(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}
