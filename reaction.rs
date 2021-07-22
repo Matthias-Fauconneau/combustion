@@ -111,7 +111,7 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 				let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts, Cache(&f.values)));
 				let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts, Cache(&f.values)));
 				let defs = eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
-				for def in defs { if let Statement::Value{value,..} = &def { check(value, f).unwrap(); } f.statements.push(def); }
+				for def in defs { if let Statement::Value{value,id} = &def { assert!(f.values.insert(value.clone(), *id).is_none()); } else { unreachable!() } f.statements.push(def); }
 				for e in true_exprs.iter().chain(&*false_exprs) { check(e, f).unwrap(); }
 				([true_exprs, false_exprs], results)
 			}).unzip();

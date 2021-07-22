@@ -307,7 +307,7 @@ impl Block<'t> {
 pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<(Statement, Value), f64> {
 	let value = value.into();
 	if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
-	assert!(!value.is_leaf());
+	assert!(!value.is_leaf(), "{value:?}");
 	let id = block.value(name);
 	Ok((Statement::Value{id: id.clone(), value}, id))
 }
