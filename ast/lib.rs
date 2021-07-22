@@ -304,7 +304,7 @@ impl Block<'t> {
 		id
 	}
 }
-pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<(Statement, Value), f64> {
+#[track_caller] pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<(Statement, Value), f64> {
 	let value = value.into();
 	if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
 	assert!(!value.is_leaf(), "{value:?}");

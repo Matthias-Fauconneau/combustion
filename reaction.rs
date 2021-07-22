@@ -5,7 +5,7 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl std::iter::IntoIterator<Item
 	map
 }
 
-use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, generate, list, map, DotN}, std::collections::hash_map::{HashMap as Map,Entry::*},ast::*};
+use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, generate, list, map, DotN}, std::collections::hash_map::HashMap as Map,ast::*};
 
 struct Cache<'t>(&'t Map<Expression, Value>);
 impl<E:Into<Expression>> FnOnce<(E,)> for Cache<'_> { type Output = Expression; extern "rust-call" fn call_once(mut self, args: (E,)) -> Expression { self.call_mut(args) } }
@@ -18,15 +18,15 @@ impl<E:Into<Expression>> Fn<(E,)> for Cache<'_> { extern "rust-call" fn call(&se
 	expressions: Vec<(Expr, String)>,
 	after_CSE: std::collections::HashSet<Expr>,
 }
-#[throws(f64)] pub fn def(e: impl Into<Expression>, f: &mut Block, name: String) -> Value {
-	match f.values.entry(e.into()) {
-		Occupied(entry) => *entry.get(),
-		Vacant(entry) => {
-			let (s, v) = ast::def(entry.key().clone(), &mut f.block, name)?;
-			f.block.statements.push(s);
-			*entry.insert(v)
-		},
-	}
+#[track_caller] pub fn def(e: impl Into<Expression>, f: &mut Block, name: String) -> Result<Value,f64> {
+	let e = e.into();
+	if let Expression::Expr(ref e) = e { if let Some(x) = e.f64() { return Err(x) } }
+	assert!(!e.is_leaf());
+	Ok(*f.values.entry(e.into()).or_insert_with_key(|e| {
+		let (s, v) = ast::def(e.clone(), &mut f.block, name).unwrap();
+		f.block.statements.push(s);
+		v
+	}))
 }
 #[macro_export] macro_rules! le {
 	($f:ident $e:expr) => (def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).unwrap());
