@@ -33,6 +33,11 @@ fn main() -> Result<()> {
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
+	#[cfg(not(feature="f32"))] type T = f64;
+	#[cfg(feature="f32")] type T = f32;
+	let rates = reaction::rates(&species.thermodynamics, &reactions);
+	let rates = with_repetitive_input(assemble::<T>(rates), 1);
+
 	let test = move |state: &State| -> Result<_> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
@@ -106,10 +111,6 @@ fn main() -> Result<()> {
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			};
 			//let error = |a,b| num::relative_error(a,b);
-			#[cfg(not(feature="f32"))] type T = f64;
-			#[cfg(feature="f32")] type T = f32;
-			let rates = reaction::rates(&species.thermodynamics, &reactions);
-			let rates = with_repetitive_input(assemble::<T>(rates), 1);
 			let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &([&[total_amount as _, *temperature as _], &**nonbulk_amounts].concat()))? => {
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {

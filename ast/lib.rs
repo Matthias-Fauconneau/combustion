@@ -8,7 +8,11 @@ fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 impl From<&Value> for Value { fn from(x: &Value) -> Value { x.clone() } }
 impl From<&mut Value> for Value { fn from(x: &mut Value) -> Value { x.clone() } }
 
-#[derive(PartialEq,Eq,Debug,Clone,Copy)] pub enum Type { I32, F32, F64 }
+#[derive(PartialEq,Eq,Debug,Clone,Copy)] pub enum Type { /*I32,*/ F32, F64 }
+impl Type {
+	pub fn bits(&self) -> u32 { use Type::*; match self { F32 => 32, F64 => 64 } }
+	pub fn bytes(&self) -> u32 { self.bits()/8 }
+}
 
 use ordered_float::NotNan;
 type R32 = NotNan<f32>;
@@ -52,7 +56,32 @@ impl Deref for R64 { type Target=f64; fn deref(&self) -> &Self::Target { &self.0
 	Ln { x0: NotNan<f64>, x: Box<Expression> },
 }
 impl Expr {
+	pub fn visit<T>(&self, mut visitor: impl FnMut(&Expression)->T) -> [Option<T>; 2] {use Expr::*; match self {
+		F32(_)|F64(_)|Value(_) => [None, None],
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
+		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
+	}}
+	pub fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Expression)) {use Expr::*; match self {
+		F32(_)|F64(_)|Value(_) => {},
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => visitor(x),
+		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { visitor(a); visitor(b); }
+	}}
+	pub fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type { use Expr::*; match self {
+		//&I32(v) => Type::I32,
+		F32(_) => Type::F32,
+		F64(_) => Type::F64,
+		Value(v) => rtype(v),
+		//Cast(to, x) => { self.pass(x); *to },
+		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Exp(x)|Ln{x,..} => x.rtype(rtype),
+		/*FPromote(x) => { self.pass(x); ast::Type::F64 },
+		FDemote(x) => { self.pass(x); ast::Type::F32 },
+		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
+		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
+		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => self::rtype(a,b,rtype),
+		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
+	}}
 	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Value(_)) }
+	pub fn has_block(&self) -> bool { self.visit(Expression::has_block).into_iter().filter_map(|x| x).any(|x| x) }
 	pub fn shallow(&self) -> Expr { assert!(self.is_leaf()); self.clone() }
 	pub fn to_string(&self, names: &[String]) -> String {
 		use Expr::*; match self {
@@ -80,35 +109,27 @@ impl<E: Into<Expr>> From<E> for Expression { fn from(e: E) -> Expression { Expre
 impl Default for Expression { fn default() -> Expression { Expr::Value(Value(usize::MAX)).into() } }
 impl Clone for Expression { fn clone(&self) -> Expression { Deref::deref(self).clone().into() } }
 impl Expression {
+	fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type {use Expression::*; match self {
+		Expr(e) => e.rtype(rtype),
+		Block{result, ..} => result.rtype(rtype)
+	}}
+}
+pub fn rtype(a: &Expression, b: &Expression, rtype: &impl Fn(&Value)->Type) -> Type { let [a,b] = [a,b].map(|x| x.rtype(rtype)); assert!(a==b); a }
+impl Expression {
+	pub fn visit<T>(&self, visitor: impl FnMut(&Self)->T) -> [Option<T>; 2] { use Expression::*; match self {
+		Expr(e) => e.visit(visitor),
+		Block{..} => unimplemented!()//[None, None]
+	}}
+	pub fn visit_mut(&mut self, visitor: impl FnMut(&mut Self)) { use Expression::*; match self {
+		Expr(e) => e.visit_mut(visitor),
+		Block{..} => unimplemented!()
+	}}
 	pub fn is_leaf(&self) -> bool { if let Expression::Expr(e) = self { e.is_leaf() } else { false } }
-	pub fn to_string(&self, names: &[String]) -> String {
-		use itertools::Itertools;
-		match self {
-			Self::Expr(e) => e.to_string(names),
-			Self::Block{statements, result} => format!("{{{} {}}}", statements.iter().map(|x| x.to_string(names)).format(" "), result.to_string(names))
-		}
-	}
-	pub fn visit<T>(&self, mut visitor: impl FnMut(&Self)->T) -> [Option<T>; 2] {
-		match self {
-			Self::Expr(e) => {use Expr::*; match e {
-				F32(_)|F64(_)|Value(_) => [None, None],
-				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
-				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
-			}}
-			Self::Block{..} => [None, None]//unimplemented!()
-		}
-	}
-	pub fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Self)) {
-		match self {
-			Self::Expr(e) => {use Expr::*; match e {
-				F32(_)|F64(_)|Value(_) => {},
-				Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => visitor(x),
-				Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { visitor(a); visitor(b); }
-			}}
-			Self::Block{..} => unimplemented!()
-		}
-	}
-	pub fn has_block(&self) -> bool { matches!(self, Self::Block{..}) || self.visit(Self::has_block).into_iter().filter_map(|x| x).any(|x| x) }
+	pub fn has_block(&self) -> bool { if let Expression::Expr(e) = self { e.has_block() } else { true } }
+	pub fn to_string(&self, names: &[String]) -> String { use Expression::*; match self {
+		Expr(e) => e.to_string(names),
+		Block{statements, result} => format!("{{{} {}}}", {use itertools::Itertools; statements.iter().map(|x| x.to_string(names)).format(" ")}, result.to_string(names))
+	}}
 }
 
 #[derive(Debug,PartialEq,Eq,Hash)] pub enum Statement {
