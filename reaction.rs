@@ -5,11 +5,16 @@ fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl std::iter::IntoIterator<Item
 	map
 }
 
-use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, generate, list, map, DotN}, std::collections::hash_map::{HashMap,Entry::*}, ast::*};
+use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, generate, list, map, DotN}, std::collections::hash_map::{HashMap as Map,Entry::*},ast::*};
+
+struct Cache<'t>(&'t Map<Expression, Value>);
+impl<E:Into<Expression>> FnOnce<(E,)> for Cache<'_> { type Output = Expression; extern "rust-call" fn call_once(mut self, args: (E,)) -> Expression { self.call_mut(args) } }
+impl<E:Into<Expression>> FnMut<(E,)> for Cache<'_> { extern "rust-call" fn call_mut(&mut self, args: (E,)) -> Expression { self.call(args) } }
+impl<E:Into<Expression>> Fn<(E,)> for Cache<'_> { extern "rust-call" fn call(&self, (e,): (E,)) -> Expression { let e = e.into(); self.0.get(&e).map(|v| v.into()).unwrap_or(e) } }
 
 #[derive(derive_more::Deref,derive_more::DerefMut)] pub struct Block<'t> {
 	#[deref]#[deref_mut] block: ast::Block<'t>,
-	values: HashMap<Expression, Value>,
+	values: Map<Expression, Value>,
 	expressions: Vec<(Expr, String)>,
 	after_CSE: std::collections::HashSet<Expr>,
 }
@@ -79,21 +84,21 @@ fn product_of_exponentiations<I:iter::IntoExactSizeIterator,N:Copy+Into<i16>>(v:
 
 #[derive(Clone,Copy)] struct T { ln_T: Value, T: Value, T2: Value, T3: Value, T4: Value, rcp_T: Value, rcp_T2: Value}
 
-fn molar_heat_capacity_at_constant_pressure_R(a: &[f64; 7], T{T,T2,T3,T4,..}: T) -> Expression { (*a.prefix()).dot([Expr::from(1.),T.into(),T2.into(),T3.into(),T4.into()]) }
+fn molar_heat_capacity_at_constant_pressure_R(a: &[f64; 7], T{T,T2,T3,T4,..}: T, _: Cache) -> Expression { (*a.prefix()).dot([Expr::from(1.),T.into(),T2.into(),T3.into(),T4.into()]) }
 /*fn enthalpy_RT(a: &[f64; 7], T{T,T2,T3,T4,rcp_T,..}: T) -> Expression { a[0] + a[1]/2.*T + a[2]/3.*T2 + a[3]/4.*T3 + a[4]/5.*T4 + a[5]*rcp_T }
 fn Gibbs_RT(a: &[f64; 7], T{ln_T,T,T2,T3,T4,rcp_T,..}: T) -> Expression { -a[0]*ln_T +a[0]-a[6] -a[1]/2.*T +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 +a[5]*rcp_T }*/
-fn a1T(a: &[f64; 7], T{T,..}: T) -> Expression { a[1]/2.*T }
-fn a5rcpT(a: &[f64; 7], T{rcp_T,..}: T) -> Expression { a[5]*rcp_T }
-fn enthalpy_RT(a: &[f64; 7], T{T2,T3,T4,..}: T) -> Expression { a[0] + a[2]/3.*T2 + a[3]/4.*T3 + a[4]/5.*T4 }
-fn Gibbs0_RT(a: &[f64; 7], T{ln_T,T2,T3,T4,..}: T) -> Expression { (-a[0])*ln_T +(a[0]-a[6]) +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 }
+fn a1T(a: &[f64; 7], T{T,..}: T, _: Cache) -> Expression { a[1]/2.*T }
+fn a5rcpT(a: &[f64; 7], T{rcp_T,..}: T, _: Cache) -> Expression { a[5]*rcp_T }
+fn enthalpy_RT(a: &[f64; 7], T{T2,T3,T4,..}: T, _: Cache) -> Expression { a[0] + a[2]/3.*T2 + a[3]/4.*T3 + a[4]/5.*T4 }
+fn Gibbs0_RT(a: &[f64; 7], T{ln_T,T2,T3,T4,..}: T, c: Cache) -> Expression { c((-a[0])*ln_T) +(a[0]-a[6]) +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 }
 
-fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl Fn(&[f64; 7], T)->Expression; N], Ts@T{T,..}: T, f: &mut Block, debug: [&str; N]) -> [Box<[Expression]>; N] {
+fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl Fn(&[f64; 7], T, Cache)->Expression; N], Ts@T{T,..}: T, f: &mut Block, debug: [&str; N]) -> [Box<[Expression]>; N] {
 	use iter::IntoConstSizeIterator;
 	let mut specie_results = generate(|_| map(thermodynamics, |_| None)).collect();
 	for (temperature_split, ref species) in bucket(thermodynamics.iter().map(|s| ordered_float::OrderedFloat(s.temperature_split))) {
 		if temperature_split.is_nan() {
 			for (expression, specie_results) in expressions.iter().zip(specie_results.iter_mut()) { for &specie in species {
-				let e = expression(&thermodynamics[specie].pieces[0], Ts);
+				let e = expression(&thermodynamics[specie].pieces[0], Ts, Cache(&f.values));
 				check(&e, f).unwrap();
 				let e = if e.is_leaf() { e } else { l!(f; e) };
 				assert!(specie_results[specie].replace(e).is_none());
@@ -103,8 +108,8 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 				let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
 				use iter::Zip;
 				for (&specie, result) in species.zip(&*results) { assert!(specie_results[specie].replace(result.into()).is_none()) }
-				let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts));
-				let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts));
+				let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts, Cache(&f.values)));
+				let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts, Cache(&f.values)));
 				let defs = eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
 				for def in defs { if let Statement::Value{value,..} = &def { check(value, f).unwrap(); } f.statements.push(def); }
 				for e in true_exprs.iter().chain(&*false_exprs) { check(e, f).unwrap(); }
@@ -227,7 +232,7 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let C0 = l!(f NASA7::reference_pressure * rcp_T);
 	let total_concentration = l!(f pressure_R / T); // Constant pressure
 	let Ts = T{ln_T, T: *T,T2,T3,T4,rcp_T,rcp_T2};
-	let [a1T, a5rcpT, Gibbs0_RT] = thermodynamics(&species[0..active], [a1T as fn(&[f64;7],T)->Expression, a5rcpT, Gibbs0_RT], Ts, f, ["a1T","a5/T","Gibbs0/RT"]);
+	let [a1T, a5rcpT, Gibbs0_RT] = thermodynamics(&species[0..active], [a1T as fn(&[f64;7],T,Cache)->Expression, a5rcpT, Gibbs0_RT], Ts, f, ["a1T","a5/T","Gibbs0/RT"]);
 	let Gibbs0_RT = map(a1T.iter().zip(&*a5rcpT).zip(Gibbs0_RT.into_vec()), |((a1T,a5rcpT),g)| -a1T.shallow()+g+a5rcpT.shallow());
 	let exp_Gibbs0_RT = map(Gibbs0_RT.into_vec(), |g| l!(f exp(g, f)));
 	let density = l!(f total_concentration / total_amount);
