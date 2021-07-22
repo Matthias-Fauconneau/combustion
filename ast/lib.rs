@@ -1,5 +1,5 @@
 #![allow(incomplete_features,non_snake_case,mixed_script_confusables)]
-#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,if_let_guard,type_ascription)]
+#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,if_let_guard,type_ascription,default_free_fn)]
 //#![recursion_limit="5"]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
@@ -61,10 +61,10 @@ impl Expr {
 		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
 		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
-	pub fn visit_mut(&mut self, mut visitor: impl FnMut(&mut Expression)) {use Expr::*; match self {
-		F32(_)|F64(_)|Value(_) => {},
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => visitor(x),
-		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { visitor(a); visitor(b); }
+	pub fn visit_mut<T>(&mut self, mut visitor: impl FnMut(&mut Expression)->T)  -> [Option<T>; 2]  {use Expr::*; match self {
+		F32(_)|F64(_)|Value(_) => [None, None],
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
+		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type { use Expr::*; match self {
 		//&I32(v) => Type::I32,
@@ -120,7 +120,7 @@ impl Expression {
 		Expr(e) => e.visit(visitor),
 		Block{..} => unimplemented!()//[None, None]
 	}}
-	pub fn visit_mut(&mut self, visitor: impl FnMut(&mut Self)) { use Expression::*; match self {
+	pub fn visit_mut<T>(&mut self, visitor: impl FnMut(&mut Self)->T) -> [Option<T>; 2] { use Expression::*; match self {
 		Expr(e) => e.visit_mut(visitor),
 		Block{..} => unimplemented!()
 	}}
@@ -304,16 +304,16 @@ impl Block<'t> {
 		id
 	}
 }
-pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<Value, f64> {
+pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<(Statement, Value), f64> {
 	let value = value.into();
 	if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
+	assert!(!value.is_leaf());
 	let id = block.value(name);
-	push(Statement::Value{id: id.clone(), value}, block);
-	Ok(id)
+	Ok((Statement::Value{id: id.clone(), value}, id))
 }
 #[macro_export] macro_rules! l {
-	($f:ident $e:expr) => ( def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!") );
-	($f:ident; $e:expr) => ({ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } });
+	($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!"); $f.statements.push(s); v }};
+	($f:ident; $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } }};
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
@@ -377,22 +377,25 @@ pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {
 	else { Expr::Ln{x0: NotNan::new(x0).unwrap(), x: box_(x.into())}.into() } // ln_approx(x0, x, f)
 }
 
-pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) {
+#[must_use] pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) -> Vec<Statement> {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {
-		let common: Expr = l!(f; std::mem::take(a));
-		*a = common.shallow().into();
+		let (def, common) = def(std::mem::take(a), f, default()).unwrap();
+		*a = common.into();
 		*b = common.into();
+		[def].into()
 	} else {
-		a.visit_mut(|a| eliminate_common_subexpression(a, b, f));
-		b.visit_mut(|b| eliminate_common_subexpression(a, b, f));
+		a.visit_mut(|a| eliminate_common_subexpression(a, b, f)).into_iter().filter_map(|x| x).map(|x| x.into_iter()).chain(
+		b.visit_mut(|b| eliminate_common_subexpression(a, b, f)).into_iter().filter_map(|x| x).map(|x| x.into_iter())).flatten().collect()
 	}
 }
 
-pub fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut Block) {
-	for a in &mut *a { for b in &mut *b { eliminate_common_subexpression(a, b, f); } }
+#[must_use] pub fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut Block) -> Vec<Statement> {
+	let mut defs = vec![];
+	for a in &mut *a { for b in &mut *b { defs.extend(eliminate_common_subexpression(a, b, f)); } }
+	defs
 }
 
-use iter::map;
+use {std::default::default, iter::map};
 
 pub struct Types(pub Box<[Option<Type>]>);
 impl Types {

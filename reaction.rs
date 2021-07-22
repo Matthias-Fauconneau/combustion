@@ -17,8 +17,9 @@ use {fehler::throws, std::default::default, std::ops::Deref, iter::{Prefix, gene
 	match f.values.entry(e.into()) {
 		Occupied(entry) => *entry.get(),
 		Vacant(entry) => {
-			let e = ast::def(entry.key().clone(), &mut f.block, name)?;
-			*entry.insert(e)
+			let (s, v) = ast::def(entry.key().clone(), &mut f.block, name)?;
+			f.block.statements.push(s);
+			*entry.insert(v)
 		},
 	}
 }
@@ -84,7 +85,7 @@ fn Gibbs_RT(a: &[f64; 7], T{ln_T,T,T2,T3,T4,rcp_T,..}: T) -> Expression { -a[0]*
 fn a1T(a: &[f64; 7], T{T,..}: T) -> Expression { a[1]/2.*T }
 fn a5rcpT(a: &[f64; 7], T{rcp_T,..}: T) -> Expression { a[5]*rcp_T }
 fn enthalpy_RT(a: &[f64; 7], T{T2,T3,T4,..}: T) -> Expression { a[0] + a[2]/3.*T2 + a[3]/4.*T3 + a[4]/5.*T4 }
-fn Gibbs0_RT(a: &[f64; 7], T{ln_T,T2,T3,T4,..}: T) -> Expression { -a[0]*ln_T +(a[0]-a[6]) +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 }
+fn Gibbs0_RT(a: &[f64; 7], T{ln_T,T2,T3,T4,..}: T) -> Expression { (-a[0])*ln_T +(a[0]-a[6]) +(1./3.-1./2.)*a[2]*T2 +(1./4.-1./3.)*a[3]*T3 +(1./5.-1./4.)*a[4]*T4 }
 
 fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl Fn(&[f64; 7], T)->Expression; N], Ts@T{T,..}: T, f: &mut Block, debug: [&str; N]) -> [Box<[Expression]>; N] {
 	use iter::IntoConstSizeIterator;
@@ -104,7 +105,8 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 				for (&specie, result) in species.zip(&*results) { assert!(specie_results[specie].replace(result.into()).is_none()) }
 				let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts));
 				let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts));
-				eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
+				let defs = eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
+				for def in defs { if let Statement::Value{value,..} = &def { check(value, f).unwrap(); } f.statements.push(def); }
 				for e in true_exprs.iter().chain(&*false_exprs) { check(e, f).unwrap(); }
 				([true_exprs, false_exprs], results)
 			}).unzip();
