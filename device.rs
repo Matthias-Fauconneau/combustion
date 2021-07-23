@@ -5,7 +5,10 @@ impl Convert for f64 { fn convert(f: ast::Function) -> ast::Function { f } }
 impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	use {ast::*, Expr::*};
 	f.input = vec![Type::F32; f.input.len()].into();
-	fn demote(e: &mut Expression) { if let Expression::Expr(F64(ref x)) = e { *e = f32(f64::from(*x) as _).unwrap().into() } else { e.visit_mut(demote); } }
+	fn demote(e: &mut Expression) {
+		if let Expression::Expr(F64(x)) = e { *e = f32(f64::from(*x) as _).expect(&format!("{:e} overflows f32, retry with f64",f64::from(*x))).into() }
+		else { e.visit_mut(demote); }
+	}
 	for s in &mut *f.statements { use Statement::*; match s {
 		Value{value,..} => demote(value),
 		Select { condition, true_exprs, false_exprs, .. } => {
