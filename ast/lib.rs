@@ -109,6 +109,7 @@ impl<E: Into<Expr>> From<E> for Expression { fn from(e: E) -> Expression { Expre
 impl Default for Expression { fn default() -> Expression { Expr::Value(Value(usize::MAX)).into() } }
 impl Clone for Expression { fn clone(&self) -> Expression { Deref::deref(self).clone().into() } }
 impl Expression {
+	pub fn expr(self) -> Expr { if let Expression::Expr(e) = self { e } else { panic!("block") } }
 	fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type {use Expression::*; match self {
 		Expr(e) => e.rtype(rtype),
 		Block{result, ..} => result.rtype(rtype)
@@ -162,9 +163,6 @@ impl Expr {
 	pub fn f32(&self) -> Option<f32> { use Expr::*; match self { F32(x) => Some(f32::from(*x)), F64(x) => Some(f64::from(*x) as _), _ => None } }
 	pub fn f64(&self) -> Option<f64> { use Expr::*; match self { F32(x) => Some(f32::from(*x) as _), F64(x) => Some(f64::from(*x)), _ => None } }
 }
-
-//impl From<&Value> for Expression { fn from(x: &Value) -> Expression { Expr::from(x).into() } }
-//impl From<&mut Value> for Expression { fn from(x: &mut Value) -> Expression { Expr::from(&*x).into() } }
 
 /*pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
 pub fn and(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression { Expression::And(box_(a.into()), box_(b.into())) }
@@ -234,9 +232,6 @@ pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtTo
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }*/
 
-fn oadd(a: Option<impl Into<Expression>>, b: impl Into<Expression>) -> Expression { if let Some(a) = a { a.into()+b.into() } else { b.into() } }
-//fn addo(a: impl Into<Expression>, b: Option<impl Into<Expression>>) -> Expression { b.map(|b| a+b).unwrap_or(a.into()) }
-
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for Expression { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Expression; #[track_caller] fn sub(self, b: E) -> Self::Output { sub(self, b) } }
@@ -247,11 +242,6 @@ impl<E:Into<Expression>> std::ops::Add<E> for Expr { type Output = Expression; f
 impl<E:Into<Expression>> std::ops::Sub<E> for Expr { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
 impl<E:Into<Expression>> std::ops::Mul<E> for Expr { type Output = Expression; #[track_caller] fn mul(self, b: E) -> Self::Output { mul(self, b) } }
 impl<E:Into<Expression>> std::ops::Div<E> for Expr { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }
-/*impl std::ops::Neg for &Expr { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
-impl<E:Into<Expression>> std::ops::Add<E> for &Expr { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
-impl<E:Into<Expression>> std::ops::Sub<E> for &Expr { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
-//impl<E:Into<Expression>> std::ops::Mul<E> for &Expr { type Output = Expression; #[track_caller] fn mul(self, b: E) -> Self::Output { mul(self, b) } }
-impl<E:Into<Expression>> std::ops::Div<E> for &Expr { type Output = Expression; fn div(self, b: E) -> Self::Output { div(self, b) } }*/
 impl std::ops::Neg for Value { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for Value { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for Value { type Output = Expression; fn sub(self, b: E) -> Self::Output { sub(self, b) } }
@@ -270,10 +260,6 @@ impl std::ops::Add<Expr> for f64 { type Output = Expression; fn add(self, b: Exp
 impl std::ops::Sub<Expr> for f64 { type Output = Expression; fn sub(self, b: Expr) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Expr> for f64 { type Output = Expression; fn mul(self, b: Expr) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<Expr> for f64 { type Output = Expression; fn div(self, b: Expr) -> Self::Output { div(self, b) } }
-/*impl std::ops::Add<&Expr> for f64 { type Output = Expression; fn add(self, b: &Expr) -> Self::Output { add(self, b) } }
-impl std::ops::Sub<&Expr> for f64 { type Output = Expression; fn sub(self, b: &Expr) -> Self::Output { sub(self, b) } }
-impl std::ops::Mul<&Expr> for f64 { type Output = Expression; fn mul(self, b: &Expr) -> Self::Output { mul(self, b) } }
-impl std::ops::Div<&Expr> for f64 { type Output = Expression; fn div(self, b: &Expr) -> Self::Output { div(self, b) } }*/
 impl std::ops::Add<Value> for f64 { type Output = Expression; fn add(self, b: Value) -> Self::Output { add(self, b) } }
 impl std::ops::Sub<Value> for f64 { type Output = Expression; fn sub(self, b: Value) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<Value> for f64 { type Output = Expression; #[track_caller] fn mul(self, b: Value) -> Self::Output { mul(self, b) } }
@@ -282,9 +268,6 @@ impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &
 impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
-
-impl std::ops::Add<Expression> for Option<Expression> { type Output = Expression; fn add(self, b: Expression) -> Self::Output { oadd(self, b) } }
-//impl<E:Into<Expression>> std::ops::Add<Option<E>> for Expression { type Output = Expression; fn add(self, b: E) -> Self::Output { addo(self, b) } }
 
 pub struct Block<'t> {
 	pub statements: Vec<Statement>,
@@ -304,16 +287,20 @@ impl Block<'t> {
 		id
 	}
 }
-#[track_caller] pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> Result<(Statement, Value), f64> {
+#[track_caller] pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> (Statement, Value)/*Result<(Statement, Value), f64>*/ {
 	let value = value.into();
-	if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
+	//if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
 	assert!(!value.is_leaf(), "{value:?}");
 	let id = block.value(name);
-	Ok((Statement::Value{id: id.clone(), value}, id))
+	(Statement::Value{id: id.clone(), value}, id)//Ok((Statement::Value{id: id.clone(), value}, id))
 }
 #[macro_export] macro_rules! l {
-	($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!"); $f.statements.push(s); v }};
-	($f:ident; $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } }};
+	($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))); $f.statements.push(s); v }};
+	($f:ident; $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e).into() } }};
+	//($f:ident; $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } }};
+	//($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!"); $f.statements.push(s); v }};
+	//($f:ident; $e:expr) => (def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).map(|v| { $f.statements.push(s); v.into() }).unwrap_or_else(|e| e.into()))
+	//($f:ident; $e:expr) => { match $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))) { Ok((s, v)) => { $f.statements.push(s); v.into() }, Err(x) => x.into() } };
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
@@ -371,15 +358,15 @@ pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {
 	assert!(x.f64().is_none());
 	Expr::Exp(box_(x)).into()	//exp_approx(x, f)
 }
-#[track_caller] pub fn ln(x0: f64, x: impl Into<Expression>, _f: &mut Block) -> Expression {
+#[track_caller] pub fn ln(x0: f64, x: impl Into<Expression>, _f: &mut Block) -> Expr {
 	let x = x.into();
 	if let Some(x) = x.f64() { f64::ln(x).into() }
-	else { Expr::Ln{x0: NotNan::new(x0).unwrap(), x: box_(x.into())}.into() } // ln_approx(x0, x, f)
+	else { Expr::Ln{x0: NotNan::new(x0).unwrap(), x: box_(x.into())} } // ln_approx(x0, x, f)
 }
 
 #[must_use] pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) -> Vec<Statement> {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {
-		let (def, common) = def(std::mem::take(a), f, default()).unwrap();
+		let (def, common) = def(std::mem::take(a), f, default())/*.unwrap()*/;
 		*a = common.into();
 		*b = common.into();
 		[def].into()
