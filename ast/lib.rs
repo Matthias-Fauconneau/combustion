@@ -297,10 +297,6 @@ impl Block<'t> {
 #[macro_export] macro_rules! l {
 	($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))); $f.statements.push(s); v }};
 	($f:ident; $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e).into() } }};
-	//($f:ident; $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { l!($f e).into() } }};
-	//($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).expect("l!"); $f.statements.push(s); v }};
-	//($f:ident; $e:expr) => (def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))).map(|v| { $f.statements.push(s); v.into() }).unwrap_or_else(|e| e.into()))
-	//($f:ident; $e:expr) => { match $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))) { Ok((s, v)) => { $f.statements.push(s); v.into() }, Err(x) => x.into() } };
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
@@ -366,7 +362,11 @@ pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {
 
 #[must_use] pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) -> Vec<Statement> {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {
-		let (def, common) = def(std::mem::take(a), f, default())/*.unwrap()*/;
+		let (def, common) = {
+			let a = std::mem::take(a);
+			let name = format!("({}={})",a.to_string(f.names),b.to_string(f.names));
+			def(a, f, name)
+		};
 		*a = common.into();
 		*b = common.into();
 		[def].into()
@@ -378,11 +378,13 @@ pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {
 
 #[must_use] pub fn eliminate_common_subexpressions(a: &mut [Expression], b: &mut [Expression], f: &mut Block) -> Vec<Statement> {
 	let mut defs = vec![];
+	for mid in 1..a.len() { let (a,b) = a.split_at_mut(mid); let ref mut a = a[mid-1]; for b in b { defs.extend(eliminate_common_subexpression(a,b,f)); } }
+	for mid in 1..b.len() { let (a,b) = b.split_at_mut(mid); let ref mut a = a[mid-1]; for b in b { defs.extend(eliminate_common_subexpression(a,b,f)); } }
 	for a in &mut *a { for b in &mut *b { defs.extend(eliminate_common_subexpression(a, b, f)); } }
 	defs
 }
 
-use {std::default::default, iter::map};
+use iter::map;
 
 pub struct Types(pub Box<[Option<Type>]>);
 impl Types {

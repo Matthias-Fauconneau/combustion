@@ -58,6 +58,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 				impl PartialEq for NASA7 { fn eq(&self, b: &Self) -> bool { self.0[0..6]==b.0[0..6] && f64::abs(self.0[6]-b.0[6])<3e-8 } }
 				has_duplicates(&*map(&*pieces, |&x| NASA7(x)))
 			} {
+				eprintln!("{}: Merged duplicate splines", specie["name"].as_str().unwrap());
 				assert!(pieces.len() == 2);
 				let temperature_ranges: Box<_> = temperature_ranges.try_into().unwrap();
 				let [min, _, max]: [f64; 3] = *temperature_ranges;
