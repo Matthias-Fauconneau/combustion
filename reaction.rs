@@ -230,8 +230,8 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let [a1T, a5rcpT, Gibbs0_RT] = thermodynamics(&species[0..active], [a1T as fn(&[f64;7],T,Cache)->Expression, a5rcpT, Gibbs0_RT], Ts, f, ["a1T","a5/T","Gibbs0/RT"]);
 	let Gibbs0_RT = map(a1T.iter().zip(&*a5rcpT).zip(Gibbs0_RT.into_vec()), |((a1T,a5rcpT),g)| -a1T.shallow()+g+a5rcpT.shallow());
 	let exp_Gibbs0_RT = map(Gibbs0_RT.into_vec(), |g| l!(f exp(g, f)));
-	let density = l!(f total_concentration / total_amount);
-	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| l!(f density*max(0., nonbulk_amount)));
+	let molar_density = l!(f total_concentration / total_amount);
+	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| l!(f molar_density*max(0., nonbulk_amount)));
 	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations, f).unwrap());
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let rates = reaction_rates(reactions, Ts, &C0, &rcp_C0, &exp_Gibbs0_RT, &concentrations, f);
