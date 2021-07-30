@@ -122,27 +122,25 @@ pub struct Pipeline {
 //impl std::ops::Deref for Pipeline { type Target = ash::vk::Pipeline; fn deref(&self) -> &Self::Target { &self.pipeline } }
 
 impl Device {
-	#[throws] pub fn pipeline<T>(&self, code: &[u32], local_size: u32, constants: &[u8], buffers: &[&Buffer<T>]) -> Pipeline {
+	#[throws] pub fn pipeline(&self, code: &[u32], local_size: u32, constants_len: usize, buffers_len: usize) -> Pipeline {
 		let ty = DescriptorType::STORAGE_BUFFER;
 		let stage_flags = ShaderStageFlags::COMPUTE;
-		let bindings = (0..buffers.len()).map(|binding| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: 1, stage_flags, ..default()}).collect::<Box<_>>();
+		let bindings = (0..buffers_len).map(|binding| DescriptorSetLayoutBinding{binding: binding as u32, descriptor_type: ty, descriptor_count: 1, stage_flags, ..default()}).collect::<Box<_>>();
 		let Self{device, ..} = self;
 		unsafe {
 			let module = device.create_shader_module(&ShaderModuleCreateInfo::builder().code(code), None)?;
-			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers.len() as u32}]).max_sets(1), None)?;
+			let descriptor_pool = device.create_descriptor_pool(&DescriptorPoolCreateInfo::builder().pool_sizes(&[DescriptorPoolSize{ty, descriptor_count: buffers_len as u32}]).max_sets(1), None)?;
 			let descriptor_set_layouts = [device.create_descriptor_set_layout(&DescriptorSetLayoutCreateInfo::builder().bindings(&bindings), None)?];
 			let layout = device.create_pipeline_layout(&PipelineLayoutCreateInfo::builder()
 				.set_layouts(&descriptor_set_layouts)
-				.push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants.len() as u32}]), None)?;
+				.push_constant_ranges(&[PushConstantRange{stage_flags, offset: 0, size: constants_len as u32}]), None)?;
 			pub fn as_u8<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())} }
 			let pipeline = [ComputePipelineCreateInfo{stage: PipelineShaderStageCreateInfo::builder().stage(stage_flags).module(module)
 				.name(&CStr::from_bytes_with_nul(b"main\0").unwrap())
 				.specialization_info(&SpecializationInfo::builder().map_entries(&[SpecializationMapEntry{constant_id:0, offset: 0, size: std::mem::size_of::<u32>()}]).data(as_u8(&local_size))) .build(),
 				layout, ..default() }];
-			//let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
-			dbg!();
-			let pipeline = device.create_compute_pipelines(default()/*pipeline_cache*/, &pipeline, None).map_err(|(_,e)| e)?[0];
-			dbg!();
+			let pipeline_cache = device.create_pipeline_cache(&default(), None)?;
+			let pipeline = device.create_compute_pipelines(pipeline_cache, &pipeline, None).map_err(|(_,e)| e)?[0];
 			//std::fs::write(std::env::var("XDG_RUNTIME_DIR").unwrap()+"/pipeline", device.get_pipeline_cache_data(pipeline_cache)?).unwrap();
 			let descriptor_set = device.allocate_descriptor_sets(&DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool).set_layouts(&descriptor_set_layouts))?[0];
 			Pipeline{_module: module, _descriptor_pool: descriptor_pool, descriptor_set, layout, pipeline}

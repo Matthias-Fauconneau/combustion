@@ -1,20 +1,20 @@
-#![feature(destructuring_assignment,format_args_capture)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(destructuring_assignment,format_args_capture,trait_alias,default_free_fn,in_band_lifetimes,unboxed_closures,fn_traits)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
-use {anyhow::Result, iter::{list, map}};
+use {anyhow::Result, iter::{list, map}, combustion::*, device::*};
 fn main() -> Result<()> {
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
 	let model = yaml::parse(&model);
-	use combustion::*;
-	let (ref species_names, ref species) = Species::new(&model.species);
-	let reactions = map(&*model.reactions, |r| Reaction::new(species_names, r));
+	let (ref species_names, ref species, _, reactions, ref _state) = new(&model);
 	let rates = reaction::rates(&species.thermodynamics, &reactions);
-	let rates = device::assemble(&rates);
+	#[cfg(not(feature="f32"))] type T = f64;
+	#[cfg(feature="f32")] type T = f32;
+	let rates = assemble::<T>(rates, 1);
 
 	let State{pressure_R, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
 		s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
 	}
-	let amounts = map(&**species_names, |s| *parse("CH4:1,O2:2,N2:2").get(s).unwrap_or(&0.));
+	let amounts = map(&**species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
 	let mut input = list([list([total_amount as _])].into_iter().chain(state.iter().map(|&v| list([v as _]))));
@@ -23,9 +23,11 @@ fn main() -> Result<()> {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
-		for (input, &u) in input[2..].iter_mut().zip(u) { input[0] = u as _; }
+		assert!(u.iter().all(|u| u.is_finite()));
+		for (input, &u) in input[1..].iter_mut().zip(u) { input[0] = u as _; }
 		let output = rates(&[pressure_R as _], &map(&*input, |input| &**input)).unwrap();
-		for (f_u, output) in f_u.iter_mut().zip(&*output) { *f_u = output[0] as _; }
+		assert!(output.iter().all(|u| u[0].is_finite()), "{input:?} {output:?}");
+		for (f_u, output) in f_u.iter_mut().zip(&*output) { *f_u = all_same(output, 1) as _; }
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true
@@ -38,7 +40,7 @@ fn main() -> Result<()> {
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
-		//dbg!(time/plot_min_time, time, state[0]);
+		dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
 	//println!("T {}", state[0]);

@@ -5,8 +5,8 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 }
 mod polynomial {
 //#![feature(trait_alias)]#![allow(non_snake_case)]
-use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, Dot}};
-pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { Dot::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
+use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, DotN}};
+pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { DotN::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
 
 pub trait Vector<const N: usize> = IntoConstSizeIterator<N>+IntoIterator<Item=f64>;
 pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map}};
+use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map, Dot}};
 
 use super::{light_speed, kB, NA};
 const fine_structure : f64 = 7.2973525693e-3;
@@ -174,55 +174,21 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], polynomials: &Polynomials
 	let nonbulk_fractions= map(0..K-1, |k| l!(f rcp_amount*max(0., &nonbulk_amounts[k])));
 	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
 	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
-	let ref rcp_mean_molar_mass = l!(f 1./dot(&molar_mass, &mole_fractions));
+	let ref rcp_mean_molar_mass = l!(f 1./molar_mass.copied().dot(mole_fractions):Expression);
 	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
 	let ref VT = l!(f sqrt(T));
 	let ref TVTIP = l!(f T*VT/(pressure_R*NA*kB));
-	Function{output: list([
-		(VT/2.)*thermal_conductivityIVTI2(&polynomials.thermal_conductivityIVT, lnT, mole_fractions, f),
-		VT*viscosityIVT(molar_mass, &polynomials.VviscosityIVVT, lnT, mole_fractions, f),
-	].into_iter().chain(
-		PITVT_mixture_diffusion_coefficients(&polynomials.binary_thermal_diffusionITVT, lnT, mole_fractions, mass_fractions, f).map(|PITVTID| TVTIP*PITVTID)
-	)), statements: function.statements.into(), input: input.len(), values: values.into()}
+	Function{
+		output: list([
+			(VT/2.)*thermal_conductivityIVTI2(&polynomials.thermal_conductivityIVT, lnT, mole_fractions, f),
+			VT*viscosityIVT(molar_mass, &polynomials.VviscosityIVVT, lnT, mole_fractions, f),
+		].into_iter().chain(
+			PITVT_mixture_diffusion_coefficients(&polynomials.binary_thermal_diffusionITVT, lnT, mole_fractions, mass_fractions, f).map(|PITVTID| TVTIP*PITVTID)
+		)),
+		statements: function.statements.into(),
+		input: vec![Type::F64; input.len()].into(),
+		values: values.into()
+	}
 }}}
 
 pub fn properties<const D: usize>(species: &Species) -> Function { properties_(&species.molar_mass, &Polynomials::<D>::new(&species)) }
-
-pub fn properties_rust<const D: usize>(species@Species{molar_mass,..}: &Species) -> impl Fn(f64, f64, f64, &[f64]) -> (f64, f64, Box<[f64]>) +'_ {
-	assert!(D == 5);
-	let Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} = Polynomials::<D>::new(&species);
-	let K = molar_mass.len();
-	move |pressure_R: f64, total_amount: f64, T: f64, nonbulk_amounts: &[f64]| -> (f64, f64, Box<[f64]>) {
-	let lnT = f64::ln(T);
-	let lnT2 = sq(lnT);
-	let lnT3 = lnT2*lnT;
-	let lnT4 = lnT2*lnT2;
-	let ref rcp_amount = 1./total_amount;
-	let nonbulk_fractions= map(0..K-1, |k| rcp_amount*f64::max(0., nonbulk_amounts[k]));
-	let bulk_fraction= 1. - nonbulk_fractions.iter().sum::<f64>();
-	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
-	let mean_molar_mass : f64 = iter::dot(molar_mass.iter().copied().zip(mole_fractions.iter().copied()));
-	let ref rcp_mean_molar_mass = 1./mean_molar_mass;
-	let mass_fractions =	mole_fractions.iter().zip(&**molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
-	(
-		(f64::sqrt(T)/2.)*{
-			let thermal_conductivityIVT = map(&*thermal_conductivityIVT, |P| P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3 + P[4]*lnT4);
-	      (0..K).map(|k| mole_fractions[k] * thermal_conductivityIVT[k]).sum::<f64>() + 1. / (0..K).map(|k| mole_fractions[k] / thermal_conductivityIVT[k]).sum::<f64>()
-		},
-		f64::sqrt(T)*{
-			let VviscosityIVVT = map(&*VviscosityIVVT, |P| P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3 + P[4]*lnT4);
-			(0..K).map(|k|
-				mole_fractions[k] * sq(VviscosityIVVT[k]) / (0..K).map(|j| {
-					let Va = f64::sqrt(1./f64::sqrt(8.) * 1./f64::sqrt(1. + molar_mass[k]/molar_mass[j]));
-					mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k]/VviscosityIVVT[j])
-				}).sum::<f64>()
-			).sum::<f64>()
-		},
-		{
-			let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| {let P = binary_thermal_diffusionITVT[k*K+j]; P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3+ P[4]*lnT4}));
-			map(mass_fractions.into_iter().enumerate(), move |(k, mass_fraction)| T*f64::sqrt(T)/(pressure_R*NA*kB) * (1. - mass_fraction) / (0..K).filter(|&j| j != k).map(|j|
-				mole_fractions[j] / binary_thermal_diffusionITVT[std::cmp::max(k,j)][min(k,j)]
-			).sum::<f64>())
-		}
-	)
-}}

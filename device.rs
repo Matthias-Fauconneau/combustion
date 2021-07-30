@@ -50,28 +50,27 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	}
 }
 #[cfg(feature="vpu")] mod device {
-use {std::default::default, std::borrow::Borrow, iter::{list, map}, vulkan::*, super::*};
+use {std::{mem::size_of, default::default, borrow::Borrow}, iter::{list, map}, vulkan::*, super::*};
 pub struct Function<D: Borrow<Device>, T:Plain> {
 	device: D,
 	input_len: usize,
 	output_len: usize,
-	function: Box<[u32]>,
+	block_size: usize,
+	pipeline: Pipeline,
 	_marker: std::marker::PhantomData<T>,
 }
-pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, function,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
-	assert!((std::mem::size_of::<T>() == 4 || std::mem::size_of::<T>() == 8) && constants.len() == 1 && constants.len()+input.len() == *input_len);
+pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
+	assert!((size_of::<T>() == 4 || size_of::<T>() == 8) && constants.len() == 1 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
-	let local_size = std::cmp::min(512, states_len as u32);
 	let device = device.borrow();
 	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
 	let output = map(0..*output_len, |_| Buffer::new(device, &vec![default(); states_len]).unwrap());
 	let buffers = list(input.iter().chain(&*output));
-	let pipeline = device.pipeline(&function, local_size, as_u8(&constants), &buffers)?;
 	device.bind(pipeline.descriptor_set, &buffers)?;
-	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/local_size)?;
+	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(*block_size as u32))?;
 	for _ in 0..1 { // First iteration loads from host visible to device local memory
 		let time = device.submit_and_wait(command_buffer)?;
-		if states_len > 1 { println!("{local_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time); }
+		if states_len > 0 { println!("{block_size}: {:.0}K in {:.0}ms = {:.0}ns, {:.2}M/s", states_len as f32/1e3, time*1e3, time/(states_len as f32)*1e9, (states_len as f32)/1e6/time); }
 	}
 	Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 }
@@ -79,9 +78,11 @@ pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, 
 /*#[throws] pub fn assemble<'t>(device: &'t Device, function: &ast::Function) -> Function<&'t Device> {
 	Function{device, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function)?}
 }*/
-pub fn assemble<T:Plain+Convert>(function: ast::Function) -> Function<Device, T> {
+pub fn assemble<T:Plain+Convert>(function: ast::Function, block_size: usize) -> Function<Device, T> {
 	let function = T::convert(function);
-	Function{device: vulkan::Device::new().unwrap(), input_len: function.input.len(), output_len: function.output.len(), function: spirv::compile(1, &function).unwrap(), _marker: default()}
+	let device = vulkan::Device::new().unwrap();
+	let pipeline = device.pipeline(&spirv::compile(1, &function).unwrap(), block_size as u32, 1*size_of::<T>(), function.input.len()-1+function.output.len()).unwrap();
+	Function{device, input_len: function.input.len(), output_len: function.output.len(), block_size, pipeline, _marker: default()}
 }
 
 impl<D: Borrow<Device>, T:Plain+Default> FnOnce<(&[T], &[&[T]])> for Function<D,T> { type Output = self::Output<T>; extern "rust-call" fn call_once(mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call_mut(args) } }
@@ -90,6 +91,6 @@ impl<D: Borrow<Device>, T:Plain+Default> Fn<(&[T], &[&[T]])> for Function<D,T> {
 }
 pub use {device::*, ast::let_};
 pub fn all_same<T:PartialEq+Copy+std::fmt::Debug>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
-pub fn with_repetitive_input<T:Copy+PartialEq+std::fmt::Debug>(f: impl Fn(&[T],&[&[T]])->Output<T>, times: usize) -> impl Fn(&[T],&[T])->Result<Box<[T]>> {
+#[allow(dead_code)] pub fn with_repetitive_input<T:Copy+PartialEq+std::fmt::Debug>(f: impl Fn(&[T],&[&[T]])->Output<T>, times: usize) -> impl Fn(&[T],&[T])->Result<Box<[T]>> {
 	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times)))
 }
