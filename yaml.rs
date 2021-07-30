@@ -138,6 +138,6 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
 		species,
 		reactions,
-		time_step: 1e-5,
+		time_step: 1e-7,
 	}
 }

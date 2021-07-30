@@ -25,7 +25,7 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	use {std::default::default, iter::{list, map}, ast::*, super::*};
 	#[cfg(not(feature="interpret"))] pub trait Convert = super::Convert;
 	#[cfg(feature="interpret")] pub trait Convert = super::Convert+Into<interpret::DataValue>+From<interpret::DataValue>;
-	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
+	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
 		let input_len = function.input.len();
 		let output_len = function.output.len();
 		let function = T::convert(function);
@@ -75,9 +75,6 @@ pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, 
 	Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 }
 
-/*#[throws] pub fn assemble<'t>(device: &'t Device, function: &ast::Function) -> Function<&'t Device> {
-	Function{device, input_len: function.input, output_len: function.output.len(), function: spirv::compile(1, function)?}
-}*/
 pub fn assemble<T:Plain+Convert>(function: ast::Function, block_size: usize) -> Function<Device, T> {
 	let function = T::convert(function);
 	let device = vulkan::Device::new().unwrap();

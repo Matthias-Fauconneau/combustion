@@ -34,18 +34,18 @@ fn main() -> Result<()> {
 	};
 
 	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
-	let plot_min_time = 0.1;
+	let plot_min_time = 0.00005;
 	let (mut time, mut state) = (0., &*state);
 	let start = std::time::Instant::now();
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
-		dbg!(time/plot_min_time, time, state[0]);
+		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
-	//println!("T {}", state[0]);
+	println!("T {}", state[0]);
 	let mut min = 0f64;
-	let values = map(0..(0.2/model.time_step) as usize, |_| if let [temperature, active_amounts@..] = state {
+	let values = map(0..(0.0002/model.time_step) as usize, |_| if let [temperature, active_amounts@..] = state {
 		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature].into_boxed_slice(), map(active_amounts, |v| v/active_amounts.iter().sum::<f64>())].into_boxed_slice());
 		let next_time = time + model.time_step;
 		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
