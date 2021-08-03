@@ -204,7 +204,7 @@ fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 
 #[track_caller] fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
 	let [a,b] = [a.into(), b.into()];
-	assert!(!matches!(&*a, Expr::Div(_,_)) && !matches!(&*b, Expr::Div(_,_)), "({a:?}) * ({b:?})");
+	//assert!(!matches!(&*a, Expr::Div(_,_)) && !matches!(&*b, Expr::Div(_,_)), "({a:?}) * ({b:?})");
 	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a*b).into() } else {
 		for x in [&a,&b] { if let Some(x) = x.f32() { if x == 0. { return f64(0.).unwrap().into() } } }
 		if let Some(a) = a.f32() { if a==1. { return b; } else if a==-1. { return -b } }

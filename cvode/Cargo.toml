@@ -5,11 +5,8 @@ version= '0.0.0'
 authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
-[features]
-build_libraries= ['sundials-sys/build_libraries']
-
 [dependencies]
-sundials-sys= {git='https://github.com/jasondark/sundials-sys', default-features=false, features=['cvode']}
+sundials-sys= {git='https://github.com/Matthias-Fauconneau/sundials-sys', default-features=false, features=['cvode','nveccuda']}
 
 [lib]
 path= 'lib.rs'
