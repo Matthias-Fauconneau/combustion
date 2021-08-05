@@ -63,7 +63,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				&F64(value) => self.f64(*value),
 				Value(v) => self.values[v.0].unwrap().1,
 				Neg(x) => { let x = self.expr(x); self.f_negate(stype, None, x).unwrap() }
-				Max(a, b) => { let operands = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, operands).unwrap() }
+				Max(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, [a,b]).unwrap() }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
 				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(stype, None, a, b).unwrap() }
 				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
@@ -75,12 +75,12 @@ fn expr(&mut self, expr: &Expression) -> Value {
 			}
 		}
 		Expression::Block { statements, result } => {
-			for s in &**statements { self.push(s) }
+			for s in &**statements { self.extend(s) }
 			self.expr(result)
 		}
 	}
 }
-fn push(&mut self, s: &Statement) {
+fn extend(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
 		Value { id, value } => {
@@ -122,7 +122,6 @@ fn push(&mut self, s: &Statement) {
 }
 
 pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, rspirv::Error> {
-	assert!(constants_len==1);
 	let mut b = rspirv::Builder::new();
 	b.set_version(1, 5);
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
@@ -151,6 +150,8 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 			types.rtype(output)
 		})
 	};
+
+	assert!(constants_len==1);
 	let constant0_type = stype(&mut b, &ast.input[0]);
 	let block_struct_constants = b.type_struct([constant0_type]);
 	b.decorate(block_struct_constants, Block, []);
@@ -200,9 +201,9 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		let input = b.access_chain(storage_buffer_pointer, None, input, [index0, id]).unwrap();
 		(rtype, b.load(stype, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap())
 	});
-	let mut b = Builder{builder: b, gl, values: [constant0].into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect(),
+	let mut b = Builder{builder: b, gl, values: list([constant0].into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
 																	constants_f32: default(), constants_f64: default(), expressions: default(), names: &ast.values};
-	for s in &*ast.statements { b.push(s); }
+	for s in &*ast.statements { b.extend(s); }
 	for (expr, &(rtype, output)) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);
 		let stype = b.stype(&rtype);

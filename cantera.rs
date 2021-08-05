@@ -70,12 +70,12 @@ fn main() -> Result<()> {
 				fn trans_viscosity(n: i32) -> f64;
 				fn trans_getMixDiffCoeffs(n: i32, ldt: i32, dt: *mut f64) -> i32;
 			}
-			let transport = unsafe{trans_newDefault(phase, 0)};
-			let cantera_thermal_conductivity  = unsafe{trans_thermalConductivity(transport)};
-			let cantera_viscosity = unsafe{trans_viscosity(transport)};
+			let cantera_transport = unsafe{trans_newDefault(phase, 0)};
+			let cantera_thermal_conductivity  = unsafe{trans_thermalConductivity(cantera_transport)};
+			let cantera_viscosity = unsafe{trans_viscosity(cantera_transport)};
 			let ref cantera_mixture_diffusion_coefficients = {
 				let mut array = vec![0.; species.len()];
-				assert!(unsafe{trans_getMixDiffCoeffs(transport, array.len() as i32, array.as_mut_ptr())} == 0);
+				assert!(unsafe{trans_getMixDiffCoeffs(cantera_transport, array.len() as i32, array.as_mut_ptr())} == 0);
 				let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 				order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 			};
@@ -150,7 +150,7 @@ fn main() -> Result<()> {
 			Ok((k, e))
 		}
 	};
-	if true {
+	if false {
 		let mut random= rand::thread_rng();
 		let mut max = 0.;
 		for i in 0.. {

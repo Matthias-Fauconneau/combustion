@@ -13,6 +13,10 @@ impl Type {
 	pub fn bits(&self) -> u32 { use Type::*; match self { F32 => 32, F64 => 64 } }
 	pub fn bytes(&self) -> u32 { self.bits()/8 }
 }
+impl std::fmt::Display for Type { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> { use Type::*; match self {
+	F32 => write!(f, "f32"),
+	F64 => write!(f, "f64")
+} } }
 
 use ordered_float::NotNan;
 type R32 = NotNan<f32>;
