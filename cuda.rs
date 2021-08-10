@@ -134,6 +134,7 @@ fn main() -> Result<()> {
 	let mixture_diffusion_coefficient = sq(length) / time;
 	let transport = transport::properties::<5>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
 	let transport = compile(0, transport);
+	let transport = (|mut s|{ for k in 0..species.len()-1 { let i = format!("in{}", 2+k); s = s.replace(i+"[]",i).replace(i+"[id]", i); } s})(transport);
 	eprintln!("{}", transport.lines().map(|l| l.len()).max().unwrap());
 	println!("{}", transport);
 	println!("void nekrk_transport(
