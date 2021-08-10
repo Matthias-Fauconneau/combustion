@@ -111,15 +111,43 @@ const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 mod yaml;
-use {anyhow::{Result, Context}, std::env::*, combustion::*};
+use {anyhow::{Result, Context}, num::sq, iter::Dot, std::env::*, combustion::*};
 
 fn main() -> Result<()> {
-	let path = args().skip(1).next().unwrap();
+	let path = args().skip(1).next().unwrap_or("gri30".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
-	let (ref _species_names, ref species, _, _, ref _state) = new(&model);
-	let transport = transport::properties::<5>(&species);
-	println!("{}", compile(1, transport));
+	let (ref _species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, _, State{amounts, temperature, pressure_R, ..}) = new(&model);
+	let total_amount = amounts.iter().sum::<f64>();
+	let mole_fractions = map(&*amounts, |n| n/total_amount);
+	let length = 1.;
+	let velocity = 1.;
+	let time = length / velocity;
+	let concentration = pressure_R / temperature;
+	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
+	let density = concentration * mean_molar_mass;
+	let Vviscosity = f64::sqrt(density * time) * velocity;
+	let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
+	let R = kB*NA;
+	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
+	let mixture_diffusion_coefficient = sq(length) / time;
+	let transport = transport::properties::<5>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
+	let transport = compile(0, transport);
+	eprintln!("{}", transport.lines().map(|l| l.len()).max().unwrap());
+	println!("{}", transport);
+	println!("void nekrk_transport(
+	const f64 total_amount,
+	const f64 temperature[],
+	const f64 nonbulk_amounts[],
+	f64 thermal_conductivity[],
+	f64 viscosity[],
+	f64 density_mixture_diffusion_coefficients[][]
+) {{
+	return kernel(pressure, total_amount, temperature, {nonbulk_amounts}, thermal_conductivity, viscosity, {mixture_diffusion_coefficients});
+}}",
+nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
+mixture_diffusion_coefficients=(0..species.len()).map(|i| format!("mixture_diffusion_coefficients[{i}]")).format(", "),
+);
 	Ok(())
 }

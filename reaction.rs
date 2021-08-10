@@ -1,5 +1,5 @@
 //#![feature(associated_type_bounds,bindings_after_at,array_map,format_args_capture,trait_alias,array_zip)]#![allow(uncommon_codepoints,confusable_idents,non_snake_case)]
-fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl std::iter::IntoIterator<Item=(I::Item, Vec<usize>)> {
+pub fn bucket<I:IntoIterator<Item:Eq>>(iter: I) -> impl std::iter::IntoIterator<Item=(I::Item, Vec<usize>)> {
 	let mut map = linear_map::LinearMap::<_, Vec<_>>::new();
 	for (index, key) in iter.into_iter().enumerate() { map.entry(key).or_insert(Default::default()).push(index) }
 	map

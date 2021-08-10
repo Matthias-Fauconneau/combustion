@@ -5,6 +5,7 @@ use {iter::map, anyhow::{Result, Context}, itertools::Itertools, std::env::*, co
 fn main() -> Result<()> {
 	color_backtrace::install();
 	let path = args().skip(1).next().unwrap();
+	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let states_len = args().skip(2).next().as_ref().map(|a| 1<<str::parse::<u8>(a).unwrap()).unwrap_or(1);
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
