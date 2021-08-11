@@ -157,6 +157,7 @@ pub fn f64(x: f64) -> Result<Expr,Expr> { assert!(x.is_finite()); let r=Expr::F6
 pub trait From_<F> { fn from(_: F) -> Self; }
 //impl From_<f32> for Option<Expr> { fn from(x: f32) -> Option<Expr> { f32(x) } }
 impl From_<f64> for Result<Expr,Expr> { fn from(x: f64) -> Result<Expr,Expr> { f64(x) } }
+impl From_<&f64> for Result<Expr,Expr> { fn from(x: &f64) -> Result<Expr,Expr> { f64(*x) } }
 impl<F> From<F> for Expr where Result<Expr,Expr>: From_<F> { fn from(x: F) -> Expr { let x:Result<Expr,Expr> = From_::from(x); x.unwrap() } }
 //impl From<f32> for Expr where Option<Expr>: From_<F> { fn from(x: F) -> Expr { let x:Option<Expr> = From_::from(x); x.unwrap() } }
 impl From<Value> for Expr { fn from(x: Value) -> Expr { Expr::Value(x) } }
@@ -272,6 +273,10 @@ impl std::ops::Add<&Value> for f64 { type Output = Expression; fn add(self, b: &
 impl std::ops::Sub<&Value> for f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
 impl std::ops::Mul<&Value> for f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
 impl std::ops::Div<&Value> for f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
+impl std::ops::Add<&Value> for &f64 { type Output = Expression; fn add(self, b: &Value) -> Self::Output { add(self, b) } }
+impl std::ops::Sub<&Value> for &f64 { type Output = Expression; fn sub(self, b: &Value) -> Self::Output { sub(self, b) } }
+impl std::ops::Mul<&Value> for &f64 { type Output = Expression; fn mul(self, b: &Value) -> Self::Output { mul(self, b) } }
+impl std::ops::Div<&Value> for &f64 { type Output = Expression; fn div(self, b: &Value) -> Self::Output { div(self, b) } }
 
 pub struct Block<'t> {
 	pub statements: Vec<Statement>,

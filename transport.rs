@@ -1,4 +1,4 @@
-//#![feature(trait_alias,once_cell,array_methods,array_map,in_band_lifetimes,bindings_after_at)]#![allow(uncommon_codepoints,non_upper_case_globals,non_snake_case)]
+//#![feature(trait_alias,once_cell,array_methods,array_map,in_band_lifetimes,bindings_after_at,iter_zip)]#![allow(uncommon_codepoints,non_upper_case_globals,non_snake_case)]
 fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
@@ -6,7 +6,7 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 mod polynomial {
 //#![feature(trait_alias)]#![allow(non_snake_case)]
 use {num::sq, iter::{IntoIterator, ConstRange, IntoConstSizeIterator, DotN}};
-pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { DotN::dot(P, ConstRange.map(|k| x.powi(k as i32))) }
+pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { P.dot(ConstRange.map(|k| x.powi(k as i32))) }
 
 pub trait Vector<const N: usize> = IntoConstSizeIterator<N>+IntoIterator<Item=f64>;
 pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>, w: impl Vector<N>) -> [f64; D] {
@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map, Dot}};
+use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map, Suffix, DotN}};
 
 use super::{light_speed, kB, NA};
 const fine_structure : f64 = 7.2973525693e-3;
@@ -127,12 +127,9 @@ pub fn new(species: &Species) -> Self {
 
 use ast::*;
 
-pub fn thermal_conductivityIVTI2<const D: usize>(thermal_conductivityIVT: &[[f64; D]], [lnT, lnT2, lnT3, lnT4]: &[Value; 4], mole_fractions: &[Value], f: &mut Block) -> Expression  {
-	assert!(D == 5);
-	let K = thermal_conductivityIVT.len();
-	let ref thermal_conductivityIVT = map(thermal_conductivityIVT, |P| l!(f P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3 + P[4]*lnT4));
-	      (0..K).map(|k| &mole_fractions[k] * &thermal_conductivityIVT[k]).sum::<Expression>() +
-	1. / (0..K).map(|k| &mole_fractions[k] / &thermal_conductivityIVT[k]).sum::<Expression>()
+pub fn thermal_conductivityIVTI2<const D: usize>(thermal_conductivityIVT: &[[f64; 1+D]], lnT: &[Value; D], mole_fractions: &[Value], f: &mut Block) -> Expression  {
+	let (a, b) = zip(mole_fractions, thermal_conductivityIVT).map(|(X, P)| { let y=l!(f P[0] + P.suffix().dot(lnT):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
+	a + 1./b
 }
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], [lnT, lnT2, lnT3, lnT4]: &[Value; 4], mole_fractions: &[Value], f: &mut Block) -> Expression {
@@ -159,13 +156,13 @@ pub fn PITVT_mixture_diffusion<'t, const D: usize>(binary_thermal_diffusionITVT:
 	).sum::<Expression>())
 }
 
-pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} : &Polynomials<D>,
+pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} : &Polynomials<{1+D}>,
 	temperature0: f64, Vviscosity: f64, thermal_conductivity: f64, density_mixture_diffusion: f64) -> Function {
 	let lnT0 = f64::ln(temperature0);
 	let ln2T0 = sq(lnT0);
 	let ln3T0 = ln2T0*lnT0;
-	let scale = |u, P:&[f64;D]| {
-		assert!(D==4);
+	let scale = |u, P:&[f64;1+D]|->[f64;1+D] {
+		assert!(D==3);
 		[(P[0]-P[1]*lnT0+P[2]*ln2T0-P[3]*ln3T0)/u, (P[1]-2.*P[2]*lnT0+3.*ln2T0)/u, (P[2]-3.*lnT0)/u, P[3]/u]
 	};
 	let VviscosityIVVT = map(&**VviscosityIVVT, |P| scale(Vviscosity, P));
@@ -179,14 +176,13 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let ref mut f = function;
 	let T = temperature;
 	let lnT = l!(f ln(1024., T, f));
-	let lnT2 = l!(f sq(&lnT));
-	let lnT3 = l!(f &lnT2*&lnT);
-	let lnT4 = l!(f &lnT2*&lnT2);
-	let ref lnT = [lnT, lnT2, lnT3, lnT4];
+	//let ref lnT =.ConstRange.scan(lnT, |_| { let y = *v; *v = *v * x; y }); // Would need a scan(||->T) i.e without early return and thus with impl ExactSize
+	let ref lnT = {let mut v=lnT.into(); [(); D].map(|()| { let y = v; v = v * lnT; l!(f y) })};
 	let ref rcp_total_amount = l!(f 1./total_amount);
 	let nonbulk_fractions= map(0..K-1, |k| l!(f rcp_total_amount*max(0., &nonbulk_amounts[k])));
 	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
 	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
+	use iter::Dot;
 	let ref mean_molar_mass = l!(f molar_mass.copied().dot(mole_fractions):Expression);
 	let ref rcp_mean_molar_mass = l!(f 1./mean_molar_mass);
 	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);

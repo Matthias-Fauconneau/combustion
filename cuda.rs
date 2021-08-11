@@ -118,9 +118,9 @@ fn main() -> Result<()> {
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
-	let (ref _species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, _, State{amounts, temperature, pressure_R, ..}) = new(&model);
+	let (ref _species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, _, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 	let total_amount = amounts.iter().sum::<f64>();
-	let mole_fractions = map(&*amounts, |n| n/total_amount);
+	let mole_fractions = map(&**amounts, |n| n/total_amount);
 	let length = 1.;
 	let velocity = 1.;
 	let time = length / velocity;
@@ -132,7 +132,7 @@ fn main() -> Result<()> {
 	let R = kB*NA;
 	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
 	let mixture_diffusion_coefficient = sq(length) / time;
-	let transport = transport::properties::<5>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
+	let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
 	let transport = compile(0, transport);
 	let transport = (|mut s:String|{ for k in 0..species.len()-1 { let i = format!("in{}", 2+k); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); } s})(transport);
 	eprintln!("{}", transport.lines().map(|l| l.len()).max().unwrap());
