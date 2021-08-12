@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map, Suffix, DotN}};
+use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{IntoConstSizeIterator, ConstRange, Copied, list, map, Suffix, DotN, into::IntoEnumerate}};
 
 use super::{light_speed, kB, NA};
 const fine_structure : f64 = 7.2973525693e-3;
@@ -132,24 +132,23 @@ pub fn thermal_conductivityIVTI2<const D: usize>(thermal_conductivityIVT: &[[f64
 	a + 1./b
 }
 
-pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], [lnT, lnT2, lnT3, lnT4]: &[Value; 4], mole_fractions: &[Value], f: &mut Block) -> Expression {
-	assert!(D == 5);
+pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 1+D]], lnT: &[Value; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
 	let K = VviscosityIVVT.len();
-	let ref VviscosityIVVT = map(VviscosityIVVT, |P| l!(f P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3 + P[4]*lnT4));
+	let VviscosityIVVT = map(VviscosityIVVT, |P| l!(f P[0] + P.suffix().dot(lnT):Expression));
+	let ref rcp_VviscosityIVVT = map(&*VviscosityIVVT, |x| l!(f 1./x));
 	sum((0..K).map(|k|
 		&mole_fractions[k] * sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
 			let Va = f64::sqrt(1./f64::sqrt(8.) * 1./f64::sqrt(1. + molar_mass[k]/molar_mass[j]));
 			let mut sq = |x| { let ref x=l!(f x); x*x };
-			&mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * &VviscosityIVVT[k]/&VviscosityIVVT[j])
+			&mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j])
 		}))
 	))
 }
 
-pub fn PITVT_mixture_diffusion<'t, const D: usize>(binary_thermal_diffusionITVT: &[[f64; D]], [lnT, lnT2, lnT3, lnT4]: &[Value; 4], mole_fractions: &'t [Value], mass_fractions: impl 't+IntoIterator<Item=Expression>, f: &mut Block) -> impl 't+Iterator<Item=Expression> {
-	assert!(D == 5);
+pub fn PITVT_mixture_diffusion<'t, const D: usize>(binary_thermal_diffusionITVT: &[[f64; 1+D]], lnT: &[Value; D], mole_fractions: &'t [Value], mass_fractions: impl 't+IntoIterator<Item=Expression>, f: &mut Block) -> impl 't+Iterator<Item=Expression> {
 	let K = mole_fractions.len();
 	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j|
-		{let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P[0] + P[1]*lnT + P[2]*lnT2 + P[3]*lnT3+ P[4]*lnT4)}
+		{let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P[0] + P.suffix().dot(lnT):Expression)}
 	));
 	mass_fractions.into_iter().enumerate().map(move |(k, mass_fraction)| (1. - mass_fraction) / (0..K).filter(|&j| j != k).map(|j|
 		&mole_fractions[j] / &binary_thermal_diffusionITVT[std::cmp::max(k,j)][min(k,j)]
@@ -157,13 +156,14 @@ pub fn PITVT_mixture_diffusion<'t, const D: usize>(binary_thermal_diffusionITVT:
 }
 
 pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} : &Polynomials<{1+D}>,
-	temperature0: f64, Vviscosity: f64, thermal_conductivity: f64, density_mixture_diffusion: f64) -> Function {
-	let lnT0 = f64::ln(temperature0);
-	let ln2T0 = sq(lnT0);
-	let ln3T0 = ln2T0*lnT0;
+	temperature0: f64, Vviscosity: f64, thermal_conductivity: f64, density_mixture_diffusion: f64) -> Function where [(); 1+D]: {
+	// (x+y)^n = (0..=n).sum(|k| binomial(n,k)*x^k*y^(n-k)) = (0..=n).sum(|k| binomial(n,k)*x^(n-k)*y^k)
+	// (lnT')^n = ln(T0*T)^n = (lnT0+lnT)^n = (0..=n).sum(|k| binomial(n,k)*lnT0^(n-k)*lnT^k)
 	let scale = |u, P:&[f64;1+D]|->[f64;1+D] {
-		assert!(D==3);
-		[(P[0]-P[1]*lnT0+P[2]*ln2T0-P[3]*ln3T0)/u, (P[1]-2.*P[2]*lnT0+3.*ln2T0)/u, (P[2]-3.*lnT0)/u, P[3]/u]
+		fn factorial(n: usize) -> usize { (1..=n).product() }
+		fn binomial(n: usize, k: usize) -> usize { factorial(n) / (factorial(n - k) * factorial(k)) }
+		let lnT0 = |n| f64::powi(f64::ln(temperature0), n as i32);
+		P.enumerate().map(|(k,P)| (0..=D).map(|n| binomial(n,k) as f64*lnT0(n-k)).sum::<f64>()*P/u).collect()
 	};
 	let VviscosityIVVT = map(&**VviscosityIVVT, |P| scale(Vviscosity, P));
 	let thermal_conductivityIVT = map(&**thermal_conductivityIVT, |P| scale(2.*thermal_conductivity, P));
@@ -177,7 +177,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let T = temperature;
 	let lnT = l!(f ln(1024., T, f));
 	//let ref lnT =.ConstRange.scan(lnT, |_| { let y = *v; *v = *v * x; y }); // Would need a scan(||->T) i.e without early return and thus with impl ExactSize
-	let ref lnT = {let mut v=lnT.into(); [(); D].map(|()| { let y = v; v = v * lnT; l!(f y) })};
+	let ref lnT = {let mut x:Expression=(1.).into(); [(); D].map(|()| { x = x * lnT; l!(f x) })};
 	let ref rcp_total_amount = l!(f 1./total_amount);
 	let nonbulk_fractions= map(0..K-1, |k| l!(f rcp_total_amount*max(0., &nonbulk_amounts[k])));
 	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
@@ -201,6 +201,6 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	}
 }}}
 
-pub fn properties<const D: usize>(species: &Species, temperature: f64, sqrt_viscosity: f64, thermal_conductivity: f64, density_mixture_diffusion_coefficient: f64) -> Function {
-	properties_(&species.molar_mass, &Polynomials::<D>::new(&species), temperature, sqrt_viscosity, thermal_conductivity, density_mixture_diffusion_coefficient)
+pub fn properties<const D: usize>(species: &Species, temperature: f64, sqrt_viscosity: f64, thermal_conductivity: f64, density_mixture_diffusion_coefficient: f64) -> Function where [(); 1+D]: {
+	properties_(&species.molar_mass, &Polynomials::<{1+D}>::new(&species), temperature, sqrt_viscosity, thermal_conductivity, density_mixture_diffusion_coefficient)
 }
