@@ -51,15 +51,16 @@ fn main() -> Result<()> {
 		let Vviscosity = f64::sqrt(density * time) * velocity;
 		let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 		let R = kB*NA;
-		let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
-		let mixture_diffusion_coefficient = sq(length) / time;
-		let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
+		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
+		let mixture_diffusion = sq(length) / time;
+		let transport = transport::properties::<5>(&species, temperature, Vviscosity, thermal_conductivity0, density*mixture_diffusion);
 		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
+		{let temperature0 = temperature;
 		move |pressure_R: T, total_amount: T, temperature: T, nonbulk_amounts: &[T]| -> (T, T, Box<[T]>) {
-			let_!{ [thermal_conductivity, viscosity, mixture_diffusion_coefficients @ ..] = &*transport(&[pressure_R as _], &([&[total_amount, temperature], &*nonbulk_amounts].concat())).unwrap() => {
-				(*thermal_conductivity, *viscosity, mixture_diffusion_coefficients.into())
+			let_!{ [thermal_conductivity, viscosity, mixture_diffusions @ ..] = &*transport(&[pressure_R as _], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
+				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(mixture_diffusions, |D| density*mixture_diffusion*D))
 			}}
-		}
+		}}
 	};
 
 	let ε= 2e-6;
@@ -92,8 +93,8 @@ fn main() -> Result<()> {
 				let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 				order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 			};
-			//eprintln!("Cantera");
-			//eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion_coefficients.iter().format(" "));
+			eprintln!("Cantera");
+			eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion_coefficients.iter().format(" "));
 			let State{temperature, pressure_R, amounts, ..} = state;
 			let temperature = *temperature as _;
 			let pressure_R = *pressure_R as _;

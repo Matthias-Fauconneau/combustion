@@ -127,7 +127,7 @@ pub fn new(species: &Species) -> Self {
 
 use ast::*;
 
-pub fn thermal_conductivityIVTI2<const D: usize>(thermal_conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression  {
+pub fn thermal_conductivityIVT<const D: usize>(thermal_conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression  {
 	// zip(mole_fractions, thermal_conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
 	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
 	for (X, P) in zip(mole_fractions, thermal_conductivityIVT) {
@@ -167,10 +167,10 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	// (x+y)^n = (0..=n).sum(|k| binomial(n,k)*x^k*y^(n-k)) = (0..=n).sum(|k| binomial(n,k)*x^(n-k)*y^k)
 	// (lnT')^n = ln(T0*T)^n = (lnT0+lnT)^n = (0..=n).sum(|k| binomial(n,k)*lnT0^(n-k)*lnT^k)
 	let scale = |u, P:&[_; D]| {
-		fn factorial(n: usize) -> usize { (1..=n).product() }
-		fn binomial(n: usize, k: usize) -> usize { factorial(n) / (factorial(n - k) * factorial(k)) }
+		fn factorial(n: usize) -> usize { assert!(n<5); (1..=n).product() }
+		fn binomial(n: usize, k: usize) -> usize { assert!(k<=n); factorial(n) / (factorial(n - k) * factorial(k)) }
 		let lnT0 = |n| f64::powi(f64::ln(temperature0), n as i32);
-		P.enumerate().map(|(k,P)| (0..D).map(|n| binomial(n,k) as f64*lnT0(n-k)).sum::<f64>()*P/u).collect()
+		P.enumerate().map(|(k,P)| (k..D).map(|n| binomial(n,k) as f64*lnT0(n-k)).sum::<f64>()*P/u).collect()
 	};
 	let VviscosityIVVT = map(&**VviscosityIVVT, |P| scale(Vviscosity, P));
 	let thermal_conductivityIVT = map(&**thermal_conductivityIVT, |P| scale(2.*thermal_conductivity, P));
@@ -198,7 +198,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let ref density_TVTIP = l!(f mean_molar_mass * VT);
 	Function{
 		output: list([
-			(VT/2.)*thermal_conductivityIVTI2(&thermal_conductivityIVT, lnT, mole_fractions, f),
+			VT*self::thermal_conductivityIVT(&thermal_conductivityIVT, lnT, mole_fractions, f),
 			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_fractions, f),
 		].into_iter().chain(
 			PITVT_mixture_diffusion(&binary_thermal_diffusionITVT, lnT, mole_fractions, mass_fractions, f).map(|PITVTID| density_TVTIP*PITVTID)
