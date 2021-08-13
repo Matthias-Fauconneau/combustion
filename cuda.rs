@@ -102,7 +102,7 @@ pub fn compile(constants_len: usize, ast: ast::Function) -> String {
 		let value = b.expr(expr);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
-	format!(r#"__global__ void kernel({parameters}) {{"
+	format!(r#"__global__ void function({parameters}) {{"
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
 {instructions}
@@ -131,24 +131,27 @@ fn main() -> Result<()> {
 	let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 	let R = kB*NA;
 	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
-	let mixture_diffusion_coefficient = sq(length) / time;
-	let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion_coefficient);
+	let mixture_diffusion = sq(length) / time;
+	let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion);
 	let transport = compile(0, transport);
-	let transport = (|mut s:String|{ for k in 0..species.len()-1 { let i = format!("in{}", 2+k); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); } s})(transport);
+	let shim = |mut s: String| {
+		s = s.replace("__global__","");
+		for k in 0..species.len()-1 { let i = format!("in{}", 2+k); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); } s
+	};
+	let transport = shim(transport);
 	eprintln!("{}", transport.lines().map(|l| l.len()).max().unwrap());
 	println!("{}", transport);
-	println!("void nekrk_transport(
-	const f64 total_amount,
-	const f64 temperature[],
+	println!("{}",format!("void nekrk_transport_density_mixture_diffusion(
+	const f64 VT,
+	const f64 lnT, const f64 lnT2, const f64 lnT3,
 	const f64 nonbulk_amounts[],
-	f64 thermal_conductivity[],
-	f64 viscosity[],
-	f64 density_mixture_diffusion_coefficients[][]
+	const f64 rcp_total_amount,
+	f64* density_mixture_diffusion[]
 ) {{
-	return kernel(pressure, total_amount, temperature, {nonbulk_amounts}, thermal_conductivity, viscosity, {mixture_diffusion_coefficients});
+	return function(1./rcp_total_amount, VT*VT, {nonbulk_amounts}, density_mixture_diffusion[0], density_mixture_diffusion[0], {density_mixture_diffusion});
 }}",
 nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
-mixture_diffusion_coefficients=(0..species.len()).map(|i| format!("mixture_diffusion_coefficients[{i}]")).format(", "),
-);
+density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
+).replace("f64","dfloat"));
 	Ok(())
 }
