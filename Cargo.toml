@@ -5,7 +5,7 @@ bin=[
 	{name='main', path='main.rs', required-features=['main']},
 	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['main','plot']},
-	{name='cuda', path='cuda.rs', required-features=['main','transport']},
+	{name='cuda', path='cuda.rs', required-features=['main','transport','cuda']},
 	{name='info', path='info.rs', required-features=['main']},
 ]
 
@@ -48,3 +48,4 @@ ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
 libc={optional=true, version='*'}
+cuda= {optional=true, package='rustacuda', version='*'}

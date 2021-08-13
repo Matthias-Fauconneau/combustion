@@ -78,8 +78,25 @@ fn product_of_exponentiations<I:iter::IntoExactSizeIterator,N:Copy+Into<i16>>(v:
 	product_of_exponentiations__(v, n.map(|x:<I as iter::IntoIterator>::Item| *x), f)
 }
 
-//pub fn dotv(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>) -> Option<Expression> { iter.into_iter().map(|(c,e)| c*e.into()).sum() }
-//#[track_caller] pub fn dotv(c: &[f64], v: impl IntoIterator<Item:Into<Expression>>) -> Option<Expression> { zdotv(c.iter().copied().zip(v)) }
+fn product_of_exponentiations_rcp_<N:Into<i16>>(iter: impl IntoIterator<Item=((&'t Value, &'t Value), N)>, f: &mut Block) -> Expr {
+	let (num, div) : (Vec::<_>,Vec::<_>) = iter.into_iter().map(|((v,rcp),n)| (v,rcp,n.into())).filter(|&(_,_,n)| n!=0).partition(|&(_,_,n)| n>0);
+	let num = num.into_iter().fold(None, |mut p:Option<Expr>, (v,_,n)|{ for _ in 0..n { p = Some(match p { Some(p) => le!(f; p*v), None => v.into() }); } p });
+	let div = div.into_iter().fold(None, |mut p:Option<Expr>, (_,rcp,n)|{ for _ in 0..-n { p = Some(match p { Some(p) => le!(f; p*rcp), None => rcp.into() }); } p });
+	match (num, div) {
+		(None, None) => None,
+		(Some(num), None) => Some(num),
+		(None, Some(div)) => Some(div),
+		(Some(num), Some(div)) => Some(le!(f; num*div))
+	}.unwrap()
+}
+fn product_of_exponentiations_rcp__<N:iter::IntoExactSizeIterator>(v: &[Value], rcp: &[Value], n: N, f: &mut Block) -> Expr where <N as iter::IntoIterator>::Item:Into<i16> {
+	use iter::Zip;
+	product_of_exponentiations_rcp_(v.zip(rcp).zip(n), f)
+}
+fn product_of_exponentiations_rcp<I:iter::IntoExactSizeIterator,N:Copy+Into<i16>>(v: &[Value], rcp: &[Value], n: I, f: &mut Block) -> Expr where <I as iter::IntoIterator>::Item:Deref<Target=N> {
+	use iter::Map;
+	product_of_exponentiations_rcp__(v, rcp, n.map(|x:<I as iter::IntoIterator>::Item| *x), f)
+}
 
 #[derive(Clone,Copy)] struct T { lnT: Value, T: Value, T2: Value, T3: Value, T4: Value, rcpT: Value, rcpT2: Value}
 
@@ -191,12 +208,14 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 	}
 }
 
-fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, exp_Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Value]> {
+fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, Gibbs0_RT: &[Value], concentrations: &[Value], f: &mut Block) -> Box<[Value]> {
+	let exp_Gibbs0_RT = map(&*Gibbs0_RT, |g| l!(f exp(g, f)));
+	let rcp_exp_Gibbs0_RT = map(&*Gibbs0_RT, |g| l!(f exp(-g, f)));
 	map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f);
 		let forward = product_of_exponentiations(concentrations, reactants, f);
 		let coefficient = if let ReactionModel::Irreversible = model { forward } else {
-			let rcp_equilibrium_constant_0 = product_of_exponentiations(exp_Gibbs0_RT, net, f);
+			let rcp_equilibrium_constant_0 = product_of_exponentiations_rcp(&exp_Gibbs0_RT, &rcp_exp_Gibbs0_RT, net, f);
 			//let rcp_equilibrium_constant_0 = exp(dot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0,
@@ -228,13 +247,12 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let total_concentration = l!(f pressure_R / T); // Constant pressure
 	let Ts = T{lnT, T: *T,T2,T3,T4,rcpT,rcpT2};
 	let [a1T, a5rcpT, Gibbs0_RT] = thermodynamics(&species[0..active], [a1T as fn(&[f64;7],T,Cache)->Expression, a5rcpT, Gibbs0_RT], Ts, f, ["a1T","a5/T","Gibbs0/RT"]);
-	let Gibbs0_RT = map(a1T.iter().zip(&*a5rcpT).zip(Gibbs0_RT.into_vec()), |((a1T,a5rcpT),g)| -a1T.shallow()+g+a5rcpT.shallow());
-	let exp_Gibbs0_RT = map(Gibbs0_RT.into_vec(), |g| l!(f exp(g, f)));
+	let Gibbs0_RT = map(a1T.iter().zip(&*a5rcpT).zip(Gibbs0_RT.into_vec()), |((a1T,a5rcpT),g)| l!(f -a1T.shallow()+g+a5rcpT.shallow()));
 	let molar_density = l!(f total_concentration / total_amount);
 	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| l!(f molar_density*max(0., nonbulk_amount)));
 	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations, f).unwrap());
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
-	let rates = reaction_rates(reactions, Ts, &C0, &rcp_C0, &exp_Gibbs0_RT, &concentrations, f);
+	let rates = reaction_rates(reactions, Ts, &C0, &rcp_C0, &Gibbs0_RT, &concentrations, f);
 	pub fn dot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>, f: &mut Block) -> Option<Expression> {
 		iter.into_iter().filter(|&(c,_)| c != 0.).fold(None, |sum, (c, e)| {
 			let e = e.into();

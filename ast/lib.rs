@@ -3,6 +3,7 @@
 //#![recursion_limit="5"]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
+#[macro_export] macro_rules! let_mut { { $p:pat = $e:expr => $b:block } => { if let mut $p = $e { $b } else { unreachable!() } } }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)] pub struct Value(pub usize);
 impl From<&Value> for Value { fn from(x: &Value) -> Value { x.clone() } }

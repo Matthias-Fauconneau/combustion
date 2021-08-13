@@ -1,4 +1,4 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip)]
+#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,bool_to_option)]
 #![allow(non_snake_case,non_upper_case_globals)]
 
 use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
@@ -111,7 +111,7 @@ const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 mod yaml;
-use {anyhow::{Result, Context}, num::sq, iter::Dot, std::env::*, combustion::*};
+use {anyhow::{Result, Context, anyhow as err}, num::sq, iter::Dot, std::env::*, combustion::*};
 
 fn main() -> Result<()> {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
@@ -132,26 +132,26 @@ fn main() -> Result<()> {
 	let R = kB*NA;
 	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
 	let mixture_diffusion = sq(length) / time;
-	let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion);
-	let transport = compile(0, transport);
-	let shim = |mut s: String| {
-		s = s.replace("__global__","");
-		for k in 0..species.len()-1 { let i = format!("in{}", 2+k); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); } s
-	};
-	let transport = shim(transport);
-	eprintln!("{}", transport.lines().map(|l| l.len()).max().unwrap());
-	println!("{}", transport);
-	println!("{}",format!("void nekrk_transport_density_mixture_diffusion(
-	const f64 VT,
-	const f64 lnT, const f64 lnT2, const f64 lnT3,
-	const f64 nonbulk_amounts[],
-	const f64 rcp_total_amount,
-	f64* density_mixture_diffusion[]
-) {{
-	return function(1./rcp_total_amount, VT*VT, {nonbulk_amounts}, density_mixture_diffusion[0], density_mixture_diffusion[0], {density_mixture_diffusion});
-}}",
-nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
-density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
-).replace("f64","dfloat"));
+	let function = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion);
+	let function = compile(0, function);
+	if std::fs::metadata("/var/tmp/main.cu").map_or(true, |cu|
+		std::fs::read("/var/tmp/main.cu").unwrap() != function.as_bytes() ||
+		std::fs::metadata("/var/tmp/main.cubin").map_or(true, |bin| bin.modified().unwrap() < cu.modified().unwrap())
+	) {
+		std::fs::write("/var/tmp/main.cu", &function)?;
+		std::process::Command::new("nvcc").args(&["--cubin","/var/tmp/main.cu","-o","/var/tmp/main.cubin"]).spawn()?.wait()?.success().then_some(()).ok_or(err!(""))?;
+	}
+	use cuda::{init, prelude::*};
+	init(CudaFlags::empty())?;
+	let device = Device::get_device(0)?;
+	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device)?;
+	let module = Module::load_from_file(&std::ffi::CString::new("/var/tmp/main.cubin")?)?;
+	let stream = Stream::new(/*irrelevant*/StreamFlags::NON_BLOCKING, None)?;
+	let_!{ input/*@[total_amount, temperature, nonbulk_amounts @ ..]*/ =
+		&*map([&[total_amount, temperature], &amounts[0..amounts.len()-1]].concat(), |x| DeviceBuffer::from_slice(&[x]).unwrap()) => {
+	let_!{ output/*@[conductivity, viscosity, diffusion @ ..]*/ = &*map(0..(2+species.len()), |_| unsafe{DeviceBuffer::zeroed(1)}.unwrap()) => {
+	let function = module.get_function(&std::ffi::CString::new("function")?)?;
+	//let start = std::time::Instant::now();
+	unsafe{stream.launch(&function, 1, 1, 0, &*map(input.iter().chain(&*output), |x| x as *const _ as *mut ::std::ffi::c_void))}?;
 	Ok(())
-}
+}}}}}
