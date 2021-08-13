@@ -48,4 +48,4 @@ ui={optional=true, git='https://github.com/Matthias-Fauconneau/ui', features= ['
 image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
 libc={optional=true, version='*'}
-cuda= {optional=true, package='rustacuda', version='*'}
+cuda= {optional=true, package='rustacuda', git='https://github.com/Matthias-Fauconneau/RustaCuda'}

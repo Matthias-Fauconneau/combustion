@@ -21,7 +21,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 			use Expr::*;
 			match e {
 				&F32(value) => value.to_string(),
-				&F64(value) => value.to_string(),
+				&F64(value) => if *value==0. { "0.".to_string() } else { value.to_string() },
 				Value(v) => format!("v{}", v.0),
 				Neg(x) => { let x = self.expr(x); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("max({a},{b})") }
@@ -32,7 +32,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}/{b})") }
 				Sqrt(x) => { let x = self.expr(x); format!("sqrt({x})") }
 				Exp(x) => { let x = self.expr(x); format!("exp({x})") }
-				Ln{x,..} => { let x = self.expr(x); format!("ln({x})") }
+				Ln{x,..} => { let x = self.expr(x); format!("log({x})") }
 			}
 		}
 		Expression::Block { statements, result } => {
@@ -102,12 +102,12 @@ pub fn compile(constants_len: usize, ast: ast::Function) -> String {
 		let value = b.expr(expr);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
-	format!(r#"__global__ void function({parameters}) {{"
+	format!(r#"__global__ void function({parameters}) {{
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
 {instructions}
 {store}
-}}"#)
+}}"#).replace("f64","double")
 }
 
 mod yaml;
@@ -136,16 +136,16 @@ fn main() -> Result<()> {
 	let function = compile(0, function);
 	if std::fs::metadata("/var/tmp/main.cu").map_or(true, |cu|
 		std::fs::read("/var/tmp/main.cu").unwrap() != function.as_bytes() ||
-		std::fs::metadata("/var/tmp/main.cubin").map_or(true, |bin| bin.modified().unwrap() < cu.modified().unwrap())
+		std::fs::metadata("/var/tmp/main.ptx").map_or(true, |bin| bin.modified().unwrap() < cu.modified().unwrap())
 	) {
 		std::fs::write("/var/tmp/main.cu", &function)?;
-		std::process::Command::new("nvcc").args(&["--cubin","/var/tmp/main.cu","-o","/var/tmp/main.cubin"]).spawn()?.wait()?.success().then_some(()).ok_or(err!(""))?;
+		std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn().unwrap_or_else(|_| panic!("{function}")).wait()?.success().then_some(()).ok_or(err!(""))?;
 	}
 	use cuda::{init, prelude::*};
 	init(CudaFlags::empty())?;
 	let device = Device::get_device(0)?;
 	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device)?;
-	let module = Module::load_from_file(&std::ffi::CString::new("/var/tmp/main.cubin")?)?;
+	let module = Module::load_from_file(&std::ffi::CString::new("/var/tmp/main.ptx")?)?;
 	let stream = Stream::new(/*irrelevant*/StreamFlags::NON_BLOCKING, None)?;
 	let_!{ input/*@[total_amount, temperature, nonbulk_amounts @ ..]*/ =
 		&*map([&[total_amount, temperature], &amounts[0..amounts.len()-1]].concat(), |x| DeviceBuffer::from_slice(&[x]).unwrap()) => {
@@ -153,5 +153,6 @@ fn main() -> Result<()> {
 	let function = module.get_function(&std::ffi::CString::new("function")?)?;
 	//let start = std::time::Instant::now();
 	unsafe{stream.launch(&function, 1, 1, 0, &*map(input.iter().chain(&*output), |x| x as *const _ as *mut ::std::ffi::c_void))}?;
+	unsafe{libc::_exit(0)} // Exit process without dropping DeviceBuffers (Failed to deallocate CUDA Device memory.: InvalidValue)
 	Ok(())
 }}}}}

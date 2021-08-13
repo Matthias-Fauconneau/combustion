@@ -15,7 +15,7 @@ fn main() -> Result<()> {
 		let rates = reaction::rates(&species.thermodynamics, &reactions);
 		#[cfg(not(feature="f32"))] type T = f64;
 		#[cfg(feature="f32")] type T = f32;
-		let rates = with_repetitive_input(assemble::<T>(rates), states_len);
+		let rates = with_repetitive_input(assemble::<T>(rates, 1), states_len);
 		assert!(state.volume == 1.);
 		let State{temperature, pressure_R, amounts: _, ..} = state;
 		fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -34,7 +34,7 @@ fn main() -> Result<()> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 		let_!{ [conductivity, viscosity, diffusion @ ..] = &*transport(&[], &[&[total_amount, *temperature], &amounts[0..amounts.len()-1]].concat())? => {
-			eprintln!("λ: {conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", mixture_diffusion_coefficients.iter().format(" "));
+			eprintln!("λ: {conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", diffusion.iter().format(" "));
 		}}
 	}
 	#[cfg(feature="vpu")] unsafe{libc::_exit(0)} // Exit process without running any exit handler (GLX_nvidia/eglReleaseThread/pthread_mutex_lock segfaults)
