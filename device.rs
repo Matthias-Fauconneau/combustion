@@ -31,7 +31,7 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 		let function = T::convert(function);
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));
 		move |constants:&[T], inputs:&[&[T]]| {
-			assert!(constants.len() == 1 && constants.len()+inputs.len() == input_len);
+			assert!(constants.len() <= 1 && constants.len()+inputs.len() == input_len);
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![default(); states_len].into_boxed_slice());
 			let time = std::time::Instant::now();
