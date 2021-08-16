@@ -102,7 +102,7 @@ pub fn compile(constants_len: usize, ast: ast::Function) -> String {
 		let value = b.expr(expr);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
-	format!(r#"__global__ void function({parameters}) {{
+	format!(r#"__global__ void cuda_function({parameters}) {{
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
 {instructions}
@@ -111,9 +111,9 @@ const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 mod yaml;
-use {anyhow::{Result, Context, anyhow as err}, num::sq, iter::Dot, std::env::*, combustion::*};
+use {anyhow::{Error, Context, anyhow as err}, num::sq, iter::Dot, std::env::*, combustion::*};
 
-fn main() -> Result<()> {
+#[fehler::throws] fn main() {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
@@ -133,16 +133,81 @@ fn main() -> Result<()> {
 	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
 	let mixture_diffusion = sq(length) / time;
 	let function = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion);
-	let function = compile(0, function);
+	let compile = |f:Function| {
+		let input = f.input.len();
+		let output = f.output.len();
+		let mut s = self::compile(0, f);
+		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;","");
+		assert!(input == 2+species.len()-1); // total_amount, T, nonbulk_amounts
+		for i in 0..input { let i = format!("in{}", i); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); }
+		assert!(output == 2+species.len()); // conductivity, viscosity, diffusion
+		for i in 0..output { let i = format!("out{}", i); s = s.replace(&format!("{i}[]"),&format!("&{i}")).replace(&format!("{i}[id]"), &i); }
+		s
+	};
+	let function= compile(function);
+	eprintln!("{}", function.lines().map(|l| l.len()).max().unwrap());
 	if std::fs::metadata("/var/tmp/main.cu").map_or(true, |cu|
 		std::fs::read("/var/tmp/main.cu").unwrap() != function.as_bytes() ||
 		std::fs::metadata("/var/tmp/main.ptx").map_or(true, |bin| bin.modified().unwrap() < cu.modified().unwrap())
 	) {
 		std::fs::write("/var/tmp/main.cu", &function)?;
-		std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn().unwrap_or_else(|_| panic!("{function}")).wait()?.success().then_some(()).ok_or(err!(""))?;
+		if let Ok(mut nvcc) = std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn() {
+			nvcc.wait()?.success().then_some(()).ok_or(err!(""))?;
+		} else {
+			println!("{}", function);
+			println!("__NEKRK_DEVICE__ void nekrk_transport_density_mixture_diffusion(
+	const double VT,
+	const double lnT, const double lnT2, const double lnT3,
+	const double nonbulk_amounts[],
+	const double rcp_total_amount,
+	/*out*/ double* density_mixture_diffusion[],
+	unsigned int id
+) {{
+	double conductivity, viscosity;
+	return cuda_function(1./rcp_total_amount, VT*VT, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
+}}",
+nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
+density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}][id]")).format(", "),
+);
+			let species_len = species.len();
+println!("__NEKRK_DEVICE__ double nekrk_transport_conductivityIVT(
+	const double lnT, const double lnT2, const double lnT3,
+	const double nonbulk_amounts[]
+) {{
+	double T = exp(lnT);
+	double mean_rcp_molar_mass = 0.;
+	for(int k=0;k<{species_len};k++) {{ mean_rcp_molar_mass += nonbulk_amounts[k]; }}
+	double conductivity, viscosity, density_mixture_diffusion[{species_len}];
+	cuda_function(mean_rcp_molar_mass, T, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
+	return (1./sqrt(T))*conductivity;
+}}",
+nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
+density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
+);
+println!("__NEKRK_DEVICE__ double nekrk_transport_viscosityIVT(
+	const double lnT, const double lnT2, const double lnT3,
+	const double nonbulk_amounts[]
+) {{
+	double T = exp(lnT);
+	double mean_rcp_molar_mass = 0.;
+	for(int k=0;k<{species_len};k++) {{ mean_rcp_molar_mass += nonbulk_amounts[k]; }}
+	double conductivity, viscosity, density_mixture_diffusion[{species_len}];
+	cuda_function(mean_rcp_molar_mass, T, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
+	return (1./sqrt(T))*viscosity;
+}}",
+nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
+density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
+);
+			return;
+		}
 	}
 	use cuda::{init, prelude::*};
 	init(CudaFlags::empty())?;
+	use cuda::device::Device;
+	for device in Device::devices()? {
+			let device = device?;
+			println!("{} {:?}", device.name()?, device.uuid()?);
+	}
 	let device = Device::get_device(0)?;
 	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device)?;
 	let module = Module::load_from_file(&std::ffi::CString::new("/var/tmp/main.ptx")?)?;
@@ -153,6 +218,7 @@ fn main() -> Result<()> {
 	let function = module.get_function(&std::ffi::CString::new("function")?)?;
 	//let start = std::time::Instant::now();
 	unsafe{stream.launch(&function, 1, 1, 0, &*map(input.iter().chain(&*output), |x| x as *const _ as *mut ::std::ffi::c_void))}?;
-	unsafe{libc::_exit(0)} // Exit process without dropping DeviceBuffers (Failed to deallocate CUDA Device memory.: InvalidValue)
-	Ok(())
-}}}}}
+	stream.synchronize()?;
+	let_!{ [conductivity, viscosity, diffusion @ ..] = &*map(output, |output| {let mut buffer = [0.]; output.copy_to(&mut buffer).unwrap(); buffer[0]}) => {
+	println!("{conductivity}, {viscosity}, {diffusion:?}");
+}}}}}}}
