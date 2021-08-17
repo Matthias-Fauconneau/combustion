@@ -21,7 +21,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> Value {
 			use Expr::*;
 			match e {
 				&F32(value) => value.to_string(),
-				&F64(value) => if *value==0. { "0.".to_string() } else { format!("{:.20}",*value) },
+				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { format!("{:<26}",*value) },
 				Value(v) => self.names[v.0].clone(),
 				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
@@ -181,12 +181,12 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 
 	let compile = |f:Function,name| {
 		let mut s = self::compile(0, &f, name);
-		s = s.replace("__global__","__device__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;","");
+		s = s.replace("__global__","__device__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
 		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__device__ void","__device__ double"); }
 		//else { for i in 0..output { let i = format!("out{}", i); s = s.replace(&format!("{i}[]"),&format!("&{i}")).replace(&format!("{i}[id]"), &i); } }
 		eprintln!("{}", s.lines().map(|l| l.len()).max().unwrap());
-		s.replace("+-","-")
+		s//.replace("+-","-")
 	};
 	println!("{}", compile(thermal_conductivityIVT,"thermal_conductivityIVT"));
 	println!("{}", compile(viscosityIVT,"viscosityIVT").replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v"));
