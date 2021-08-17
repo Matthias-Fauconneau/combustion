@@ -77,7 +77,7 @@ fn extend(&mut self, s: &Statement) {
 }
 }
 
-pub fn compile(constants_len: usize, ast: ast::Function) -> String {
+pub fn compile(constants_len: usize, ast: ast::Function, name: &str) -> String {
 	let output_types = {
 		let mut types = Types(ast.input.iter().copied().map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect());
 		for s in &*ast.statements { types.push(s); }
@@ -102,7 +102,7 @@ pub fn compile(constants_len: usize, ast: ast::Function) -> String {
 		let value = b.expr(expr);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
-	format!(r#"__global__ void cuda_function({parameters}) {{
+	format!(r#"__global__ void {name}({parameters}) {{
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
 {instructions}
@@ -111,7 +111,7 @@ const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 mod yaml;
-use {anyhow::{Error, Context, anyhow as err}, num::sq, iter::Dot, std::env::*, combustion::*};
+use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 
 #[fehler::throws] fn main() {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
@@ -119,106 +119,73 @@ use {anyhow::{Error, Context, anyhow as err}, num::sq, iter::Dot, std::env::*, c
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).context(path)?)?)?;
 	let model = yaml::parse(&model);
 	let (ref _species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, _, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
+	let K = species.len();
 	let total_amount = amounts.iter().sum::<f64>();
 	let mole_fractions = map(&**amounts, |n| n/total_amount);
-	let length = 1.;
-	let velocity = 1.;
-	let time = length / velocity;
+	let diffusivity = 1.;
 	let concentration = pressure_R / temperature;
 	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 	let density = concentration * mean_molar_mass;
-	let Vviscosity = f64::sqrt(density * time) * velocity;
+	let Vviscosity = f64::sqrt(density * diffusivity);
 	let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 	let R = kB*NA;
-	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
-	let mixture_diffusion = sq(length) / time;
-	let function = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*mixture_diffusion);
-	let compile = |f:Function| {
+	let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * diffusivity;
+	let transport::Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} = transport::Polynomials::<4>::new(&species, temperature);
+	let VviscosityIVVT = map(&*VviscosityIVVT, |P| P.map(|p| (f64::sqrt(f64::sqrt(temperature))/Vviscosity)*p));
+	let thermal_conductivityIVT = map(&*thermal_conductivityIVT, |P| P.map(|p| (f64::sqrt(temperature)/(2.*thermal_conductivity))*p));
+	let binary_thermal_diffusionITVT = map(&*binary_thermal_diffusionITVT, |P| P.map(|p| (f64::sqrt(temperature)/(R*density*diffusivity))*p));
+
+	let thermal_conductivityIVT = {
+		let_!{ input@[ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(3+K), Value) => {
+		let mut values = ["lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
+		assert!(input.len() == values.len());
+		let mut function = Block::new(&mut values);
+		Function{
+			output: list([transport::thermal_conductivityIVT(&thermal_conductivityIVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)]),
+			statements: function.statements.into(),
+			input: vec![Type::F64; input.len()].into(),
+			values: values.into()
+		}
+	}}};
+
+	let viscosityIVT = {
+		let_!{ input@[ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(3+K), Value) => {
+		let mut values = ["lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
+		assert!(input.len() == values.len());
+		let mut function = Block::new(&mut values);
+		Function{
+			output: list([transport::viscosityIVT(molar_mass, &VviscosityIVVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)]),
+			statements: function.statements.into(),
+			input: vec![Type::F64; input.len()].into(),
+			values: values.into()
+		}
+	}}};
+
+	let density_diffusion = {
+		let_!{ input@[_, ref mean_molar_mass, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(6+K), Value) => {
+		let mut values = ["id","mean_molar_mass","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
+		assert!(input.len() == values.len());
+		let mut function = Block::new(&mut values);
+		Function{
+			output: list(transport::density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
+			statements: function.statements.into(),
+			input: vec![Type::F64; input.len()].into(),
+			values: values.into()
+		}
+	}}};
+
+	let compile = |f:Function,name| {
 		let input = f.input.len();
 		let output = f.output.len();
-		let mut s = self::compile(0, f);
-		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;","");
-		assert!(input == 2+species.len()-1); // total_amount, T, nonbulk_amounts
+		let mut s = self::compile(0, f, name);
+		s = s.replace("__global__","__device__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;","");
 		for i in 0..input { let i = format!("in{}", i); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); }
-		assert!(output == 2+species.len()); // conductivity, viscosity, diffusion
-		for i in 0..output { let i = format!("out{}", i); s = s.replace(&format!("{i}[]"),&format!("&{i}")).replace(&format!("{i}[id]"), &i); }
+		if output == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__device__ void","__device__ double"); }
+		//else { for i in 0..output { let i = format!("out{}", i); s = s.replace(&format!("{i}[]"),&format!("&{i}")).replace(&format!("{i}[id]"), &i); } }
+		eprintln!("{}", s.lines().map(|l| l.len()).max().unwrap());
 		s
 	};
-	let function= compile(function);
-	eprintln!("{}", function.lines().map(|l| l.len()).max().unwrap());
-	if std::fs::metadata("/var/tmp/main.cu").map_or(true, |cu|
-		std::fs::read("/var/tmp/main.cu").unwrap() != function.as_bytes() ||
-		std::fs::metadata("/var/tmp/main.ptx").map_or(true, |bin| bin.modified().unwrap() < cu.modified().unwrap())
-	) {
-		std::fs::write("/var/tmp/main.cu", &function)?;
-		if let Ok(mut nvcc) = std::process::Command::new("nvcc").args(&["--ptx","/var/tmp/main.cu","-o","/var/tmp/main.ptx"]).spawn() {
-			nvcc.wait()?.success().then_some(()).ok_or(err!(""))?;
-		} else {
-			println!("{}", function);
-			println!("__NEKRK_DEVICE__ void nekrk_transport_density_mixture_diffusion(
-	const double VT,
-	const double lnT, const double lnT2, const double lnT3,
-	const double nonbulk_amounts[],
-	const double rcp_total_amount,
-	/*out*/ double* density_mixture_diffusion[],
-	unsigned int id
-) {{
-	double conductivity, viscosity;
-	return cuda_function(1./rcp_total_amount, VT*VT, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
-}}",
-nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
-density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}][id]")).format(", "),
-);
-			let species_len = species.len();
-println!("__NEKRK_DEVICE__ double nekrk_transport_conductivityIVT(
-	const double lnT, const double lnT2, const double lnT3,
-	const double nonbulk_amounts[]
-) {{
-	double T = exp(lnT);
-	double mean_rcp_molar_mass = 0.;
-	for(int k=0;k<{species_len};k++) {{ mean_rcp_molar_mass += nonbulk_amounts[k]; }}
-	double conductivity, viscosity, density_mixture_diffusion[{species_len}];
-	cuda_function(mean_rcp_molar_mass, T, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
-	return (1./sqrt(T))*conductivity;
-}}",
-nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
-density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
-);
-println!("__NEKRK_DEVICE__ double nekrk_transport_viscosityIVT(
-	const double lnT, const double lnT2, const double lnT3,
-	const double nonbulk_amounts[]
-) {{
-	double T = exp(lnT);
-	double mean_rcp_molar_mass = 0.;
-	for(int k=0;k<{species_len};k++) {{ mean_rcp_molar_mass += nonbulk_amounts[k]; }}
-	double conductivity, viscosity, density_mixture_diffusion[{species_len}];
-	cuda_function(mean_rcp_molar_mass, T, {nonbulk_amounts}, conductivity, viscosity, {density_mixture_diffusion});
-	return (1./sqrt(T))*viscosity;
-}}",
-nonbulk_amounts=(0..species.len()-1).map(|i| format!("nonbulk_amounts[{i}]")).format(", "),
-density_mixture_diffusion=(0..species.len()).map(|i| format!("density_mixture_diffusion[{i}]")).format(", "),
-);
-			return;
-		}
-	}
-	use cuda::{init, prelude::*};
-	init(CudaFlags::empty())?;
-	use cuda::device::Device;
-	for device in Device::devices()? {
-			let device = device?;
-			println!("{} {:?}", device.name()?, device.uuid()?);
-	}
-	let device = Device::get_device(0)?;
-	let _context = Context::create_and_push(ContextFlags::SCHED_BLOCKING_SYNC, device)?;
-	let module = Module::load_from_file(&std::ffi::CString::new("/var/tmp/main.ptx")?)?;
-	let stream = Stream::new(/*irrelevant*/StreamFlags::NON_BLOCKING, None)?;
-	let_!{ input/*@[total_amount, temperature, nonbulk_amounts @ ..]*/ =
-		&*map([&[total_amount, temperature], &amounts[0..amounts.len()-1]].concat(), |x| DeviceBuffer::from_slice(&[x]).unwrap()) => {
-	let_!{ output/*@[conductivity, viscosity, diffusion @ ..]*/ = &*map(0..(2+species.len()), |_| unsafe{DeviceBuffer::zeroed(1)}.unwrap()) => {
-	let function = module.get_function(&std::ffi::CString::new("function")?)?;
-	//let start = std::time::Instant::now();
-	unsafe{stream.launch(&function, 1, 1, 0, &*map(input.iter().chain(&*output), |x| x as *const _ as *mut ::std::ffi::c_void))}?;
-	stream.synchronize()?;
-	let_!{ [conductivity, viscosity, diffusion @ ..] = &*map(output, |output| {let mut buffer = [0.]; output.copy_to(&mut buffer).unwrap(); buffer[0]}) => {
-	println!("{conductivity}, {viscosity}, {diffusion:?}");
-}}}}}}}
+	println!("{}", compile(thermal_conductivityIVT,"thermal_conductivityIVT"));
+	println!("{}", compile(viscosityIVT,"viscosityIVT"));
+	println!("{}", compile(density_diffusion,"density_diffusion"));
+}

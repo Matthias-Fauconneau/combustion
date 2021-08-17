@@ -152,14 +152,14 @@ pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 
 	))
 }
 
-pub fn PITVT_mixture_diffusion<'t, const D: usize>(binary_thermal_diffusionITVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &'t [Value], mass_fractions: impl 't+IntoIterator<Item=Expression>, f: &mut Block) -> impl 't+Iterator<Item=Expression> {
-	let K = mole_fractions.len();
-	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j|
-		{let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P.dot(lnT.cloned()):Expression)}
-	));
-	mass_fractions.into_iter().enumerate().map(move |(k, mass_fraction)| (1. - mass_fraction) / (0..K).filter(|&j| j != k).map(|j|
-		&mole_fractions[j] / &binary_thermal_diffusionITVT[std::cmp::max(k,j)][min(k,j)]
-	).sum::<Expression>())
+pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_thermal_diffusionITVT: &[[f64; D]], mean_molar_mass: &'t Value, VT: &'t Value, lnT: &[Expr; D], mole_proportions: &'t [Value], f: &mut Block) -> impl 't+Iterator<Item=Expression> {
+	let K = mole_proportions.len();
+	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| {let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P.dot(lnT.cloned()):Expression)}));
+	let mean_molar_mass_VT = l!(f mean_molar_mass * VT);
+	(0..K).map(move |k|
+		(mean_molar_mass_VT - VT * 	molar_mass[k] * mole_proportions[k])
+	/ (0..K).filter(|&j| j != k).map(|j| mole_proportions[j] / binary_thermal_diffusionITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
+	)
 }
 
 pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_conductivityIVT, VviscosityIVVT, binary_thermal_diffusionITVT} : &Polynomials<D>, temperature0: f64, Vviscosity: f64, thermal_conductivity: f64, density_mixture_diffusion: f64) -> Function {
@@ -184,17 +184,14 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
 	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
 	use iter::Dot;
-	let ref mean_molar_mass = l!(f molar_mass.copied().dot(mole_fractions):Expression);
-	let ref rcp_mean_molar_mass = l!(f 1./mean_molar_mass);
-	let mass_fractions =	mole_fractions.iter().zip(&*molar_mass).map(|(x,&m)| m * rcp_mean_molar_mass * x);
 	let ref VT = l!(f sqrt(T));
-	let ref density_TVTIP = l!(f mean_molar_mass * VT); // m/n * √T / (R ρ0 D0) * (P/(T√T)*D) = (m/m0 * PV0/nRT /D0) *D = (m/m0)*(V0/V) *  PV/nRT /D0 *D = ρD / (ρ0D0)
+	let ref mean_molar_mass = l!(f molar_mass.copied().dot(mole_fractions):Expression);
 	Function{
 		output: list([
 			VT*self::thermal_conductivityIVT(&thermal_conductivityIVT, lnT, mole_fractions, f),
 			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_fractions, f),
 		].into_iter().chain(
-			PITVT_mixture_diffusion(&binary_thermal_diffusionITVT, lnT, mole_fractions, mass_fractions, f).map(|PITVT_D| density_TVTIP*PITVT_D)
+			density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass, VT, lnT, mole_fractions, f)
 		)),
 		statements: function.statements.into(),
 		input: vec![Type::F64; input.len()].into(),
