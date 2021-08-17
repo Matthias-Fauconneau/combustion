@@ -8,36 +8,41 @@ type Value = String;
 struct Builder<'t> {
 	builder: Vec<String>,
 	values: Box<[Option<(ast::Type, Value)>]>,
-	#[allow(dead_code)] names: &'t [String],
+	names: &'t [String],
 }
 impl std::ops::Deref for Builder<'_> { type Target=Vec<String>; fn deref(&self) -> &Self::Target { &self.builder } }
 impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
 impl Builder<'_> {
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].as_ref().unwrap().0) }
-fn expr(&mut self, expr: &Expression) -> Value {
+fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> Value {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
 			match e {
 				&F32(value) => value.to_string(),
-				&F64(value) => if *value==0. { "0.".to_string() } else { value.to_string() },
-				Value(v) => format!("v{}", v.0),
-				Neg(x) => { let x = self.expr(x); format!("-{x}") }
-				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("max({a},{b})") }
-				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}+{b})") }
-				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}-{b})") }
-				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}<{b})") }
-				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}*{b})") }
-				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); format!("({a}/{b})") }
-				Sqrt(x) => { let x = self.expr(x); format!("sqrt({x})") }
-				Exp(x) => { let x = self.expr(x); format!("exp({x})") }
-				Ln{x,..} => { let x = self.expr(x); format!("log({x})") }
+				&F64(value) => if *value==0. { "0.".to_string() } else { format!("{:.20}",*value) },
+				Value(v) => self.names[v.0].clone(),
+				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
+				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
+				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n\t+{b}") } else { y };
+					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
+				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}-{b}");
+					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
+				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); assert!(parent.is_none()); format!("{a}<{b}") }
+				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}*{b}");
+					if let Some(Div(_,_)) = parent { format!("({y})") } else { y } }
+				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}/{b}");
+					if let Some(Div(_,_)) = parent { format!("({y})") } else { y } }
+				Sqrt(x) => { let x = self.expr(x, None); format!("sqrt({x})") }
+				Exp(x) => { let x = self.expr(x, None); format!("exp({x})") }
+				Ln{x,..} => { let x = self.expr(x, None); format!("log({x})") }
+				Sq(x) => { let x = self.expr(x, None); format!("sq({x})") }
 			}
 		}
 		Expression::Block { statements, result } => {
 			for s in &**statements { self.extend(s) }
-			self.expr(result)
+			self.expr(result, None)
 		}
 	}
 }
@@ -45,28 +50,28 @@ fn extend(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
 		Value { id, value } => {
-			let result = self.expr(value);
+			let result = self.expr(value, None);
 			let rtype = self.rtype(value);
-			self.push(format!("{rtype} v{} = {result};", id.0));
-			assert!(self.values[id.0].replace((rtype,result)).is_none());
+			self.builder.push(format!("{rtype} {} = {result};", self.names[id.0]));
+			assert!(self.values[id.0].replace((rtype,self.names[id.0].clone())).is_none());
 		},
 		Select { condition, true_exprs, false_exprs, results } => {
 			let types = map(&**true_exprs, |e| self.rtype(e));
 			for (t,e) in zip(&*types, &**false_exprs) { assert!(self.rtype(e) == *t); }
-			for (rtype, id) in zip(&*types, &**results) { self.push(format!("{rtype} v{};", id.0)); }
+			for (rtype, id) in zip(&*types, &**results) { self.builder.push(format!("{rtype} {};", self.names[id.0])); }
 
-			let condition = self.expr(condition);
+			let condition = self.expr(condition, None);
 			let scope = self.values.clone();
-			let true_values = map(&**true_exprs, |e| self.expr(e));
+			let true_values = map(&**true_exprs, |e| self.expr(e, None));
 			self.values = scope;
 			assert!(results.len() == true_values.len());
 			let scope = self.values.clone();
-			let false_values = map(&**false_exprs, |e| self.expr(e));
+			let false_values = map(&**false_exprs, |e| self.expr(e, None));
 			self.values = scope;
 			assert!(results.len() == false_values.len());
 
-			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("{} = {value};",id.0)).format("\n\t");
-			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("{} = {value};",id.0)).format("\n\t");
+			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("{} = {value};",self.names[id.0])).format("\n\t");
+			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("{} = {value};",self.names[id.0])).format("\n\t");
 
 			self.push(format!("if {condition} {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
 			for (rtype, id) in zip(&*types, &**results) {
@@ -77,7 +82,7 @@ fn extend(&mut self, s: &Statement) {
 }
 }
 
-pub fn compile(constants_len: usize, ast: ast::Function, name: &str) -> String {
+pub fn compile(constants_len: usize, ast: &ast::Function, name: &str) -> String {
 	let output_types = {
 		let mut types = Types(ast.input.iter().copied().map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect());
 		for s in &*ast.statements { types.push(s); }
@@ -87,19 +92,19 @@ pub fn compile(constants_len: usize, ast: ast::Function, name: &str) -> String {
 		})
 	};
 	let parameters =
-		ast.input[0..constants_len].iter().enumerate().map(|(i, atype)| format!("const {atype} v{i}"))
-		.chain( ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!("const {atype} in{i}[]")) )
+		ast.input[0..constants_len].iter().enumerate().map(|(i, atype)| format!(/*const*/"{atype} {}",ast.values[i]))
+		.chain( ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} in{i}[]")) )
 		.chain( output_types.iter().enumerate().map(|(i, rtype)| format!("{rtype} out{i}[]")) ).format(", ");
-	let input_values = ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!("const {atype} v{i} = in{i}[id];")).format("\n");
+	let input_values = ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} {} = in{i}[id];",ast.values[i])).format("\n");
 	let mut b = Builder{
 		builder: vec![],
-		values: list(ast.input.iter().enumerate().map(|(i, atype)| Some((*atype, format!("v{i}")))).chain((ast.input.len()..ast.values.len()).map(|_| None))),
+		values: list(ast.input.iter().enumerate().map(|(i, atype)| Some((*atype, ast.values[i].clone()))).chain((ast.input.len()..ast.values.len()).map(|_| None))),
 		names: &ast.values
 	};
 	for s in &*ast.statements { b.extend(s); }
 	let instructions = b.builder.iter().format("\n").to_string();
 	let store = ast.output.iter().enumerate().map(|(i, expr)| {
-		let value = b.expr(expr);
+		let value = b.expr(expr, None);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
 	format!(r#"__global__ void {name}({parameters}) {{
@@ -162,9 +167,9 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 	}}};
 
 	let density_diffusion = {
-		let_!{ input@[_, ref mean_molar_mass, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(6+K), Value) => {
-		let mut values = ["id","mean_molar_mass","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
-		assert!(input.len() == values.len());
+		let_!{ input@[ref mean_molar_mass, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
+		let mut values = ["mean_molar_mass","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
+		assert_eq!(input.len(), values.len());
 		let mut function = Block::new(&mut values);
 		Function{
 			output: list(transport::density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
@@ -175,17 +180,15 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 	}}};
 
 	let compile = |f:Function,name| {
-		let input = f.input.len();
-		let output = f.output.len();
-		let mut s = self::compile(0, f, name);
+		let mut s = self::compile(0, &f, name);
 		s = s.replace("__global__","__device__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;","");
-		for i in 0..input { let i = format!("in{}", i); s = s.replace(&format!("{i}[]"),&i).replace(&format!("{i}[id]"), &i); }
-		if output == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__device__ void","__device__ double"); }
+		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
+		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__device__ void","__device__ double"); }
 		//else { for i in 0..output { let i = format!("out{}", i); s = s.replace(&format!("{i}[]"),&format!("&{i}")).replace(&format!("{i}[id]"), &i); } }
 		eprintln!("{}", s.lines().map(|l| l.len()).max().unwrap());
-		s
+		s.replace("+-","-")
 	};
 	println!("{}", compile(thermal_conductivityIVT,"thermal_conductivityIVT"));
-	println!("{}", compile(viscosityIVT,"viscosityIVT"));
-	println!("{}", compile(density_diffusion,"density_diffusion"));
+	println!("{}", compile(viscosityIVT,"viscosityIVT").replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v"));
+	println!("{}", compile(density_diffusion,"density_diffusion").replace("density_diffusion(","density_diffusion(int id, "));
 }

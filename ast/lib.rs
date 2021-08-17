@@ -59,16 +59,17 @@ impl Deref for R64 { type Target=f64; fn deref(&self) -> &Self::Target { &self.0
 	Sqrt(Box<Expression>),
 	Exp(Box<Expression>),
 	Ln { x0: NotNan<f64>, x: Box<Expression> },
+	Sq(Box<Expression>),
 }
 impl Expr {
 	pub fn visit<T>(&self, mut visitor: impl FnMut(&Expression)->T) -> [Option<T>; 2] {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
 		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn visit_mut<T>(&mut self, mut visitor: impl FnMut(&mut Expression)->T)  -> [Option<T>; 2]  {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..} => [Some(visitor(x)), None],
+		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
 		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type { use Expr::*; match self {
@@ -77,7 +78,7 @@ impl Expr {
 		F64(_) => Type::F64,
 		Value(v) => rtype(v),
 		//Cast(to, x) => { self.pass(x); *to },
-		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Exp(x)|Ln{x,..} => x.rtype(rtype),
+		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => x.rtype(rtype),
 		/*FPromote(x) => { self.pass(x); ast::Type::F64 },
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
@@ -238,6 +239,10 @@ pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtTo
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }*/
 
+pub fn sq(x: impl Into<Expression>) -> Expression {
+	Expr::Sq(box_(x.into())).into()
+}
+
 impl std::ops::Neg for Expression { type Output = Expression; fn neg(self) -> Self::Output { neg(self) } }
 impl<E:Into<Expression>> std::ops::Add<E> for Expression { type Output = Expression; fn add(self, b: E) -> Self::Output { add(self, b) } }
 impl<E:Into<Expression>> std::ops::Sub<E> for Expression { type Output = Expression; #[track_caller] fn sub(self, b: E) -> Self::Output { sub(self, b) } }
@@ -309,8 +314,10 @@ impl Block<'t> {
 	(Statement::Value{id: id.clone(), value}, id)//Ok((Statement::Value{id: id.clone(), value}, id))
 }
 #[macro_export] macro_rules! l {
-	($f:ident $e:expr) => {{ let (s, v) = $crate::def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))); $f.statements.push(s); v }};
-	($f:ident; $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e).into() } }};
+	($f:ident $e:expr, $name:expr) => {{ let (s, v) = $crate::def($e, $f, $name.to_string()); $f.statements.push(s); v }};
+	($f:ident $e:expr) => {{ l!($f $e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
+	($f:ident, $e:expr, $name:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e, $name).into() } }};
+	($f:ident, $e:expr) => {{ l!($f, $e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));

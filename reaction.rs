@@ -30,7 +30,7 @@ impl<E:Into<Expression>> Fn<(E,)> for Cache<'_> { extern "rust-call" fn call(&se
 }
 #[macro_export] macro_rules! le {
 	($f:ident $e:expr) => (def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))));
-	($f:ident; $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { le!($f e).into() } }};
+	($f:ident, $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { le!($f e).into() } }};
 }
 
 #[track_caller] fn check(e: &Expression, f: &mut Block) -> Result<(),String> {
@@ -55,18 +55,18 @@ impl std::ops::Mul<Ratio> for Expr { type Output = Expression; fn mul(self, Rati
 impl std::ops::Mul<Ratio> for &Value { type Output = Expression; fn mul(self, r: Ratio) -> Expression { self.into():Expr*r } }
 
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>, f: &mut Block) -> Option<Expression> {
-	iter.into_iter().map(|e| e.into()).filter(|e| if let Some(x) = e.f32() {x!=0.} else {true}).reduce(|a,b| le!(f; a+b))
+	iter.into_iter().map(|e| e.into()).filter(|e| if let Some(x) = e.f32() {x!=0.} else {true}).reduce(|a,b| le!(f, a+b))
 }
 
 fn product_of_exponentiations_<N:Into<i16>>(iter: impl IntoIterator<Item=(&'t Value, N)>, f: &mut Block) -> Expr {
 	let (num, div) : (Vec::<_>,Vec::<_>) = iter.into_iter().map(|(v,n)| (v,n.into())).filter(|&(_,n)| n!=0).partition(|&(_,n)| n>0);
-	let num = num.into_iter().fold(None, |mut p:Option<Expr>, (v,n)|{ for _ in 0..n { p = Some(match p { Some(p) => le!(f; p*v), None => v.into() }); } p });
-	let div = div.into_iter().fold(None, |mut p:Option<Expr>, (v,n)|{ for _ in 0..-n { p = Some(match p { Some(p) => le!(f; p*v), None => v.into() }); } p });
+	let num = num.into_iter().fold(None, |mut p:Option<Expr>, (v,n)|{ for _ in 0..n { p = Some(match p { Some(p) => le!(f, p*v), None => v.into() }); } p });
+	let div = div.into_iter().fold(None, |mut p:Option<Expr>, (v,n)|{ for _ in 0..-n { p = Some(match p { Some(p) => le!(f, p*v), None => v.into() }); } p });
 	match (num, div) {
 		(None, None) => None,
 		(Some(num), None) => Some(num),
-		(None, Some(div)) => Some(l!(f; (1./div).expr())),
-		(Some(num), Some(div)) => Some(le!(f; num/div))
+		(None, Some(div)) => Some(l!(f, (1./div).expr())),
+		(Some(num), Some(div)) => Some(le!(f, num/div))
 	}.unwrap()
 }
 fn product_of_exponentiations__<N:iter::IntoExactSizeIterator>(v: &[Value], n: N, f: &mut Block) -> Expr where <N as iter::IntoIterator>::Item:Into<i16> {
@@ -80,13 +80,13 @@ fn product_of_exponentiations<I:iter::IntoExactSizeIterator,N:Copy+Into<i16>>(v:
 
 fn product_of_exponentiations_rcp_<N:Into<i16>>(iter: impl IntoIterator<Item=((&'t Value, &'t Value), N)>, f: &mut Block) -> Expr {
 	let (num, div) : (Vec::<_>,Vec::<_>) = iter.into_iter().map(|((v,rcp),n)| (v,rcp,n.into())).filter(|&(_,_,n)| n!=0).partition(|&(_,_,n)| n>0);
-	let num = num.into_iter().fold(None, |mut p:Option<Expr>, (v,_,n)|{ for _ in 0..n { p = Some(match p { Some(p) => le!(f; p*v), None => v.into() }); } p });
-	let div = div.into_iter().fold(None, |mut p:Option<Expr>, (_,rcp,n)|{ for _ in 0..-n { p = Some(match p { Some(p) => le!(f; p*rcp), None => rcp.into() }); } p });
+	let num = num.into_iter().fold(None, |mut p:Option<Expr>, (v,_,n)|{ for _ in 0..n { p = Some(match p { Some(p) => le!(f, p*v), None => v.into() }); } p });
+	let div = div.into_iter().fold(None, |mut p:Option<Expr>, (_,rcp,n)|{ for _ in 0..-n { p = Some(match p { Some(p) => le!(f, p*rcp), None => rcp.into() }); } p });
 	match (num, div) {
 		(None, None) => None,
 		(Some(num), None) => Some(num),
 		(None, Some(div)) => Some(div),
-		(Some(num), Some(div)) => Some(le!(f; num*div))
+		(Some(num), Some(div)) => Some(le!(f, num*div))
 	}.unwrap()
 }
 fn product_of_exponentiations_rcp__<N:iter::IntoExactSizeIterator>(v: &[Value], rcp: &[Value], n: N, f: &mut Block) -> Expr where <N as iter::IntoIterator>::Item:Into<i16> {
@@ -115,7 +115,7 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 		if temperature_split.is_nan() {
 			for (expression, specie_results) in expressions.iter().zip(specie_results.iter_mut()) { for &specie in species {
 				let e = expression(&thermodynamics[specie].pieces[0], Ts, Cache(&f.values));
-				let e = if e.is_leaf() { e } else { le!(f; e) };
+				let e = if e.is_leaf() { e } else { le!(f, e) };
 				assert!(specie_results[specie].replace(e).is_none());
 			}}
 		} else {
@@ -132,7 +132,7 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 			}).unzip();
 			let (true_exprs, false_exprs):(Vec<_>,Vec<_>) = exprs.into_iter().map(|[a,b]| (a,b)).unzip();
 			let (true_exprs, false_exprs, results) = (true_exprs.concat().into(), false_exprs.concat().into(), results.concat().into());
-			push(Statement::Select{condition: le!(f; less_or_equal(T, f64::from(temperature_split))), true_exprs, false_exprs, results}, f);
+			push(Statement::Select{condition: le!(f, less_or_equal(T, f64::from(temperature_split))), true_exprs, false_exprs, results}, f);
 		}
 	}
 	specie_results.map(|specie_results| map(specie_results.into_vec().into_iter(), Option::unwrap))
@@ -156,10 +156,10 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 	//const T0: f64 = 1024.;
 	//eprintln!("{temperature_exponent}, {lnT_coefficient}");
 	let exp = [
-			(lnT_coefficient != 0.).then(|| le!(f; lnT_coefficient * (lnT/*-f64::ln(T0)*/))),
-			(activation_temperature != 0.).then(|| le!(f; (-activation_temperature) * rcpT))
+			(lnT_coefficient != 0.).then(|| le!(f, lnT_coefficient * (lnT/*-f64::ln(T0)*/))),
+			(activation_temperature != 0.).then(|| le!(f, (-activation_temperature) * rcpT))
 		].into_iter().filter_map(|x:Option<Expression>| x).sum::<Option<Expression>>()
-		.map(|x| le!(f; exp(x, f)));
+		.map(|x| le!(f, exp(x, f)));
 	Π([
 		Some(f64(A).unwrap_or_else(|x| {println!("{A:e}"); x})/* *f64::powf(T0,lnT_coefficient)*/),
 		temperature_factor.map(|x| x.into()),
@@ -169,7 +169,7 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 
 fn efficiency(efficiencies: &[f64], concentrations: &[Value], f: &mut Block) -> Expression {
 	use iter::Zip;
-	let efficiencies:Box<[Expr]> = list(efficiencies.zip(concentrations).into_iter().filter_map(|(&e, C)| if e==0. { None } else if e==1. { Some(C.into()) } else { Some(le!(f; e*C)) }));
+	let efficiencies:Box<[Expr]> = list(efficiencies.zip(concentrations).into_iter().filter_map(|(&e, C)| if e==0. { None } else if e==1. { Some(C.into()) } else { Some(le!(f, e*C)) }));
 	sum(efficiencies.into_vec(), f).unwrap()
 }
 
@@ -177,26 +177,26 @@ use super::*;
 
 fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], f: &mut Block) -> Ratio {
 	use ReactionModel::*; match model {
-		Elementary|Irreversible => le!(f; arrhenius(k_inf, T, f)),
+		Elementary|Irreversible => le!(f, arrhenius(k_inf, T, f)),
 		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f), f) * efficiency(efficiencies, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
 			let C_k0 = l!(f efficiency * chk(arrhenius(k0, T, f), f));
-			let k_inf = l!(f; chk(arrhenius(k_inf, T, f), f));
+			let k_inf = l!(f, chk(arrhenius(k_inf, T, f), f));
 			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf)
 		},
 		Falloff{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
 			let k0 = l!(f chk(arrhenius(k0, T, f), f));
-			let k_inf = l!(f; chk(arrhenius(k_inf, T, f), f));
+			let k_inf = l!(f, chk(arrhenius(k_inf, T, f), f));
 			//f.block(|f|{
 				let Pr = l!(f efficiency * k0 / k_inf.shallow());
 				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
 					(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * le!(f exp(T/(-T3), f)) } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * le!(f exp(T/(-T1), f)) } else { y.into() }}),
-					(T2.is_finite()).then(|| le!(f; exp((-T2)*rcpT, f)))
+					(T2.is_finite()).then(|| le!(f, exp((-T2)*rcpT, f)))
 				].into_iter().filter_map(|x| x))};
-				let lnFcent = if let Some(x) = Fcent.f64() { x.into() } else { l!(f; ln(1./2., Fcent, f)) }; // 0.1-0.7 => e-3
+				let lnFcent = if let Some(x) = Fcent.f64() { x.into() } else { l!(f, ln(1./2., Fcent, f)) }; // 0.1-0.7 => e-3
 				let C = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
 				let N = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
 				let lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
@@ -219,12 +219,12 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, Gibb
 			//let rcp_equilibrium_constant_0 = exp(dot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0,
-				1 => le!(f; C0 * rcp_equilibrium_constant_0),
-				-1 => le!(f; rcp_C0 * rcp_equilibrium_constant_0),
+				1 => le!(f, C0 * rcp_equilibrium_constant_0),
+				-1 => le!(f, rcp_C0 * rcp_equilibrium_constant_0),
 				_ => unreachable!()
 			};
 			let reverse = le!(f rcp_equilibrium_constant * product_of_exponentiations(concentrations, products, f));
-			le!(f; forward - reverse)
+			le!(f, forward - reverse)
 		};
 		le!(f coefficient * forward_rate_constant)
 	})
@@ -257,11 +257,11 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 		iter.into_iter().filter(|&(c,_)| c != 0.).fold(None, |sum, (c, e)| {
 			let e = e.into();
 			Some(if c == 1. { if let Some(sum) = sum { sum+e } else { e } }
-			else if c == -1. { if let Some(sum) = sum { sum-e } else { le!(f; -e) } } // fixme: reorder -a+b -> b-a to avoid some neg
-			else { let term = le!(f; c*e); if let Some(sum) = sum { le!(f; sum+term) } else { term } })
+			else if c == -1. { if let Some(sum) = sum { sum-e } else { le!(f, -e) } } // fixme: reorder -a+b -> b-a to avoid some neg
+			else { let term = le!(f, c*e); if let Some(sum) = sum { le!(f, sum+term) } else { term } })
 		})
 	}
-	let rates = map(0..active, |specie| l!(f; dot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates), f).unwrap().expr()));
+	let rates = map(0..active, |specie| l!(f, dot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates), f).unwrap().expr()));
 	let [enthalpy_RT] = thermodynamics(&species[0..active], [enthalpy_RT], Ts, f, ["enthalpy_RT"]);
 	let enthalpy_RT = map(a1T.into_vec().into_iter().zip(a5rcpT.into_vec().into_iter()).zip(enthalpy_RT.into_vec()), |((a1T,a5rcpT),h)| a1T+h+a5rcpT);
 	use iter::{Map, Dot};

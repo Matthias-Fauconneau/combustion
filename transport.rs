@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, pow}, iter::{Copied, list, map, DotN, Cloned, eval}};
+use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{cb, pow}, iter::{Copied, list, map, DotN, Cloned, eval}};
 
 use super::{light_speed, kB, NA};
 const fine_structure : f64 = 7.2973525693e-3;
@@ -51,12 +51,12 @@ impl Species {
 		let Self{diameter, well_depth_J, polarizability, permanent_dipole_moment, ..} = self;
 		if (permanent_dipole_moment[a]>0.) == (permanent_dipole_moment[b]>0.) { 1. } else {
 			let (polar, non_polar) = if permanent_dipole_moment[a] != 0. { (a,b) } else { (b,a) };
-			1. + 1./4. * polarizability[non_polar]/cb(diameter[non_polar]) * sq(permanent_dipole_moment[polar]/f64::sqrt(4.*π*ε0*well_depth_J[polar]*cb(diameter[polar]))) * f64::sqrt(well_depth_J[polar]/well_depth_J[non_polar])
+			1. + 1./4. * polarizability[non_polar]/cb(diameter[non_polar]) * num::sq(permanent_dipole_moment[polar]/f64::sqrt(4.*π*ε0*well_depth_J[polar]*cb(diameter[polar]))) * f64::sqrt(well_depth_J[polar]/well_depth_J[non_polar])
 		}
 	}
 	fn interaction_well_depth(&self, a: usize, b: usize) -> f64 {
 		let Self{well_depth_J, ..} = self;
-		f64::sqrt(well_depth_J[a]*well_depth_J[b]) * sq(self.χ(a, b))
+		f64::sqrt(well_depth_J[a]*well_depth_J[b]) * num::sq(self.χ(a, b))
 	}
 	pub fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * kB / self.interaction_well_depth(a, b) }
 	pub fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 {
@@ -85,16 +85,16 @@ impl Species {
 	pub fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral::<1, 37>(&collision_integrals::Ω⃰22, &Ω⃰22, a, b, T) }
 	pub fn viscosity(&self, k: usize, T: f64) -> f64 {
 		let Self{molar_mass, diameter, ..} = self;
-		5./16. * f64::sqrt(π * molar_mass[k]/NA * kB*T) / (self.Ω⃰22(k, k, T) * π * sq(diameter[k]))
+		5./16. * f64::sqrt(π * molar_mass[k]/NA * kB*T) / (self.Ω⃰22(k, k, T) * π * num::sq(diameter[k]))
 	}
 	fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral::<0, 39>(&collision_integrals::A⃰, &A⃰, a, b, T) }
 	fn binary_thermal_diffusion(&self, a: usize, b: usize, T: f64) -> f64 {
-		3./16. * f64::sqrt(2.*π/self.reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
+		3./16. * f64::sqrt(2.*π/self.reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*num::sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
 	fn thermal_conductivity(&self, k: usize, T: f64) -> f64 {
 		let Self{molar_mass, thermodynamics, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
 		let f_internal = molar_mass[k]/NA/(kB * T) * self.binary_thermal_diffusion(k,k,T) / self.viscosity(k, T);
-		let fz = |T⃰| 1. + pow(π, 3./2.) / f64::sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
+		let fz = |T⃰| 1. + pow(π, 3./2.) / f64::sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * num::sq(π) + 2.) / T⃰;
 		// Scaling factor for temperature dependence of rotational relaxation: Kee, Coltrin [2003:12.112, 2017:11.115]
 		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[k] * fz(self.T⃰(k,k, 298.)) / fz(self.T⃰(k,k, T)) + 2./π * (5./3. * internal_degrees_of_freedom[k] + f_internal));
 		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[k]/(3./2.));
@@ -130,32 +130,32 @@ use ast::*;
 pub fn thermal_conductivityIVT<const D: usize>(thermal_conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression  {
 	// zip(mole_fractions, thermal_conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
 	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
-	for (X, P) in zip(mole_fractions, thermal_conductivityIVT) {
-		let y = l!(f P.dot(lnT.cloned()):Expression);
+	for (k, (X, P)) in zip(mole_fractions, thermal_conductivityIVT).enumerate() {
+		let y = l!(f P.dot(lnT.cloned()):Expression, format!("y{k}"));
 		let [a,b] = [X*y, X/y];
-		A = Some(if let Some(A) = A { l!(f; A+a) } else { a });
-		B = Some(if let Some(B) = B { l!(f; B+b) } else { b });
+		A = Some(if let Some(A) = A { l!(f, A+a, format!("a{k}")) } else { a });
+		B = Some(if let Some(B) = B { l!(f, B+b, format!("b{k}")) } else { b });
 	}
 	A.unwrap() + 1./B.unwrap()
 }
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
 	let K = VviscosityIVVT.len();
-	let VviscosityIVVT = map(VviscosityIVVT, |P| l!(f P.dot(lnT.cloned()):Expression));
-	let rcp_VviscosityIVVT = map(&*VviscosityIVVT, |x| l!(f 1./x));
+	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| l!(f P.dot(lnT.cloned()):Expression, format!("VviscosityIVVT{k}")));
+	let rcp_VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,x)| l!(f 1./x, format!("rcp_VviscosityIVVT{k}")));
 	sum((0..K).map(|k|
 		&mole_fractions[k] * sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
 			let Va = f64::sqrt(1./f64::sqrt(8.) * 1./f64::sqrt(1. + molar_mass[k]/molar_mass[j]));
-			let mut sq = |x| { let ref x=l!(f x); x*x };
-			&mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j])
+			//let mut sq = |x, name:String| { let ref x=l!(f x, name); x*x };
+			&mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j]/*, format!("x{k}_{j}")*/)
 		}))
 	))
 }
 
 pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_thermal_diffusionITVT: &[[f64; D]], mean_molar_mass: &'t Value, VT: &'t Value, lnT: &[Expr; D], mole_proportions: &'t [Value], f: &mut Block) -> impl 't+Iterator<Item=Expression> {
 	let K = mole_proportions.len();
-	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| {let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P.dot(lnT.cloned()):Expression)}));
-	let mean_molar_mass_VT = l!(f mean_molar_mass * VT);
+	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| {let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P.dot(lnT.cloned()):Expression, format!("D{k}_{j}"))}));
+	let mean_molar_mass_VT = l!(f mean_molar_mass * VT, "mean_molar_mass_VT");
 	(0..K).map(move |k|
 		(mean_molar_mass_VT - VT * 	molar_mass[k] * mole_proportions[k])
 	/ (0..K).filter(|&j| j != k).map(|j| mole_proportions[j] / binary_thermal_diffusionITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
@@ -177,8 +177,8 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let T = temperature;
 	let lnT = l!(f ln(1024., T, f));
 	fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
-	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f; y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
-	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f; x * lnT).expr()); y })};
+	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
+	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
 	let ref rcp_total_amount = l!(f 1./total_amount);
 	let nonbulk_fractions= map(0..K-1, |k| l!(f rcp_total_amount*max(0., &nonbulk_amounts[k])));
 	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
