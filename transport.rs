@@ -190,7 +190,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let lnT = l!(f ln(1024., T, f));
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
-	let ref mole_proportions = list(nonbulk_amounts.iter().copied().chain([f.def(total_amount-nonbulk_amounts.iter().sum::<Expression>(), format!("X{}",K-1))]));
+	let ref mole_proportions = list(nonbulk_amounts.iter().copied().chain([f.def(total_amount-nonbulk_amounts.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
 	use iter::Dot;
 	let ref VT = l!(f sqrt(T));
 	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions):Expression);
