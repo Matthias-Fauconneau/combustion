@@ -26,12 +26,13 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	#[cfg(not(feature="interpret"))] pub trait Convert = super::Convert;
 	#[cfg(feature="interpret")] pub trait Convert = super::Convert+Into<interpret::DataValue>+From<interpret::DataValue>;
 	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
+		let function = T::convert(function);
 		let input_len = function.input.len();
 		let output_len = function.output.len();
-		let function = T::convert(function);
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));
 		move |constants:&[T], inputs:&[&[T]]| {
-			assert!(constants.len() <= 1 && constants.len()+inputs.len() == input_len);
+			assert!(constants.len() <= 1);
+			assert_eq!(constants.len()+inputs.len(), input_len);
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![default(); states_len].into_boxed_slice());
 			let time = std::time::Instant::now();

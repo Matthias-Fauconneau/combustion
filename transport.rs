@@ -127,10 +127,10 @@ pub fn new(species: &Species, T0: f64) -> Self {
 
 use ast::*;
 
-pub fn thermal_conductivityIVT<const D: usize>(thermal_conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression  {
+pub fn thermal_conductivityNIVT<const D: usize>(thermal_conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_proportions: &[Value], f: &mut Block) -> Expression  {
 	// zip(mole_fractions, thermal_conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
 	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
-	for (k, (X, P)) in zip(mole_fractions, thermal_conductivityIVT).enumerate() {
+	for (k, (X, P)) in zip(mole_proportions, thermal_conductivityIVT).enumerate() {
 		let y = f.def(P.dot(lnT.cloned()):Expression, format!("y{k}"));
 		let [a,b] = [X*y, X/y];
 		A = Some(if let Some(A) = A { l!(f, A+a, format!("a{k}")) } else { a });
@@ -154,7 +154,7 @@ pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 
 
 fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
 
-pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_thermal_diffusionITVT: &[[f64; D]], mean_molar_mass: &'t Value, VT: &'t Value, lnT: &[Expr; D], mole_proportions: &'t [Value], f: &mut Block) -> impl 't+Iterator<Item=Expression> {
+pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_thermal_diffusionITVT: &[[f64; D]], mean_molar_mass_VTN: &'t Value, VT: &'t Value, lnT: &[Expr; D], mole_proportions: &'t [Value], f: &mut Block) -> impl 't+Iterator<Item=Expression> {
 	let K = mole_proportions.len();
 	let rcp_binary_thermal_diffusionITVT = |f:&mut Block, k,j| {
 		assert!(j<k);
@@ -167,10 +167,9 @@ pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_therm
 		replace_with(&mut S[k], |S| {let t = mole_proportions[j]*rcp_binary_thermal_diffusionITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{k}_{j}")) } else { t })});
 		replace_with(&mut S[j], |S| {let t = mole_proportions[k]*rcp_binary_thermal_diffusionITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{j}_{k}")) } else { t })});
 	}}
-	let mean_molar_mass_VT = f.def(mean_molar_mass * VT, "mean_molar_mass_VT");
 	//let rcp_binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| rcp_binary_thermal_diffusionITVT(k,j)));
 	S.into_vec().into_iter().enumerate().map(move |(k, S)|
-		(mean_molar_mass_VT - VT * 	molar_mass[k] * mole_proportions[k])
+		(mean_molar_mass_VTN - VT * 	molar_mass[k] * mole_proportions[k])
 	/ S.unwrap()//(0..K).filter(|&j| j != k).map(|j| mole_proportions[j] * rcp_binary_thermal_diffusionITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
 	)
 }
@@ -191,19 +190,17 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let lnT = l!(f ln(1024., T, f));
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
-	let ref rcp_total_amount = l!(f 1./total_amount);
-	let nonbulk_fractions= map(0..K-1, |k| l!(f rcp_total_amount*max(0., &nonbulk_amounts[k])));
-	let bulk_fraction= l!(f 1. - nonbulk_fractions.iter().sum::<Expression>());
-	let ref mole_fractions = list(nonbulk_fractions.into_vec().into_iter().chain(std::iter::once(bulk_fraction)));
+	let ref mole_proportions = list(nonbulk_amounts.iter().copied().chain([f.def(total_amount-nonbulk_amounts.iter().sum::<Expression>(), format!("X{}",K-1))]));
 	use iter::Dot;
 	let ref VT = l!(f sqrt(T));
-	let ref mean_molar_mass = l!(f molar_mass.copied().dot(mole_fractions):Expression);
+	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions):Expression);
+	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
 		output: list([
-			VT*self::thermal_conductivityIVT(&thermal_conductivityIVT, lnT, mole_fractions, f),
-			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_fractions, f),
+			self::thermal_conductivityNIVT(&thermal_conductivityIVT, lnT, mole_proportions, f)*VT/total_amount,
+			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_proportions, f),
 		].into_iter().chain(
-			density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass, VT, lnT, mole_fractions, f)
+			density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass_VTN, VT, lnT, mole_proportions, f)
 		)),
 		statements: function.statements.into(),
 		input: vec![Type::F64; input.len()].into(),

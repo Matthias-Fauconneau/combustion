@@ -54,8 +54,8 @@ fn main() -> Result<()> {
 		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
 		{let temperature0 = temperature;
 		move |total_amount: T, temperature: T, nonbulk_amounts: &[T]| -> (T, T, Box<[T]>) {
-			let_!{ [thermal_conductivity, viscosity, density_mixture_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
-				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(density_mixture_diffusion, |D| density*diffusivity*D))
+			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
+				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(density_diffusion, |D| density*diffusivity*D))
 			}}
 		}}
 	};
@@ -73,6 +73,7 @@ fn main() -> Result<()> {
 		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
+
 		let ref nonbulk_amounts = map(&amounts[0..amounts.len()-1], |&n| n as _);
 		#[cfg(feature="transport")] {
 			#[link(name = "cantera")] extern "C" {
@@ -84,28 +85,28 @@ fn main() -> Result<()> {
 			let cantera_transport = unsafe{trans_newDefault(phase, 0)};
 			let cantera_thermal_conductivity  = unsafe{trans_thermalConductivity(cantera_transport)};
 			let cantera_viscosity = unsafe{trans_viscosity(cantera_transport)};
-			let ref cantera_mixture_diffusion = {
+			let ref cantera_diffusion = {
 				let mut array = vec![0.; species.len()];
 				assert!(unsafe{trans_getMixDiffCoeffs(cantera_transport, array.len() as i32, array.as_mut_ptr())} == 0);
 				let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 				order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 			};
 			eprintln!("Cantera");
-			eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_mixture_diffusion.iter().format(" "));
+			eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_diffusion.iter().format(" "));
 			let State{temperature, amounts, ..} = state;
 			let temperature = *temperature as _;
 			let total_amount = amounts.iter().sum::<f64>() as _;
 			eprintln!("Evaluate");
-			let (thermal_conductivity, viscosity, density_mixture_diffusion) = transport(total_amount, temperature, nonbulk_amounts);
+			let (thermal_conductivity, viscosity, density_diffusion) = transport(total_amount, temperature, nonbulk_amounts);
 			let concentration = pressure_R / temperature;
 			let mole_fractions = map(&**amounts, |n| n/total_amount);
 			let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 			let density = concentration * mean_molar_mass;
-			let mixture_diffusion = map(&*density_mixture_diffusion, |ρD| ρD/density);
-			eprintln!("λ: {thermal_conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", mixture_diffusion.iter().format(" "));
+			let diffusion = map(&*density_diffusion, |ρD| ρD/density);
+			eprintln!("λ: {thermal_conductivity:.4}, μ: {viscosity:.4e}, D: {:.4e}", diffusion.iter().format(" "));
 			print!("λ: {:.0e}, ", num::relative_error(thermal_conductivity as _, cantera_thermal_conductivity));
 			print!("μ: {:.0e}, ", num::relative_error(viscosity as _, cantera_viscosity));
-			let e = mixture_diffusion.iter().zip(cantera_mixture_diffusion.iter()).map(|(&a,&b)| num::relative_error(a as _, b)).reduce(f64::max).unwrap();
+			let e = diffusion.iter().zip(cantera_diffusion.iter()).map(|(&a,&b)| num::relative_error(a as _, b)).reduce(f64::max).unwrap();
 			println!("D: {e:.0e}");
 			Ok((0, 0.))
 		}

@@ -116,6 +116,7 @@ const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 }
 
 mod yaml;
+mod device;
 use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 
 #[fehler::throws] fn main() {
@@ -140,13 +141,13 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 	let thermal_conductivityIVT = map(&*thermal_conductivityIVT, |P| P.map(|p| (f64::sqrt(temperature)/(2.*thermal_conductivity))*p));
 	let binary_thermal_diffusionITVT = map(&*binary_thermal_diffusionITVT, |P| P.map(|p| (f64::sqrt(temperature)/(R*density*diffusivity))*p));
 
-	let thermal_conductivityIVT = {
+	let thermal_conductivityNIVT = {
 		let_!{ input@[ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(3+K), Value) => {
 		let mut values = ["lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
 		assert!(input.len() == values.len());
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list([transport::thermal_conductivityIVT(&thermal_conductivityIVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)]),
+			output: list([transport::thermal_conductivityNIVT(&thermal_conductivityIVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)]),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -167,20 +168,20 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 	}}};
 
 	let density_diffusion = {
-		let_!{ input@[ref mean_molar_mass, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
-		let mut values = ["mean_molar_mass","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
+		let_!{ input@[ref mean_molar_mass_VT, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
+		let mut values = ["mean_molar_mass_VT","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("X{i}"))).collect::<Vec<_>>();
 		assert_eq!(input.len(), values.len());
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list(transport::density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
+			output: list(transport::density_diffusion(molar_mass, &binary_thermal_diffusionITVT, mean_molar_mass_VT, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
 		}
 	}}};
 
-	let compile = |f:Function,name| {
-		let mut s = self::compile(0, &f, name);
+	let compile = |f:&Function,name| {
+		let mut s = self::compile(0, f, name);
 		s = s.replace("__global__","__device__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
 		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__device__ void","__device__ double"); }
@@ -188,7 +189,42 @@ use {anyhow::{Error, Context}, iter::Dot, std::env::*, combustion::*};
 		eprintln!("{}", s.lines().map(|l| l.len()).max().unwrap());
 		s//.replace("+-","-")
 	};
-	println!("{}", compile(thermal_conductivityIVT,"thermal_conductivityIVT"));
-	println!("{}", compile(viscosityIVT,"viscosityIVT").replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v"));
-	println!("{}", compile(density_diffusion,"density_diffusion").replace("density_diffusion(","density_diffusion(int id, "));
+	println!("{}", compile(&thermal_conductivityNIVT,"thermal_conductivityNIVT"));
+	println!("{}", compile(&viscosityIVT,"viscosityIVT").replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v"));
+	println!("{}", compile(&density_diffusion,"density_diffusion").replace("density_diffusion(","density_diffusion(int id, "));
+
+	/*let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity, density*diffusivity);
+	use device::*;
+	let transport = with_repetitive_input(assemble::<f64>(transport, 1), 1);
+	let thermal_conductivityNIVT = with_repetitive_input(assemble::<f64>(thermal_conductivityNIVT, 1), 1);
+	let viscosityIVT = with_repetitive_input(assemble::<f64>(viscosityIVT, 1), 1);
+	let density_diffusion = with_repetitive_input(assemble::<f64>(density_diffusion, 1), 1);
+	let temperature0 = temperature;
+	let total_amount = amounts.iter().sum::<f64>();
+	let nonbulk_amounts = map(&amounts[0..amounts.len()-1], |&n| n);
+	let_!{ [thermal_conductivity, viscosity, ref_density_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
+		let mole_fractions = map(&**amounts, |n| n/total_amount);
+		let mean_molar_mass : f64 = molar_mass.dot(&mole_fractions);
+		let mass_fractions = map(zip(&*mole_fractions,&**molar_mass), |(x,&m)| m / mean_molar_mass * x);
+		let T = temperature/temperature0;
+		let VT =	f64::sqrt(T);
+		let mean_molar_mass_VTN = VT; // M * (VT * sum mole proportions) = M * VT / M
+		let lnT = f64::ln(T);
+		let lnT2 = lnT*lnT;
+		let lnT3 = lnT2*lnT;
+		let mut mole_proportions = vec![0.; K];
+		let mut sum_nonbulk_mass_fractions = 0.;
+		for k in 0..K-1 {
+			let mass_fraction = f64::max(0., mass_fractions[k]);
+			mole_proportions[k] = mass_fraction/molar_mass[k];
+			sum_nonbulk_mass_fractions += mass_fraction;
+		}
+		mole_proportions[K-1] = (1. - sum_nonbulk_mass_fractions) / molar_mass[K-1];
+		let_!{ [thermal_conductivityNIVT] = &*thermal_conductivityNIVT(&[], &([&[lnT, lnT2, lnT3], &*mole_proportions].concat())).unwrap() => {
+		{let e = num::relative_error(*thermal_conductivity, thermal_conductivityNIVT*mean_molar_mass*VT); assert!(e<4e-3, "{e:e}");}
+		let_!{ [viscosityIVT] = &*viscosityIVT(&[], &([&[lnT, lnT2, lnT3], &*mole_proportions].concat())).unwrap() => {
+		{let e = num::relative_error(*viscosity, viscosityIVT*VT); assert!(e<=0., "{e:e}");}
+		let density_diffusion = density_diffusion(&[], &([&[mean_molar_mass_VTN, VT, lnT, lnT2, lnT3], &*mole_proportions].concat())).unwrap();
+		for (&a,&b) in zip(ref_density_diffusion, &*density_diffusion) {let e = num::relative_error(a,b); assert!(e<1e-15, "{e:e}");}
+	}}}}}}*/
 }
