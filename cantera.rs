@@ -40,22 +40,25 @@ fn main() -> Result<()> {
 
 	#[cfg(feature="transport")] let transport = {
 		eprintln!("Fit");
-		let total_amount = amounts.iter().sum::<f64>();
-		let mole_fractions = map(&**amounts, |n| n/total_amount);
-		let diffusivity = 1.;
-		let concentration = pressure_R / temperature;
-		let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
-		let density = concentration * mean_molar_mass;
-		let viscosity = density * diffusivity;
-		let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
-		let R = kB*NA;
-		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
-		let transport = transport::properties::<4>(&species, temperature, viscosity, thermal_conductivity0);
+		let (temperature0, viscosity0, thermal_conductivity0) = if false {
+			let total_amount = amounts.iter().sum::<f64>();
+			let mole_fractions = map(&**amounts, |n| n/total_amount);
+			let diffusivity = 1.;
+			let concentration = pressure_R / temperature;
+			let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
+			let density = concentration * mean_molar_mass;
+			let viscosity = density * diffusivity;
+			let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
+			let R = kB*NA;
+			let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
+			(temperature, viscosity, thermal_conductivity)
+		} else { (1., 1., 1.) };
+		let transport = transport::properties::<5>(&species, temperature0, viscosity0, thermal_conductivity0);
 		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
-		{let temperature0 = temperature; let viscosity0=viscosity;
-		move |total_amount: T, temperature: T, nonbulk_amounts: &[T]| -> (T, T, Box<[T]>) {
-			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
-				(thermal_conductivity0*thermal_conductivity, viscosity0*viscosity, map(density_diffusion, |D| viscosity0*D))
+		move |total_amount:f64, temperature:f64, nonbulk_amounts:&[f64]| -> (f64, f64, Box<[f64]>) {
+			let nonbulk_amounts = map(&*nonbulk_amounts, |&n| n as _);
+			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount as _, (temperature/temperature0) as _], &*nonbulk_amounts].concat())).unwrap() => {
+				(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusion, |D| viscosity0*(*D as f64)))
 			}}
 		}}
 	};
@@ -74,7 +77,8 @@ fn main() -> Result<()> {
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
 
-		let ref nonbulk_amounts = map(&amounts[0..amounts.len()-1], |&n| n as _);
+		let ref nonbulk_amounts = amounts[0..amounts.len()-1];
+		//let ref nonbulk_amounts = map(nonbulk_amounts, |&n| n as _);
 		#[cfg(feature="transport")] {
 			#[link(name = "cantera")] extern "C" {
 				fn trans_newDefault(th: i32, loglevel: i32) -> i32;
@@ -94,8 +98,8 @@ fn main() -> Result<()> {
 			eprintln!("Cantera");
 			eprintln!("λ: {cantera_thermal_conductivity:.4}, μ: {cantera_viscosity:.4e}, D: {:.4e}", cantera_diffusion.iter().format(" "));
 			let State{temperature, amounts, ..} = state;
-			let temperature = *temperature as _;
-			let total_amount = amounts.iter().sum::<f64>() as _;
+			let temperature = *temperature;
+			let total_amount = amounts.iter().sum::<f64>();
 			eprintln!("Evaluate");
 			let (thermal_conductivity, viscosity, density_diffusion) = transport(total_amount, temperature, nonbulk_amounts);
 			let concentration = pressure_R / temperature;

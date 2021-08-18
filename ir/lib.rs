@@ -115,7 +115,7 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 		&F64(v) => { self.f64(*v); ast::Type::F64 },
 		Value(v) => *self.types.get(v).unwrap_or_else(|| panic!("{:?} {v:?}", self.types)),
 		//Cast(to, x) => { self.pass(x); *to },
-		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x) => self.pass(x),
+		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Sq(x) => self.pass(x),
 		Exp(x) => {self.pass(x); exp_approx_constants(self); ast::Type::F32}, //self.inline_pass(x, exp_approx),
 		Ln{x0,x} => {self.pass(x); ln_approx_constants(**x0, self); ast::Type::F32},  //self.inline_pass(x, |x,f| ln_approx(**x0, x, f)),
 		/*FPromote(x) => { self.pass(x); ast::Type::F64 },
@@ -172,6 +172,7 @@ fn expr(&mut self, e: &Expression) -> Value {
 		FCvtFromSInt(x) => fcvt_from_sint(self.expr(x), self),*/
 		Exp(x) => exp_approx(self.expr(x), self), //self.inline_expr(x, exp_approx),
 		Ln{x0,x} => ln_approx(**x0, self.expr(x), self), //self.inline_expr(x, |x,f| ln_approx(**x0, x, f)),
+		Sq(x) => { let x = self.expr(x); mul(x, x, self)}, //self.inline_expr(x, |x,f| ln_approx(**x0, x, f)),
 		}
 		Expression::Block { statements, result } => {
 			for s in &**statements { self.push(s) }
