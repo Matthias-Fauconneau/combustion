@@ -208,6 +208,6 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	}
 }}}
 
-pub fn properties<const D: usize>(species: &Species, temperature: f64, Vviscosity: f64, thermal_conductivity: f64, density_diffusivity: f64) -> Function {
-	properties_(&species.molar_mass, &Polynomials::<D>::new(&species, temperature), temperature, Vviscosity, thermal_conductivity, density_diffusivity)
+pub fn properties<const D: usize>(species: &Species, temperature: f64, viscosity: f64, thermal_conductivity: f64) -> Function {
+	properties_(&species.molar_mass, &Polynomials::<D>::new(&species, temperature), temperature, viscosity, thermal_conductivity)
 }
