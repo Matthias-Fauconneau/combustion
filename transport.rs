@@ -131,7 +131,7 @@ pub fn thermal_conductivityIVT<const D: usize>(thermal_conductivityIVT: &[[f64; 
 	// zip(mole_fractions, thermal_conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
 	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
 	for (k, (X, P)) in zip(mole_fractions, thermal_conductivityIVT).enumerate() {
-		let y = l!(f P.dot(lnT.cloned()):Expression, format!("y{k}"));
+		let y = f.def(P.dot(lnT.cloned()):Expression, format!("y{k}"));
 		let [a,b] = [X*y, X/y];
 		A = Some(if let Some(A) = A { l!(f, A+a, format!("a{k}")) } else { a });
 		B = Some(if let Some(B) = B { l!(f, B+b, format!("b{k}")) } else { b });
@@ -141,8 +141,8 @@ pub fn thermal_conductivityIVT<const D: usize>(thermal_conductivityIVT: &[[f64; 
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
 	let K = VviscosityIVVT.len();
-	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| l!(f P.dot(lnT.cloned()):Expression, format!("VviscosityIVVT{k}")));
-	let rcp_VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,x)| l!(f 1./x, format!("rcp_VviscosityIVVT{k}")));
+	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| f.def(P.dot(lnT.cloned()):Expression, format!("VviscosityIVVT{k}")));
+	let rcp_VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,x)| f.def(1./x, format!("rcp_VviscosityIVVT{k}")));
 	sum((0..K).map(|k|
 		&mole_fractions[k] * sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
 			let Va = f64::sqrt(1./f64::sqrt(8.) * 1./f64::sqrt(1. + molar_mass[k]/molar_mass[j]));
@@ -152,13 +152,26 @@ pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 
 	))
 }
 
+fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
+
 pub fn density_diffusion<'t, const D: usize>(molar_mass: &'t [f64], binary_thermal_diffusionITVT: &[[f64; D]], mean_molar_mass: &'t Value, VT: &'t Value, lnT: &[Expr; D], mole_proportions: &'t [Value], f: &mut Block) -> impl 't+Iterator<Item=Expression> {
 	let K = mole_proportions.len();
-	let binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| {let P = binary_thermal_diffusionITVT[k*K+j]; l!(f P.dot(lnT.cloned()):Expression, format!("D{k}_{j}"))}));
-	let mean_molar_mass_VT = l!(f mean_molar_mass * VT, "mean_molar_mass_VT");
-	(0..K).map(move |k|
+	let rcp_binary_thermal_diffusionITVT = |f:&mut Block, k,j| {
+		assert!(j<k);
+		let P:[f64;D] = binary_thermal_diffusionITVT[k*K+j];
+		f.def(1./(P.dot(lnT.cloned()):Expression), format!("R{k}_{j}"))
+	};
+	let mut S: Box<[Option<Expression>]> = vec![None; K].into();
+	for k in 0..K { for j in 0..k {
+		let rcp_binary_thermal_diffusionITVT = rcp_binary_thermal_diffusionITVT(f, k,j);
+		replace_with(&mut S[k], |S| {let t = mole_proportions[j]*rcp_binary_thermal_diffusionITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{k}_{j}")) } else { t })});
+		replace_with(&mut S[j], |S| {let t = mole_proportions[k]*rcp_binary_thermal_diffusionITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{j}_{k}")) } else { t })});
+	}}
+	let mean_molar_mass_VT = f.def(mean_molar_mass * VT, "mean_molar_mass_VT");
+	//let rcp_binary_thermal_diffusionITVT = map(0..K, |k| map(0..k, |j| rcp_binary_thermal_diffusionITVT(k,j)));
+	S.into_vec().into_iter().enumerate().map(move |(k, S)|
 		(mean_molar_mass_VT - VT * 	molar_mass[k] * mole_proportions[k])
-	/ (0..K).filter(|&j| j != k).map(|j| mole_proportions[j] / binary_thermal_diffusionITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
+	/ S.unwrap()//(0..K).filter(|&j| j != k).map(|j| mole_proportions[j] * rcp_binary_thermal_diffusionITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
 	)
 }
 
@@ -176,7 +189,6 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{thermal_condu
 	let ref mut f = function;
 	let T = temperature;
 	let lnT = l!(f ln(1024., T, f));
-	fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
 	let ref rcp_total_amount = l!(f 1./total_amount);

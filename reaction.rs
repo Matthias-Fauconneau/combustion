@@ -18,18 +18,15 @@ impl<E:Into<Expression>> Fn<(E,)> for Cache<'_> { extern "rust-call" fn call(&se
 	expressions: Vec<(Expr, String)>,
 	after_CSE: std::collections::HashSet<Expr>,
 }
-#[track_caller] pub fn def(e: impl Into<Expression>, f: &mut Block, name: String) -> Value {
-	let e = e.into();
-	assert!(!e.is_leaf(), "{e:?}");
-	*f.values.entry(e.into()).or_insert_with_key(|e| {
-		assert!(!name.is_empty());
-		let (s, v) = ast::def(e.clone(), &mut f.block, name);
-		f.block.statements.push(s);
-		v
-	})
+impl Block<'_> {
+	#[track_caller] pub fn def(&mut self, e: impl Into<Expression>, name: impl ToString) -> Value {
+		let e = e.into();
+		assert!(!e.is_leaf(), "{e:?}");
+		*self.values.entry(e.into()).or_insert_with_key(|e| self.block.def(e.clone(), name))
+	}
 }
 #[macro_export] macro_rules! le {
-	($f:ident $e:expr) => (def($e, $f, format!("{}:{}: {}", file!(), line!(), stringify!($e))));
+	($f:ident $e:expr) => {{ let e = $e; $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
 	($f:ident, $e:expr) => {{ let e = $e; if let Some(x) = e.f64() { x.into() } else { le!($f e).into() } }};
 }
 
@@ -52,6 +49,7 @@ impl std::ops::Mul<Ratio> for Expr { type Output = Expression; fn mul(self, Rati
 	if let Some(d) = d.f64() { if d == 1. { return self*n } }
 	(self*n)/d
 }}
+impl std::ops::Mul<Expr> for Ratio { type Output = Expression; fn mul(self, e: Expr) -> Expression { e*self } }
 impl std::ops::Mul<Ratio> for &Value { type Output = Expression; fn mul(self, r: Ratio) -> Expression { self.into():Expr*r } }
 
 pub fn sum(iter: impl IntoIterator<Item:Into<Expression>>, f: &mut Block) -> Option<Expression> {
@@ -65,7 +63,7 @@ fn product_of_exponentiations_<N:Into<i16>>(iter: impl IntoIterator<Item=(&'t Va
 	match (num, div) {
 		(None, None) => None,
 		(Some(num), None) => Some(num),
-		(None, Some(div)) => Some(l!(f, (1./div).expr())),
+		(None, Some(div)) => Some((1./div).expr()), //f.def(1./div).expr()),
 		(Some(num), Some(div)) => Some(le!(f, num/div))
 	}.unwrap()
 }
@@ -181,16 +179,17 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f), f) * efficiency(efficiencies, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
-			let C_k0 = l!(f efficiency * chk(arrhenius(k0, T, f), f));
-			let k_inf = l!(f, chk(arrhenius(k_inf, T, f), f));
-			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf)
+			let k0 = arrhenius(k0, T, f); //chk
+			let C_k0 = f.def(efficiency * k0, "C_k0");
+			let k_inf = {let e = arrhenius(k_inf, T, f); f.def(e, "k_inf")}; //chk
+			Ratio(C_k0 * k_inf, C_k0 + k_inf)
 		},
 		Falloff{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
-			let k0 = l!(f chk(arrhenius(k0, T, f), f));
-			let k_inf = l!(f, chk(arrhenius(k_inf, T, f), f));
+			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")}; //chk
+			let k_inf = {let e = arrhenius(k_inf, T, f); f.def(e, "k_inf")}; //chk
 			//f.block(|f|{
-				let Pr = l!(f efficiency * k0 / k_inf.shallow());
+				let Pr = f.def(efficiency * k0 / k_inf, "Pr");
 				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
 					(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * le!(f exp(T/(-T3), f)) } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * le!(f exp(T/(-T1), f)) } else { y.into() }}),
@@ -200,7 +199,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 				let C = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
 				let N = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
 				let lnPr𐊛C = l!(f ln(1., Pr, f) + C); // 2m - 2K
-				let f1 = l!(f lnPr𐊛C / (-0.14*lnPr𐊛C+N));
+				let f1 = f.def(lnPr𐊛C / (-0.14*lnPr𐊛C+N), "f1");
 				let F = exp(lnFcent/(f1*f1+1.), f);
 				Ratio(F * k_inf * Pr, Pr + 1.)
 			//})
@@ -213,20 +212,20 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, Gibb
 	let rcp_exp_Gibbs0_RT = map(&*Gibbs0_RT, |g| l!(f exp(-g, f)));
 	map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f);
-		let forward = product_of_exponentiations(concentrations, reactants, f);
-		let coefficient = if let ReactionModel::Irreversible = model { forward } else {
+		let Rforward = product_of_exponentiations(concentrations, reactants, f);
+		let R = if let ReactionModel::Irreversible = model { Rforward } else {
 			let rcp_equilibrium_constant_0 = product_of_exponentiations_rcp(&exp_Gibbs0_RT, &rcp_exp_Gibbs0_RT, net, f);
 			//let rcp_equilibrium_constant_0 = exp(dot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0,
-				1 => le!(f, C0 * rcp_equilibrium_constant_0),
-				-1 => le!(f, rcp_C0 * rcp_equilibrium_constant_0),
+				1 => f.def(C0 * rcp_equilibrium_constant_0, "rK").into(),
+				-1 => f.def(rcp_C0 * rcp_equilibrium_constant_0, "rK").into(),
 				_ => unreachable!()
 			};
-			let reverse = le!(f rcp_equilibrium_constant * product_of_exponentiations(concentrations, products, f));
-			le!(f, forward - reverse)
+			let Rreverse = le!(f rcp_equilibrium_constant * product_of_exponentiations(concentrations, products, f));
+			f.def(Rforward - Rreverse, "R").into()
 		};
-		le!(f coefficient * forward_rate_constant)
+		f.def(forward_rate_constant * R, "cR")
 	})
 }
 
@@ -254,11 +253,11 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let rates = reaction_rates(reactions, Ts, &C0, &rcp_C0, &Gibbs0_RT, &concentrations, f);
 	pub fn dot(iter: impl IntoIterator<Item=(f64, impl Into<Expression>)>, f: &mut Block) -> Option<Expression> {
-		iter.into_iter().filter(|&(c,_)| c != 0.).fold(None, |sum, (c, e)| {
+		iter.into_iter().filter(|&(c,_)| c != 0.).enumerate().fold(None, |sum, (i, (c, e))| {
 			let e = e.into();
 			Some(if c == 1. { if let Some(sum) = sum { sum+e } else { e } }
 			else if c == -1. { if let Some(sum) = sum { sum-e } else { le!(f, -e) } } // fixme: reorder -a+b -> b-a to avoid some neg
-			else { let term = le!(f, c*e); if let Some(sum) = sum { le!(f, sum+term) } else { term } })
+			else { let term = f.def(c*e, format!("t{i}")); if let Some(sum) = sum { f.def(sum+term, format!("s{i}")).into() } else { term.into() } })
 		})
 	}
 	let rates = map(0..active, |specie| l!(f, dot(reactions.iter().map(|Reaction{net, ..}| net[specie] as f64).zip(&*rates), f).unwrap().expr()));

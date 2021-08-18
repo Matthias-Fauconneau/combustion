@@ -305,19 +305,20 @@ impl Block<'t> {
 		self.names.push(name);
 		id
 	}
-}
-#[track_caller] pub fn def(value: impl Into<Expression>, block: &mut Block, name: String) -> (Statement, Value)/*Result<(Statement, Value), f64>*/ {
-	let value = value.into();
-	//if let Expression::Expr(ref e) = value { if let Some(x) = e.f64() { return Err(x) } }
-	assert!(!value.is_leaf(), "{value:?}");
-	let id = block.value(name);
-	(Statement::Value{id: id.clone(), value}, id)//Ok((Statement::Value{id: id.clone(), value}, id))
+	#[track_caller] pub fn def(&mut self, value: impl Into<Expression>, name: impl ToString) -> Value {
+		let value = value.into();
+		assert!(!value.is_leaf(), "{value:?}");
+		let name = name.to_string();
+		assert!(!name.is_empty());
+		let id = self.value(name);
+		self.statements.push(Statement::Value{id: id.clone(), value});
+		id
+	}
 }
 #[macro_export] macro_rules! l {
-	($f:ident $e:expr, $name:expr) => {{ let (s, v) = $crate::def($e, $f, $name.to_string()); $f.statements.push(s); v }};
-	($f:ident $e:expr) => {{ l!($f $e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
-	($f:ident, $e:expr, $name:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e, $name).into() } }};
-	($f:ident, $e:expr) => {{ l!($f, $e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
+	($f:ident $e:expr) => {{ let e = $e; $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
+	($f:ident, $e:expr, $name:expr) => {{ let e = $e; if e.is_leaf() { e } else { $f.def(e, $name).into() } }};
+	($f:ident, $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e).into() } }};
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
@@ -381,19 +382,15 @@ pub fn exp(x: impl Into<Expression>, _f: &mut Block) -> Expression {
 	else { Expr::Ln{x0: NotNan::new(x0).unwrap(), x: box_(x.into())} } // ln_approx(x0, x, f)
 }
 
-#[must_use] pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, f: &mut Block) -> Vec<Statement> {
+#[must_use] pub fn eliminate_common_subexpression(a: &mut Expression, b: &mut Expression, block: &mut Block) -> Vec<Statement> {
 	if !a.is_leaf() && !b.is_leaf() && *a == *b {
-		let (def, common) = {
-			let a = std::mem::take(a);
-			let name = format!("({}={})",a.to_string(f.names),b.to_string(f.names));
-			def(a, f, name)
-		};
-		*a = common.into();
-		*b = common.into();
-		[def].into()
+		let id = block.value(format!("({}={})",a.to_string(block.names), b.to_string(block.names)));
+		*a = id.into();
+		let value = std::mem::replace(b, id.into());
+		[Statement::Value{id, value}].into()
 	} else {
-		a.visit_mut(|a| eliminate_common_subexpression(a, b, f)).into_iter().filter_map(|x| x).map(|x| x.into_iter()).chain(
-		b.visit_mut(|b| eliminate_common_subexpression(a, b, f)).into_iter().filter_map(|x| x).map(|x| x.into_iter())).flatten().collect()
+		a.visit_mut(|a| eliminate_common_subexpression(a, b, block)).into_iter().filter_map(|x| x).map(|x| x.into_iter()).chain(
+		b.visit_mut(|b| eliminate_common_subexpression(a, b, block)).into_iter().filter_map(|x| x).map(|x| x.into_iter())).flatten().collect()
 	}
 }
 
