@@ -46,16 +46,16 @@ fn main() -> Result<()> {
 		let concentration = pressure_R / temperature;
 		let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 		let density = concentration * mean_molar_mass;
-		let Vviscosity = f64::sqrt(density * diffusivity);
+		let viscosity = density * diffusivity;
 		let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 		let R = kB*NA;
-		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * diffusivity;
-		let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity0, density*diffusivity);
+		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
+		let transport = transport::properties::<4>(&species, temperature, viscosity, thermal_conductivity0);
 		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
-		{let temperature0 = temperature;
+		{let temperature0 = temperature; let viscosity0=viscosity;
 		move |total_amount: T, temperature: T, nonbulk_amounts: &[T]| -> (T, T, Box<[T]>) {
 			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
-				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(density_diffusion, |D| density*diffusivity*D))
+				(thermal_conductivity0*thermal_conductivity, viscosity0*viscosity, map(density_diffusion, |D| viscosity0*D))
 			}}
 		}}
 	};
