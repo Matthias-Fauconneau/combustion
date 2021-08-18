@@ -18,6 +18,7 @@ transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow','libc']
 plot=['cvode','ui','image','png','anyhow']
 cantera=[]
+check=[]
 default=['main','interpret','rand']
 
 [dependencies]
