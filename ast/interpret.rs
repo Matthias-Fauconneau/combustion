@@ -78,6 +78,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		Exp(x) if let F64(x) = eval(state, x) => F64(f64::exp(x)),
 		Ln{x,..} if let F32(x) = eval(state, x) => F32(f32::ln(x)),
 		Ln{x,..} if let F64(x) = eval(state, x) => F64(f64::ln(x)),
+		Sq(x) if let F64(x) = eval(state, x) => F64(x*x),
 		_ => panic!("{expr:?}"),
 		},
 		Expression::Block { statements, result } => {

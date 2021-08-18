@@ -42,23 +42,20 @@ fn main() -> Result<()> {
 		eprintln!("Fit");
 		let total_amount = amounts.iter().sum::<f64>();
 		let mole_fractions = map(&**amounts, |n| n/total_amount);
-		let length = 1.;
-		let velocity = 1.;
-		let time = length / velocity;
+		let diffusivity = 1.;
 		let concentration = pressure_R / temperature;
 		let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 		let density = concentration * mean_molar_mass;
-		let Vviscosity = f64::sqrt(density * time) * velocity;
+		let Vviscosity = f64::sqrt(density * diffusivity);
 		let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 		let R = kB*NA;
-		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * length * velocity;
-		let mixture_diffusion = sq(length) / time;
-		let transport = transport::properties::<5>(&species, temperature, Vviscosity, thermal_conductivity0, density*mixture_diffusion);
+		let thermal_conductivity0 = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * density * diffusivity;
+		let transport = transport::properties::<4>(&species, temperature, Vviscosity, thermal_conductivity0, density*diffusivity);
 		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
 		{let temperature0 = temperature;
 		move |total_amount: T, temperature: T, nonbulk_amounts: &[T]| -> (T, T, Box<[T]>) {
 			let_!{ [thermal_conductivity, viscosity, density_mixture_diffusion @ ..] = &*transport(&[], &([&[total_amount, temperature/temperature0], &*nonbulk_amounts].concat())).unwrap() => {
-				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(density_mixture_diffusion, |D| density*mixture_diffusion*D))
+				(thermal_conductivity0*thermal_conductivity, sq(Vviscosity)*viscosity, map(density_mixture_diffusion, |D| density*diffusivity*D))
 			}}
 		}}
 	};
