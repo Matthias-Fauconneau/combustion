@@ -25,7 +25,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> Value {
 				Value(v) => self.names[v.0].clone(),
 				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
-				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n\t+{b}") } else { y };
+				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n +{b}") } else { y };
 					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
 				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}-{b}");
 					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
@@ -137,6 +137,7 @@ use {iter::Dot, std::env::*, combustion::*};
 	let specific_heat_capacity = R / mean_molar_mass * thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions):f64;
 	let conductivity = specific_heat_capacity * diffusivity;
 	let transport::Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} = transport::Polynomials::<4>::new(&species, temperature);
+	//dbg!(f64::sqrt(f64::sqrt(temperature)/viscosity));
 	let VviscosityIVVT = map(&*VviscosityIVVT, |P| P.map(|p| (f64::sqrt(f64::sqrt(temperature)/viscosity))*p));
 	let conductivityIVT = map(&*conductivityIVT, |P| P.map(|p| (f64::sqrt(temperature)/(2.*conductivity))*p));
 	let diffusivityITVT = map(&*diffusivityITVT, |P| P.map(|p| (f64::sqrt(temperature)/(R*viscosity))*p));
@@ -168,12 +169,12 @@ use {iter::Dot, std::env::*, combustion::*};
 	}}};
 
 	let density_diffusivity = {
-		let_!{ input@[ref mean_molar_mass_VT, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
-		let mut values = ["mean_molar_mass_VT","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
+		let_!{ input@[ref mean_molar_mass_VTN, ref VT, ref lnT, ref lnT2, ref lnT3, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
+		let mut values = ["mean_molar_mass_VTN","VT","lnT","lnT2","lnT3"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert_eq!(input.len(), values.len());
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list(transport::density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VT, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
+			output: list(transport::density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into()], mole_proportions, &mut function)),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()

@@ -115,10 +115,13 @@ pub fn new(species: &Species, T0: f64) -> Self {
 	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
 	const N : usize = /*D+2 FIXME: Remez*/50;
 	let T : [_; N] = eval(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
-	for (n,&T) in T.iter().enumerate() { if T < 1900. { for k in 0..K { assert!(species.T⃰(k,k, T) <= 50., "{k} {n} {T}"); } } }
+	//for (n,&T) in T.iter().enumerate() { if T < 1900. { for k in 0..K { assert!(species.T⃰(k,k, T) <= 50., "{k} {n} {T}"); } } }
+	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| species.viscosity(k, T)).format(", ")))));
+	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T))).format(", ")))));
+	println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))));
 	Self{
 		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| species.conductivity(k,T)/f64::sqrt(T))),
-		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T))/f64::sqrt(f64::sqrt(T)))),
+		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))),
 		diffusivityITVT: list((0..K).map(|k| (0..K).map(move |j|
 			polynomial::fit(T, |T| f64::ln(T/T0), |T| species.diffusivity(k, j, T) / (T*f64::sqrt(T))) )).flatten())
 	}
@@ -131,8 +134,8 @@ pub fn conductivityNIVT<const D: usize>(conductivityIVT: &[[f64; D]], lnT: &[Exp
 	// zip(mole_fractions, conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
 	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
 	for (k, (X, P)) in zip(mole_proportions, conductivityIVT).enumerate() {
-		let y = f.def(P.dot(lnT.cloned()):Expression, format!("y{k}"));
-		let [a,b] = [X*y, X/y];
+		let c = f.def(P.dot(lnT.cloned()):Expression, format!("c{k}"));
+		let [a,b] = [X*c, X/c];
 		A = Some(if let Some(A) = A { l!(f, A+a, format!("a{k}")) } else { a });
 		B = Some(if let Some(B) = B { l!(f, B+b, format!("b{k}")) } else { b });
 	}
