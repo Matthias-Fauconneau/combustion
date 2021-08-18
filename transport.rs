@@ -118,7 +118,7 @@ pub fn new(species: &Species, T0: f64) -> Self {
 	//for (n,&T) in T.iter().enumerate() { if T < 1900. { for k in 0..K { assert!(species.T⃰(k,k, T) <= 50., "{k} {n} {T}"); } } }
 	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| species.viscosity(k, T)).format(", ")))));
 	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T))).format(", ")))));
-	println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))));
+	//println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))));
 	Self{
 		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| species.conductivity(k,T)/f64::sqrt(T))),
 		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))),
