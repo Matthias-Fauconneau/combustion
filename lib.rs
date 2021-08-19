@@ -1,4 +1,4 @@
-#![feature(once_cell,in_band_lifetimes,array_methods,format_args_capture,associated_type_bounds,trait_alias,default_free_fn,type_ascription,array_zip,unboxed_closures,fn_traits,const_generics,const_evaluatable_checked,iter_zip)]
+#![feature(once_cell,in_band_lifetimes,array_methods,format_args_capture,associated_type_bounds,trait_alias,default_free_fn,type_ascription,array_zip,unboxed_closures,fn_traits,const_generics,const_evaluatable_checked,iter_zip,nll)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features)]
 //#![recursion_limit="9"]
 pub mod model;

@@ -1,4 +1,16 @@
-//#![feature(trait_alias,once_cell,array_methods,array_map,in_band_lifetimes,bindings_after_at,iter_zip)]#![allow(uncommon_codepoints,non_upper_case_globals,non_snake_case)]
+// -> iter
+// In map(|..| f(&mut context)).reduce(|..| g(&mut context)): borrow checker cannot detect context is borrowed exclusively.
+// => map_reduce(|context,..| f(context), |context,..| g(context))
+trait MapReduce : Iterator {
+fn map_reduce<C, B, M: FnMut(&mut C, Self::Item) -> B, R: FnMut(&mut C, B, B) -> B>(self, context: &mut C, map: M, reduce: R) -> Option<B>;
+}
+impl<I:Iterator> MapReduce for I {
+fn map_reduce<C, B, M: FnMut(&mut C, Self::Item) -> B, R: FnMut(&mut C, B, B) -> B>(mut self, context: &mut C, mut map: M, mut reduce: R) -> Option<B>  {
+	let first = map(context, self.next()?);
+	Some(self.fold(first, |acc,x| { let x = map(context, x); reduce(context, acc, x) }))
+}
+}
+
 fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	assert!(x[0] != x[1]); assert!(x[1] != x[2]); assert!(x[0] != x[2]);
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
@@ -115,15 +127,10 @@ pub fn new(species: &Species, T0: f64) -> Self {
 	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
 	const N : usize = /*D+2 FIXME: Remez*/50;
 	let T : [_; N] = eval(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
-	//for (n,&T) in T.iter().enumerate() { if T < 1900. { for k in 0..K { assert!(species.T⃰(k,k, T) <= 50., "{k} {n} {T}"); } } }
-	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| species.viscosity(k, T)).format(", ")))));
-	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| sqrt(species.viscosity(k, T)/sqrt(T))).format(", ")))));
-	//println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| ln(T/T0), |T| sqrt(species.viscosity(k, T)/sqrt(T)))));
 	Self{
 		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| species.conductivity(k,T)/sqrt(T))),
 		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| sqrt(species.viscosity(k, T)/sqrt(T)))),
-		diffusivityITVT: list((0..K).map(|k| (0..K).map(move |j|
-			polynomial::fit(T, |T| ln(T/T0), |T| species.diffusivity(k, j, T) / (T*sqrt(T))) )).flatten())
+		diffusivityITVT: list((0..K).map(|k| (0..K).map(move |j| polynomial::fit(T, |T| ln(T/T0), |T| species.diffusivity(k, j, T) / (T*sqrt(T))) )).flatten())
 	}
 }
 }
@@ -131,15 +138,10 @@ pub fn new(species: &Species, T0: f64) -> Self {
 use ast::*;
 
 pub fn conductivityNIVT<const D: usize>(conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_proportions: &[Value], f: &mut Block) -> Expression  {
-	// zip(mole_fractions, conductivityIVT).map(|(X, P)| { let y=l!(f P.dot(lnT.cloned()):Expression); (X*y, X/y) }).reduce(|(A,B),(a,b)| (l!(f;A+a),l!(f;B+b))).unwrap();
-	let [mut A, mut B]:[Option<Expression>;2] = [None,None];
-	for (k, (X, P)) in zip(mole_proportions, conductivityIVT).enumerate() {
-		let c = f.def(P.dot(lnT.cloned()):Expression, format!("c{k}"));
-		let [a,b] = [X*c, X/c];
-		A = Some(if let Some(A) = A { l!(f, A+a, format!("a{k}")) } else { a });
-		B = Some(if let Some(B) = B { l!(f, B+b, format!("b{k}")) } else { b });
-	}
-	A.unwrap() + 1./B.unwrap()
+	let (_,[A,B]) = zip(mole_proportions, conductivityIVT).enumerate().map_reduce(f,
+		|f,(k,(X, P))| { let c = f.def(P.dot(lnT.cloned()):Expression, format!("c{k}")); (k,[X*c, X/c]) },
+		|f,(_,[A,B]),(k,[a,b])| (k,[f.def(A+a, format!("a{k}")).into(), f.def(B+b, format!("b{k}")).into()]) ).unwrap();
+	A + 1./B
 }
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
@@ -190,12 +192,12 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
 	let T = temperature;
-	let lnT = l!(f ln(1024., T, f));
+	let lnT = l!(f ast::ln(1024., T, f));
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
 	let ref mole_proportions = list(nonbulk_amounts.iter().copied().chain([f.def(total_amount-nonbulk_amounts.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
 	use iter::Dot;
-	let ref VT = l!(f sqrt(T));
+	let ref VT = l!(f ast::sqrt(T));
 	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions):Expression);
 	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
