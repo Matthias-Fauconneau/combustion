@@ -60,7 +60,7 @@ fn main() -> Result<()> {
 			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount as _, (temperature/temperature0) as _], &*nonbulk_amounts].concat())).unwrap() => {
 				(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusion, |D| viscosity0*(*D as f64)))
 			}}
-		}}
+		}
 	};
 
 	let ε= 2e-6;

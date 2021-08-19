@@ -22,7 +22,7 @@ pub fn weighted_regression<const D: usize, const N: usize>(x: impl Vector<N>, y:
 pub fn regression<const D: usize, const N: usize>(x: impl Vector<N>, y: impl Vector<N>+Clone) -> [f64; D] { weighted_regression(x, y.clone(), y.map(|y| 1./sq(y))) }
 pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: usize, const N: usize>(t: T, x: X, y: Y) -> [f64; D] { regression(t.map(x), t.map(y)) }
 }
-use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{cb, pow}, iter::{Copied, list, map, DotN, Cloned, eval}};
+use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}, iter::{Copied, list, map, DotN, Cloned, eval}};
 
 use super::{light_speed, kB, NA};
 const fine_structure : f64 = 7.2973525693e-3;
@@ -51,25 +51,25 @@ impl Species {
 		let Self{diameter, well_depth_J, polarizability, permanent_dipole_moment, ..} = self;
 		if (permanent_dipole_moment[a]>0.) == (permanent_dipole_moment[b]>0.) { 1. } else {
 			let (polar, non_polar) = if permanent_dipole_moment[a] != 0. { (a,b) } else { (b,a) };
-			1. + 1./4. * polarizability[non_polar]/cb(diameter[non_polar]) * num::sq(permanent_dipole_moment[polar]/f64::sqrt(4.*π*ε0*well_depth_J[polar]*cb(diameter[polar]))) * f64::sqrt(well_depth_J[polar]/well_depth_J[non_polar])
+			1. + 1./4. * polarizability[non_polar]/cb(diameter[non_polar]) * sq(permanent_dipole_moment[polar]/sqrt(4.*π*ε0*well_depth_J[polar]*cb(diameter[polar]))) * sqrt(well_depth_J[polar]/well_depth_J[non_polar])
 		}
 	}
 	fn interaction_well_depth(&self, a: usize, b: usize) -> f64 {
 		let Self{well_depth_J, ..} = self;
-		f64::sqrt(well_depth_J[a]*well_depth_J[b]) * num::sq(self.χ(a, b))
+		sqrt(well_depth_J[a]*well_depth_J[b]) * sq(self.χ(a, b))
 	}
 	pub fn T⃰(&self, a: usize, b: usize, T: f64) -> f64 { T * kB / self.interaction_well_depth(a, b) }
 	pub fn reduced_dipole_moment(&self, a: usize, b: usize) -> f64 {
 		let Self{well_depth_J, permanent_dipole_moment, diameter, ..} = self;
-		permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * f64::sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.))
+		permanent_dipole_moment[a]*permanent_dipole_moment[b] / (8. * π * ε0 * sqrt(well_depth_J[a]*well_depth_J[b]) * cb((diameter[a] + diameter[b])/2.))
 	}
 	fn reduced_diameter(&self, a: usize, b: usize) -> f64 {
 		let Self{diameter, ..} = self;
 		(diameter[a] + diameter[b])/2. * pow(self.χ(a, b), -1./6.)
 	}
 	fn collision_integral<const I0: usize, const N: usize>(&self, table: &[[f64; 8]], fit: &[[f64; 6]; N], a: usize, b: usize, T: f64) -> f64 {
-		let ln_T⃰ = f64::ln(self.T⃰ (a, b, T));
-		/*const*/let header_ln_T⃰ = header_T⃰.each_ref().map(|&T| f64::ln(T));
+		let ln_T⃰ = ln(self.T⃰ (a, b, T));
+		/*const*/let header_ln_T⃰ = header_T⃰.each_ref().map(|&T| ln(T));
 		let interpolation_start_index = min((1+header_ln_T⃰ [1..header_ln_T⃰.len()].iter().position(|&header_ln_T⃰ | ln_T⃰ < header_ln_T⃰ ).unwrap())-1, I0+table.len()-3);
 		let header_ln_T⃰ : &[_; 3] = header_ln_T⃰[interpolation_start_index..][..3].try_into().unwrap();
 		assert!(*header_ln_T⃰ .first().unwrap() <= ln_T⃰  && ln_T⃰  <= *header_ln_T⃰ .last().unwrap());
@@ -85,16 +85,16 @@ impl Species {
 	pub fn Ω⃰22(&self, a: usize, b: usize, T: f64) -> f64 { self.collision_integral::<1, 37>(&collision_integrals::Ω⃰22, &Ω⃰22, a, b, T) }
 	pub fn viscosity(&self, k: usize, T: f64) -> f64 {
 		let Self{molar_mass, diameter, ..} = self;
-		5./16. * f64::sqrt(π * molar_mass[k]/NA * kB*T) / (self.Ω⃰22(k, k, T) * π * num::sq(diameter[k]))
+		5./16. * sqrt(π * molar_mass[k]/NA * kB*T) / (self.Ω⃰22(k, k, T) * π * sq(diameter[k]))
 	}
 	fn Ω⃰11(&self, a: usize, b: usize, T: f64) -> f64 { self.Ω⃰22(a, b, T)/self.collision_integral::<0, 39>(&collision_integrals::A⃰, &A⃰, a, b, T) }
 	fn diffusivity(&self, a: usize, b: usize, T: f64) -> f64 {
-		3./16. * f64::sqrt(2.*π/self.reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*num::sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
+		3./16. * sqrt(2.*π/self.reduced_mass(a,b)) * pow(kB*T, 3./2.) / (π*sq(self.reduced_diameter(a,b))*self.Ω⃰11(a, b, T))
 	}
 	fn conductivity(&self, k: usize, T: f64) -> f64 {
 		let Self{molar_mass, thermodynamics, rotational_relaxation, internal_degrees_of_freedom, ..} = self;
 		let f_internal = molar_mass[k]/NA/(kB * T) * self.diffusivity(k,k,T) / self.viscosity(k, T);
-		let fz = |T⃰| 1. + pow(π, 3./2.) / f64::sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * num::sq(π) + 2.) / T⃰;
+		let fz = |T⃰| 1. + pow(π, 3./2.) / sqrt(T⃰) * (1./2. + 1./T⃰) + (1./4. * sq(π) + 2.) / T⃰;
 		// Scaling factor for temperature dependence of rotational relaxation: Kee, Coltrin [2003:12.112, 2017:11.115]
 		let c1 = 2./π * (5./2. - f_internal)/(rotational_relaxation[k] * fz(self.T⃰(k,k, 298.)) / fz(self.T⃰(k,k, T)) + 2./π * (5./3. * internal_degrees_of_freedom[k] + f_internal));
 		let f_translation = 5./2. * (1. - c1 * internal_degrees_of_freedom[k]/(3./2.));
@@ -117,13 +117,13 @@ pub fn new(species: &Species, T0: f64) -> Self {
 	let T : [_; N] = eval(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
 	//for (n,&T) in T.iter().enumerate() { if T < 1900. { for k in 0..K { assert!(species.T⃰(k,k, T) <= 50., "{k} {n} {T}"); } } }
 	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| species.viscosity(k, T)).format(", ")))));
-	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T))).format(", ")))));
-	//println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))));
+	//use itertools::Itertools; println!("[{}]", (0..K).format_with(", ",|k, f| f(&format_args!("[{:e}]", T.iter().map(|&T| sqrt(species.viscosity(k, T)/sqrt(T))).format(", ")))));
+	//println!("{:?}", map(0..K, |k| polynomial::fit::<_,_,_,D,N>(T, |T| ln(T/T0), |T| sqrt(species.viscosity(k, T)/sqrt(T)))));
 	Self{
-		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| species.conductivity(k,T)/f64::sqrt(T))),
-		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| f64::ln(T/T0), |T| f64::sqrt(species.viscosity(k, T)/f64::sqrt(T)))),
+		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| species.conductivity(k,T)/sqrt(T))),
+		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| sqrt(species.viscosity(k, T)/sqrt(T)))),
 		diffusivityITVT: list((0..K).map(|k| (0..K).map(move |j|
-			polynomial::fit(T, |T| f64::ln(T/T0), |T| species.diffusivity(k, j, T) / (T*f64::sqrt(T))) )).flatten())
+			polynomial::fit(T, |T| ln(T/T0), |T| species.diffusivity(k, j, T) / (T*sqrt(T))) )).flatten())
 	}
 }
 }
@@ -147,10 +147,10 @@ pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 
 	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| f.def(P.dot(lnT.cloned()):Expression, format!("VviscosityIVVT{k}")));
 	let rcp_VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,x)| f.def(1./x, format!("rcp_VviscosityIVVT{k}")));
 	sum((0..K).map(|k|
-		&mole_fractions[k] * sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
-			let Va = f64::sqrt(1./f64::sqrt(8.) * 1./f64::sqrt(1. + molar_mass[k]/molar_mass[j]));
+		&mole_fractions[k] * ast::sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
+			let Va = sqrt(1./sqrt(8.) * 1./sqrt(1. + molar_mass[k]/molar_mass[j]));
 			//let mut sq = |x, name:String| { let ref x=l!(f x, name); x*x };
-			&mole_fractions[j] * sq(Va + (Va*f64::sqrt(f64::sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j]/*, format!("x{k}_{j}")*/)
+			&mole_fractions[j] * ast::sq(Va + (Va*sqrt(sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j]/*, format!("x{k}_{j}")*/)
 		}))
 	))
 }
@@ -179,9 +179,9 @@ pub fn density_diffusivity<'t, const D: usize>(molar_mass: &'t [f64], diffusivit
 
 pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} : &Polynomials<D>, temperature0: f64, viscosity: f64, conductivity: f64) -> Function {
 	let R = kB*NA;
-	let VviscosityIVVT = map(&**VviscosityIVVT, |P| P.map(|p| (f64::sqrt(f64::sqrt(temperature0))/f64::sqrt(viscosity))*p));
-	let conductivityIVT = map(&**conductivityIVT, |P| P.map(|p| (f64::sqrt(temperature0)/(2.*conductivity))*p));
-	let diffusivityITVT = map(&**diffusivityITVT, |P| P.map(|p| (f64::sqrt(temperature0)/(R*viscosity))*p));
+	let VviscosityIVVT = map(&**VviscosityIVVT, |P| P.map(|p| (sqrt(sqrt(temperature0))/sqrt(viscosity))*p));
+	let conductivityIVT = map(&**conductivityIVT, |P| P.map(|p| (sqrt(temperature0)/(2.*conductivity))*p));
+	let diffusivityITVT = map(&**diffusivityITVT, |P| P.map(|p| (sqrt(temperature0)/(R*viscosity))*p));
 
 	let K = molar_mass.len();
 	let_!{ input@[ref total_amount, ref temperature, ref nonbulk_amounts @ ..] = &*map(0..(2+K-1), Value) => {
