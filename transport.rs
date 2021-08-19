@@ -185,8 +185,8 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let diffusivityITVT = map(&**diffusivityITVT, |P| P.map(|p| (sqrt(temperature0)/(R*viscosity))*p));
 
 	let K = molar_mass.len();
-	let_!{ input@[ref total_amount, ref temperature, ref nonbulk_amounts @ ..] = &*map(0..(2+K-1), Value) => {
-	let mut values = ["total_amount","temperature"].iter().map(|s| s.to_string()).chain((0..K-1).map(|i| format!("nonbulk_amounts[{i}]"))).collect::<Vec<_>>();
+	let_!{ input@[ref sum_mole_proportions, ref temperature, ref nonbulk_mole_proportions @ ..] = &*map(0..(2+K-1), Value) => {
+	let mut values = ["sum_mole_proportions","temperature"].iter().map(|s| s.to_string()).chain((0..K-1).map(|i| format!("nonbulk_mole_proportions[{i}]"))).collect::<Vec<_>>();
 	assert!(input.len() == values.len());
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
@@ -194,14 +194,14 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let lnT = l!(f ast::ln(1024., T, f));
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
-	let ref mole_proportions = list(nonbulk_amounts.iter().copied().chain([f.def(total_amount-nonbulk_amounts.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
+	let ref mole_proportions = list(nonbulk_mole_proportions.iter().copied().chain([f.def(sum_mole_proportions-nonbulk_mole_proportions.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
 	use iter::Dot;
 	let ref VT = l!(f ast::sqrt(T));
 	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions):Expression);
 	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
 		output: list([
-			self::conductivityNIVT(&conductivityIVT, total_amount, lnT, mole_proportions, f)*VT,
+			self::conductivityNIVT(&conductivityIVT, sum_mole_proportions, lnT, mole_proportions, f)*VT,
 			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_proportions, f),
 		].into_iter().chain(
 			density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, lnT, mole_proportions, f)
