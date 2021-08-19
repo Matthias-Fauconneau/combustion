@@ -133,7 +133,6 @@ use {iter::Dot, std::env::*, combustion::*};
 	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 	let density = concentration * mean_molar_mass;
 	let viscosity = density * diffusivity;
-	let R = kB*NA;
 	let specific_heat_capacity = R / mean_molar_mass * thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions):f64;
 	let conductivity = specific_heat_capacity * diffusivity;
 	let transport::Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} = transport::Polynomials::<5>::new(&species, temperature);

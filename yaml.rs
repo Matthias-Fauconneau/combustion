@@ -98,7 +98,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 					"K" => Ea,
 					"cal/mol" => {
 						const J_per_cal: f64 = 4.184;
-						Ea*J_per_cal/(kB*NA)
+						Ea*J_per_cal/R
 					},
 					_ => unimplemented!(),
 				}

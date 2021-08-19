@@ -213,7 +213,7 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, Gibb
 	map(reactions.iter().enumerate(), |(_i, Reaction{reactants, products, net, Σnet, rate_constant, model, ..})| {
 		let forward_rate_constant = forward_rate_constant(model, rate_constant, T, concentrations, f);
 		let Rforward = product_of_exponentiations(concentrations, reactants, f);
-		let R = if let ReactionModel::Irreversible = model { Rforward } else {
+		let Rnet = if let ReactionModel::Irreversible = model { Rforward } else {
 			let rcp_equilibrium_constant_0 = product_of_exponentiations_rcp(&exp_Gibbs0_RT, &rcp_exp_Gibbs0_RT, net, f);
 			//let rcp_equilibrium_constant_0 = exp(dot(net.iter().map(|&net| net as f64).zip(Gibbs0_RT)), f);
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
@@ -225,7 +225,7 @@ fn reaction_rates(reactions: &[Reaction], T: T, C0: &Value, rcp_C0: &Value, Gibb
 			let Rreverse = le!(f rcp_equilibrium_constant * product_of_exponentiations(concentrations, products, f));
 			f.def(Rforward - Rreverse, "R").into()
 		};
-		f.def(forward_rate_constant * R, "cR")
+		f.def(forward_rate_constant * Rnet, "cR")
 	})
 }
 

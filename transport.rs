@@ -36,7 +36,7 @@ pub fn fit<T: Vector<N>+Copy, X: Fn(f64)->f64, Y: Fn(f64)->f64+Copy, const D: us
 }
 use {std::{iter::zip, cmp::min, f64::consts::PI as π}, num::{sq, cb, sqrt, ln, pow}, iter::{Copied, list, map, DotN, Cloned, eval}};
 
-use super::{light_speed, kB, NA};
+use super::{light_speed, kB, NA, R};
 const fine_structure : f64 = 7.2973525693e-3;
 const Planck : f64 = 6.62607015e-34;
 const electron_charge : f64 = 1.602176634e-19;
@@ -180,7 +180,6 @@ pub fn density_diffusivity<'t, const D: usize>(molar_mass: &'t [f64], diffusivit
 }
 
 pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} : &Polynomials<D>, temperature0: f64, viscosity: f64, conductivity: f64) -> Function {
-	let R = kB*NA;
 	let VviscosityIVVT = map(&**VviscosityIVVT, |P| P.map(|p| (sqrt(sqrt(temperature0))/sqrt(viscosity))*p));
 	let conductivityIVT = map(&**conductivityIVT, |P| P.map(|p| (sqrt(temperature0)/(2.*conductivity))*p));
 	let diffusivityITVT = map(&**diffusivityITVT, |P| P.map(|p| (sqrt(temperature0)/(R*viscosity))*p));

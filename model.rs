@@ -5,6 +5,7 @@ pub use {std::boxed::Box, linear_map::LinearMap as Map, strum_macros::EnumString
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString, Clone, Copy)] pub enum Element { H, He, C, N, O, F, Cl, Ar }
 pub const kB : f64 = 1.380649e-23; // J / K
 pub const NA : f64 = 6.02214076e23;
+pub const R : f64 = kB*NA;
 
 #[derive(Serialize, Deserialize, Debug, Clone)] pub struct NASA7 {
 	pub temperature_ranges: Box<[f64]>,

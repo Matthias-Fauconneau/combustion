@@ -49,7 +49,6 @@ fn main() -> Result<()> {
 			let density = concentration * mean_molar_mass;
 			let viscosity = density * diffusivity;
 			let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
-			let R = kB*NA;
 			let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
 			(temperature, viscosity, thermal_conductivity)
 		} else { (1., 1., 1.) };
@@ -75,7 +74,7 @@ fn main() -> Result<()> {
 		let amount_fractions = map(&**amounts, |n| n/total_amount);
 		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
-		unsafe{thermo_setPressure(phase, pressure_R * (kB*NA))}; // /!\ Needs to be set after mole fractions
+		unsafe{thermo_setPressure(phase, pressure_R * R)}; // /!\ Needs to be set after mole fractions
 
 		let ref nonbulk_amounts = amounts[0..amounts.len()-1];
 		//let ref nonbulk_amounts = map(nonbulk_amounts, |&n| n as _);
@@ -148,7 +147,7 @@ fn main() -> Result<()> {
 					std::fs::write("/var/tmp/main.c", std::process::Command::new("../nekRK/main.py").arg(&path).output()?.stdout)?;
 				}
 				let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK")
-					.args([code.to_str().unwrap(),"Serial","1","1","0",&(pressure_R*(kB*NA)).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output()?;
+					.args([code.to_str().unwrap(),"Serial","1","1","0",&(pressure_R*R).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output()?;
 				assert!(nekrk.stderr.is_empty(), "{}", std::str::from_utf8(&nekrk.stderr)?);
 				let stdout = nekrk.stdout;
 				let stdout = std::str::from_utf8(&stdout)?;
@@ -179,7 +178,7 @@ fn main() -> Result<()> {
 			use rand::Rng;
 			let temperature = random.gen_range(1000. .. 2800.);
 			let pressure = random.gen_range(0. .. 1e5);
-			let pressure_R = pressure/(kB*NA); //random.gen_range(0. .. 10e6)/(kB*NA);
+			let pressure_R = pressure/R; //random.gen_range(0. .. 10e6)/R;
 			let total_amount = pressure_R * volume / temperature;
 			let amount_proportions = map(0..species.len(), |_| random.gen());
 			let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());

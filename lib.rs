@@ -2,7 +2,7 @@
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features)]
 //#![recursion_limit="9"]
 pub mod model;
-pub use model::{kB, NA};
+pub use model::{kB, NA, R};
 const light_speed : f64 = 299_792_458.;
 const Cm_per_Debye : f64 = 1e-21 / light_speed; //C·m (Coulomb=A⋅s)
 
@@ -12,7 +12,7 @@ const Cm_per_Debye : f64 = 1e-21 / light_speed; //C·m (Coulomb=A⋅s)
 }
 
 impl NASA7 {
-	pub const reference_pressure : f64 = 101325. / (kB*NA);
+	pub const reference_pressure : f64 = 101325. / R;
 	pub fn piece(&self, T: f64) -> &[f64; 7] { &self.pieces[if T <= self.temperature_split { 0 } else { 1 }] }
 	pub fn molar_heat_capacity_at_constant_pressure_R(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]*T+a[2]*T*T+a[3]*T*T*T+a[4]*T*T*T*T } // /R
 	pub fn enthalpy_RT(&self, T: f64) -> f64 { let a = self.piece(T); a[0]+a[1]/2.*T + a[2]/3.*T*T + a[3]/4.*T*T*T + a[4]/5.*T*T*T*T + a[5]/T } // /RT
@@ -72,7 +72,7 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> Sta
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
 	let species_names = map(&**species, |(name,_)| *name);
 	for (specie,_) in &**amount_proportions { assert!(species_names.contains(specie)); }
-	let pressure_R = pressure/(kB*NA);
+	let pressure_R = pressure/R;
 	let temperature = *temperature;
 	let amount = pressure_R * volume / temperature;
 	let amount_proportions = map(&*species_names, |specie| *amount_proportions.iter().find(|(s,_)| s==specie).map(|(_,s)| s).unwrap_or(&0.));
