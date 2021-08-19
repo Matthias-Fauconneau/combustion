@@ -127,6 +127,7 @@ pub fn new(species: &Species, T0: f64) -> Self {
 	let [temperature_min, temperature_max] : [f64; 2] = [300., 3000.];
 	const N : usize = /*D+2 FIXME: Remez*/50;
 	let T : [_; N] = eval(|n| temperature_min + (n as f64)/((N-1) as f64)*(temperature_max - temperature_min));
+	//use itertools::Itertools; println!("[{}]", (0..K).format_with(",\n",|i, f| f(&format_args!("[{}]", (0..K).format_with(", ",|j, f| f(&format_args!("[{:e}]", T.iter().map(|&T| species.diffusivity(i,j, T)).format(", "))))))));
 	Self{
 		conductivityIVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| species.conductivity(k,T)/sqrt(T))),
 		VviscosityIVVT: map(0..K, |k| polynomial::fit(T, |T| ln(T/T0), |T| sqrt(species.viscosity(k, T)/sqrt(T)))),
@@ -151,8 +152,7 @@ pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; 
 	sum((0..K).map(|k|
 		&mole_fractions[k] * ast::sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
 			let Va = sqrt(1./sqrt(8.) * 1./sqrt(1. + molar_mass[k]/molar_mass[j]));
-			//let mut sq = |x, name:String| { let ref x=l!(f x, name); x*x };
-			&mole_fractions[j] * ast::sq(Va + (Va*sqrt(sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j]/*, format!("x{k}_{j}")*/)
+			&mole_fractions[j] * ast::sq(Va + (Va*sqrt(sqrt(molar_mass[j]/molar_mass[k]))) * VviscosityIVVT[k] * rcp_VviscosityIVVT[j])
 		}))
 	))
 }
@@ -166,11 +166,11 @@ pub fn density_diffusivity<'t, const D: usize>(molar_mass: &'t [f64], diffusivit
 		let P:[f64;D] = diffusivityITVT[k*K+j];
 		f.def(1./(P.dot(lnT.cloned()):Expression), format!("R{k}_{j}"))
 	};
-	let mut S: Box<[Option<Expression>]> = vec![None; K].into();
+	let mut S: Box<[Option<Value>]> = vec![None; K].into();
 	for k in 0..K { for j in 0..k {
 		let rcp_diffusivityITVT = rcp_diffusivityITVT(f, k,j);
-		replace_with(&mut S[k], |S| {let t = mole_proportions[j]*rcp_diffusivityITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{k}_{j}")) } else { t })});
-		replace_with(&mut S[j], |S| {let t = mole_proportions[k]*rcp_diffusivityITVT; Some(if let Some(S) = S { l!(f, S+t, format!("S{j}_{k}")) } else { t })});
+		replace_with(&mut S[k], |S| {let t = mole_proportions[j]*rcp_diffusivityITVT; Some(f.def(if let Some(S) = S { S+t } else { t }, format!("S{k}_{j}")))});
+		replace_with(&mut S[j], |S| {let t = mole_proportions[k]*rcp_diffusivityITVT; Some(f.def(if let Some(S) = S { S+t } else { t }, format!("S{j}_{k}")))});
 	}}
 	//let rcp_diffusivityITVT = map(0..K, |k| map(0..k, |j| rcp_diffusivityITVT(k,j)));
 	S.into_vec().into_iter().enumerate().map(move |(k, S)|
