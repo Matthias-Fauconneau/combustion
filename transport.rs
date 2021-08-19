@@ -137,11 +137,11 @@ pub fn new(species: &Species, T0: f64) -> Self {
 
 use ast::*;
 
-pub fn conductivityNIVT<const D: usize>(conductivityIVT: &[[f64; D]], lnT: &[Expr; D], mole_proportions: &[Value], f: &mut Block) -> Expression  {
+pub fn conductivityNIVT<const D: usize>(conductivityIVT: &[[f64; D]], total_amount: &Value, lnT: &[Expr; D], mole_proportions: &[Value], f: &mut Block) -> Expression  {
 	let (_,[A,B]) = zip(mole_proportions, conductivityIVT).enumerate().map_reduce(f,
 		|f,(k,(X, P))| { let c = f.def(P.dot(lnT.cloned()):Expression, format!("c{k}")); (k,[X*c, X/c]) },
 		|f,(_,[A,B]),(k,[a,b])| (k,[f.def(A+a, format!("a{k}")).into(), f.def(B+b, format!("b{k}")).into()]) ).unwrap();
-	A + 1./B
+	A/total_amount + total_amount/B
 }
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
@@ -201,7 +201,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
 		output: list([
-			self::conductivityNIVT(&conductivityIVT, lnT, mole_proportions, f)*VT/total_amount,
+			self::conductivityNIVT(&conductivityIVT, total_amount, lnT, mole_proportions, f)*VT,
 			VT*viscosityIVT(molar_mass, &VviscosityIVVT, lnT, mole_proportions, f),
 		].into_iter().chain(
 			density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, lnT, mole_proportions, f)
