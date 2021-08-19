@@ -142,12 +142,12 @@ use {iter::Dot, std::env::*, combustion::*};
 	let diffusivityITVT = map(&*diffusivityITVT, |P| P.map(|p| (f64::sqrt(temperature)/(R*viscosity))*p));
 
 	let conductivityNIVT = {
-		let_!{ input@[ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(4+K), Value) => {
-		let mut values = ["lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
+		let_!{ input@[ref sum_mole_proportions, ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
+		let mut values = ["sum_mole_proportions", "lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert!(input.len() == values.len());
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list([transport::conductivityNIVT(&conductivityIVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()], mole_proportions, &mut function)]),
+			output: list([transport::conductivityNIVT(&conductivityIVT, sum_mole_proportions, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()], mole_proportions, &mut function)]),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -185,11 +185,11 @@ use {iter::Dot, std::env::*, combustion::*};
 		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
 		s = s.replace(", double mole_proportions0",", double mole_proportions[]");
-		for k in 0..K { s = s.replace(&format!(", double mole_proportions{k}"),"").replace(&format!("mole_proportions{k}"), &format!("mole_proportions[{k}]")); }
+		for k in (0..K).rev() { s = s.replace(&format!(", double mole_proportions{k},"),",").replace(&format!("mole_proportions{k}"), &format!("mole_proportions[{k}]")); }
 		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__ void","__ double"); }
 		else {
 			s = s.replace(", double out0[]",", double* out[]");
-			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}"), &format!("out[{k}]")); }
+			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}["), &format!("out[{k}][")); }
 		}
 		//eprintln!("{}", s.lines().map(|l| l.len()).max().unwrap());
 		s//.replace("+-","-")
@@ -198,12 +198,12 @@ use {iter::Dot, std::env::*, combustion::*};
 	let name = std::path::Path::new(&path).file_stem().unwrap();
 	let name = name.to_str().unwrap();
 	let prefix = args().skip(3).next().unwrap_or("nekrk_".to_string());
-	std::fs::write(target.join(format!("{name}.conductivity.c")), compile(&conductivityNIVT,format!("{prefix}conductivityNIVT")))?;
-	std::fs::write(target.join(format!("{name}.viscosity.c")), [
+	std::fs::write(target.join(format!("{name}/conductivity.c")), compile(&conductivityNIVT,format!("{prefix}conductivityNIVT")))?;
+	std::fs::write(target.join(format!("{name}/viscosity.c")), [
 		"__NEKRK_DEVICE__ double sq(double x) { return x*x; }",
 		&compile(&viscosityIVT,format!("{prefix}viscosityIVT")).replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v")
 	].join("\n"))?;
-	std::fs::write(target.join(format!("{name}.diffusivity.c")), compile(&density_diffusivity,format!("{prefix}density_diffusivity")).replace("density_diffusivity(","density_diffusivity(int id, "))?;
+	std::fs::write(target.join(format!("{name}/diffusivity.c")), compile(&density_diffusivity,format!("{prefix}density_diffusivity")).replace("density_diffusivity(","density_diffusivity(int id, "))?;
 
 	#[cfg(feature="check")] {
 		let transport = transport::properties::<4>(&species, temperature, viscosity, conductivity);

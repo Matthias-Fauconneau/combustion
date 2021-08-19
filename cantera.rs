@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
 	#[cfg(feature="transport")] let transport = {
 		eprintln!("Fit");
-		let (temperature0, viscosity0, thermal_conductivity0) = if false {
+		let (temperature0, viscosity0, thermal_conductivity0) = if true {
 			let total_amount = amounts.iter().sum::<f64>();
 			let mole_fractions = map(&**amounts, |n| n/total_amount);
 			let diffusivity = 1.;

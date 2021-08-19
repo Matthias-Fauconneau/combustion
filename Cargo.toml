@@ -5,7 +5,7 @@ bin=[
 	{name='main', path='main.rs', required-features=['main']},
 	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['main','plot']},
-	{name='cuda', path='cuda.rs', required-features=['main','transport','cuda']},
+	{name='cuda', path='cuda.rs', required-features=['main','transport']},
 	{name='info', path='info.rs', required-features=['main']},
 ]
 
