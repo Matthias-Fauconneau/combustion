@@ -20,7 +20,7 @@ impl<'t> Block<'t> {
 		*self.values.entry(e.into()).or_insert_with_key(|e| self.block.def(e.clone(), name))
 	}
 }
-#[track_caller] pub fn def(e: impl Into<Expression>, f: &mut Block, name: impl ToString) -> Expr {
+#[track_caller] pub fn def(e: impl Into<Expression>, f: &mut Block, name: impl ToString) -> Expression {
 	let e = e.into(); if let Some(x) = e.f64() { x.into() } else { f.def(e, name).into() }
 }
 #[macro_export] macro_rules! le {
@@ -128,15 +128,15 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
 		else { (None, temperature_exponent) };
 	let temperature_exponent_remainder = temperature_exponent_remainder as f32 as f64;
-	const T0: f64 = 1.; //1024.;
+	//const _T0: f64 = 1.; //1024.;
 	//eprintln!("{temperature_exponent}, {temperature_exponent_remainder}");
 	let exp = Σ([
-			(temperature_exponent_remainder != 0.).then(|| f.def(temperature_exponent_remainder * (lnT-f64::ln(T0)), "β'lnT")),
+			(temperature_exponent_remainder != 0.).then(|| f.def(temperature_exponent_remainder * (lnT/*-f64::ln(T0)*/), "β'lnT")),
 			(activation_temperature != 0.).then(|| f.def((-activation_temperature) * rcpT, "-Ea/kT"))
 		].into_iter().filter_map(|x| x))
 		.map(|x| {let e=exp(x, f); f.def(e, "exp(β'lnT-Ea/kT)").into()});
 	Π([
-		Some(f64(A).unwrap_or_else(|x| {println!("{A:e}"); x}) *f64::powf(T0, temperature_exponent_remainder)),
+		Some(f64(A).unwrap_or_else(|x| {println!("{A:e}"); x}) /* * f64::powf(T0, temperature_exponent_remainder)*/),
 		temperature_factor.map(|x| x.into()),
 		exp
 	]).unwrap().expr()
@@ -156,17 +156,17 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f), f) * efficiency(efficiencies, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
-			let k0 = arrhenius(k0, T, f); //chk
+			let k0 = arrhenius(k0, T, f);
 			let C_k0 = f.def(efficiency * k0, "C_k0");
-			let k_inf = {let e = arrhenius(k_inf, T, f); f.def(e, "k_inf")}; //chk
-			Ratio(C_k0 * k_inf, C_k0 + k_inf)
+			let k_inf = def(arrhenius(k_inf, T, f), f, "k_inf");
+			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf)
 		},
 		Falloff{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, f);
-			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")}; //chk
-			let k_inf = {let e = arrhenius(k_inf, T, f); f.def(e, "k_inf")}; //chk
+			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
+			let k_inf = def(arrhenius(k_inf, T, f), f, "k_inf");
 			//f.block(|f|{
-				let Pr = f.def(efficiency * k0 / k_inf, "Pr");
+				let Pr = f.def(efficiency * k0 / k_inf.shallow(), "Pr");
 				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
 					(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * le!(f exp(T/(-T3), f)) } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
 					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * le!(f exp(T/(-T1), f)) } else { y.into() }}),

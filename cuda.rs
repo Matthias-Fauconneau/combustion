@@ -76,7 +76,7 @@ fn extend(&mut self, s: &Statement) {
 			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("{} = {value};", self.value(id))).format(" ").to_string();
 			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("{} = {value};", self.value(id))).format(" ").to_string();
 
-			self.push(format!("if {condition} {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
+			self.push(format!("if ({condition}) {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
 			for (rtype, id) in zip(&*types, &**results) {
 				assert!(self.values[id.0].replace((*rtype, format!("r[{}]",self.registers[id.0].unwrap()))).is_none());
 			}
@@ -252,8 +252,10 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		for k in (0..K).rev() { s = s.replace(&format!(", double {array_input}{k},"),",").replace(&format!("{array_input}{k}"), &format!("{array_input}[{k}]")); }
 		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__ void","__ double"); }
 		else if direct {
-			s = s.replace(", double out0[]",", double* out[]");
-			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}][id]")); }
+			//s = s.replace(", double out0[]",", double* out[]");
+			//for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}][id]")); }
+			s = s.replace(", double out0[]",", double out[], unsigned int n_states");
+			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}*n_states+id]")); }
 		} else {
 			s = s.replace(", double out0[]",", double out[]");
 			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}]")); }
@@ -280,7 +282,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		.replace("density_diffusivity(","density_diffusivity(unsigned int id, ")
 	)?;
 	write("rates",
-		compile(rates, format!("{prefix}rates"), "concentrations", false)
+		compile(rates, format!("{prefix}species_rates"), "concentrations", false)
 	)?;
 
 	#[cfg(feature="check")] {
