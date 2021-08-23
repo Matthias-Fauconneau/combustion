@@ -3,11 +3,10 @@
 
 use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
 
-type Value = String;
-
 struct Builder<'t> {
 	builder: Vec<String>,
-	values: Box<[Option<(ast::Type, Value)>]>,
+	values: Box<[Option<(ast::Type, String)>]>,
+	registers: &'t [Option<u8>],
 	names: &'t [String],
 }
 impl std::ops::Deref for Builder<'_> { type Target=Vec<String>; fn deref(&self) -> &Self::Target { &self.builder } }
@@ -15,14 +14,14 @@ impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::
 
 impl Builder<'_> {
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].as_ref().unwrap().0) }
-fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> Value {
+fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
 			match e {
 				&F32(value) => value.to_string(),
 				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { format!("{}",*value) },
-				Value(v) => self.names[v.0].clone(),
+				Value(v) => if let Some(r) = self.registers[v.0] { format!("r[{}]/*{}*/", r, self.names[v.0]) } else { self.names[v.0].clone() },
 				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n +{b}") } else { y };
@@ -52,13 +51,13 @@ fn extend(&mut self, s: &Statement) {
 		Value { id, value } => {
 			let result = self.expr(value, None);
 			let rtype = self.rtype(value);
-			self.builder.push(format!("{rtype} {} = {result};", self.names[id.0]));
-			assert!(self.values[id.0].replace((rtype,self.names[id.0].clone())).is_none());
+			self.builder.push(format!("r[{}]/*{}*/ = {result};", self.registers[id.0].unwrap(), self.names[id.0]));
+			assert!(self.values[id.0].replace((rtype,format!("r[{}]",self.registers[id.0].unwrap()))).is_none());
 		},
 		Select { condition, true_exprs, false_exprs, results } => {
 			let types = map(&**true_exprs, |e| self.rtype(e));
 			for (t,e) in zip(&*types, &**false_exprs) { assert!(self.rtype(e) == *t); }
-			for (rtype, id) in zip(&*types, &**results) { self.builder.push(format!("{rtype} {};", self.names[id.0])); }
+			//for (rtype, id) in zip(&*types, &**results) { self.builder.push(format!("{rtype} r{};", self.registers[id.0])); }
 
 			let condition = self.expr(condition, None);
 			let scope = self.values.clone();
@@ -70,19 +69,19 @@ fn extend(&mut self, s: &Statement) {
 			self.values = scope;
 			assert!(results.len() == false_values.len());
 
-			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("{} = {value};",self.names[id.0])).format("\n\t");
-			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("{} = {value};",self.names[id.0])).format("\n\t");
+			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("r[{}]/*{}*/ = {value};", self.registers[id.0].unwrap(), self.names[id.0])).format("\n\t");
+			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("r[{}]/*{}*/ = {value};", self.registers[id.0].unwrap(), self.names[id.0])).format("\n\t");
 
 			self.push(format!("if {condition} {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
 			for (rtype, id) in zip(&*types, &**results) {
-				assert!(self.values[id.0].replace((*rtype, format!("phi"))).is_none());
+				assert!(self.values[id.0].replace((*rtype, format!("r[{}]",self.registers[id.0].unwrap()))).is_none());
 			}
 		}
 	}
 }
 }
 
-pub fn compile(constants_len: usize, ast: &ast::Function, name: impl std::fmt::Display) -> String {
+pub fn compile(constants_len: usize, ast: &ast::Function, registers: &[Option<u8>], name: impl std::fmt::Display) -> String {
 	let output_types = {
 		let mut types = Types(ast.input.iter().copied().map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect());
 		for s in &*ast.statements { types.push(s); }
@@ -96,9 +95,11 @@ pub fn compile(constants_len: usize, ast: &ast::Function, name: impl std::fmt::D
 		.chain( ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} in{i}[]")) )
 		.chain( output_types.iter().enumerate().map(|(i, rtype)| format!("{rtype} out{i}[]")) ).format(", ");
 	let input_values = ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} {} = in{i}[id];",ast.values[i])).format("\n");
+	let register_count = registers.iter().filter_map(|&x| x).max().unwrap()+1;
 	let mut b = Builder{
 		builder: vec![],
 		values: list(ast.input.iter().enumerate().map(|(i, atype)| Some((*atype, ast.values[i].clone()))).chain((ast.input.len()..ast.values.len()).map(|_| None))),
+		registers,
 		names: &ast.values
 	};
 	for s in &*ast.statements { b.extend(s); }
@@ -110,6 +111,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function, name: impl std::fmt::D
 	format!(r#"__global__ void {name}({parameters}) {{
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
+double r[{register_count}];
 {instructions}
 {store}
 }}"#).replace("f64","double")
@@ -131,7 +133,6 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let diffusivity = 1.;
 	let concentration = pressure_R / temperature;
 	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
-	dbg!(&molar_mass, &mole_fractions, mean_molar_mass);
 	let density = concentration * mean_molar_mass;
 	let viscosity = density * diffusivity;
 	let specific_heat_capacity = R / mean_molar_mass * thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions):f64;
@@ -140,7 +141,6 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let VviscosityIVVT = map(&*VviscosityIVVT, |P| P.map(|p| (sqrt(sqrt(temperature)/viscosity))*p));
 	let conductivityIVT = map(&*conductivityIVT, |P| P.map(|p| (sqrt(temperature)/(2.*conductivity))*p));
 	let diffusivityITVT = map(&*diffusivityITVT, |P| P.map(|p| (sqrt(temperature)/(R*viscosity))*p));
-	//use itertools::Itertools; println!("[{}]", (0..K).format_with(",\n",|i, f| f(&format_args!("[{}]", (0..K).format_with(", ",|j, f| f(&format_args!("[{:e}]", diffusivityITVT[i*K+j].iter().format(", "))))))));
 
 	let conductivityNIVT = {
 		let_!{ input@[ref sum_mole_proportions, ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
@@ -198,14 +198,15 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		}
 		for (output_counter, value) in f.output.iter().enumerate() { visitor(&mut last_use, f.statements.len()+output_counter, value); }
 
-		let ref names = f.values.clone();
+		/*let ref names = f.values;
 		for (program_counter, statement) in f.statements.iter().enumerate() {
 			eprintln!("{program_counter}: {:?} {:?}", statement.to_string(names), last_use.iter().enumerate().filter(|&(_,&pc)| pc==program_counter).map(|(id,_)| &names[id]).format(" "));
-		}
+		}*/
 		let mut registers: Vec<Option<ast::Value>> = vec![];
+		let mut map = vec![None; f.values.len()];
 		for (program_counter, statement) in f.statements.iter_mut().enumerate() {
 			for (_r, register) in registers.iter_mut().enumerate() { if let Some(id) = register { if program_counter>=last_use[id.0] {
-				eprintln!("-{_r}: {}", names[id.0]);
+				//eprintln!("-{_r}: {}", names[id.0]);
 				*register= None;
 				}
 			} }
@@ -216,14 +217,14 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 						let r =
 							if let Some((r, register)) = registers.iter_mut().enumerate().filter(|(_,register)| register.is_none()).next() { *register = Some(*id); r }
 							else { registers.push(Some(*id)); registers.len()-1 };
-						eprintln!("+{r}: {}", f.values[id.0]);
-						f.values[id.0] = format!("r{r}");
+						//eprintln!("+{r}: {}", f.values[id.0]);
+						map[id.0] = Some(r.try_into().unwrap());
 					}
 				}//}); }
 				_/*Select { condition, true_exprs, false_exprs, results }*/ => unimplemented!()
 			}
 		}
-		let mut s = self::compile(0, &f, name);
+		let mut s = self::compile(0, &f, &map, name);
 		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
 		s = s.replace(", double mole_proportions0",", double mole_proportions[]");
