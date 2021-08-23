@@ -140,7 +140,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let VviscosityIVVT = map(&*VviscosityIVVT, |P| P.map(|p| (sqrt(sqrt(temperature)/viscosity))*p));
 	let conductivityIVT = map(&*conductivityIVT, |P| P.map(|p| (sqrt(temperature)/(2.*conductivity))*p));
 	let diffusivityITVT = map(&*diffusivityITVT, |P| P.map(|p| (sqrt(temperature)/(R*viscosity))*p));
-	use itertools::Itertools; println!("[{}]", (0..K).format_with(",\n",|i, f| f(&format_args!("[{}]", (0..K).format_with(", ",|j, f| f(&format_args!("[{:e}]", diffusivityITVT[i*K+j].iter().format(", "))))))));
+	//use itertools::Itertools; println!("[{}]", (0..K).format_with(",\n",|i, f| f(&format_args!("[{}]", (0..K).format_with(", ",|j, f| f(&format_args!("[{:e}]", diffusivityITVT[i*K+j].iter().format(", "))))))));
 
 	let conductivityNIVT = {
 		let_!{ input@[ref sum_mole_proportions, ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
@@ -181,8 +181,49 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		}
 	}}};
 
-	let compile = |f:&Function,name| {
-		let mut s = self::compile(0, f, name);
+	let compile = |mut f: Function, name| {
+		let mut last_use = vec![0; f.values.len()];
+		fn visitor(last_use: &mut Vec<usize>, program_counter: usize, e: &Expression) {
+			if let Expression::Expr(Expr::Value(id)) = e { last_use[id.0] = program_counter; } else { e.visit(|e| visitor(last_use, program_counter, e)); }
+		}
+		for (program_counter, statement) in f.statements.iter().enumerate() {
+			use Statement::*;
+			match statement {
+				Value{value,..} => visitor(&mut last_use, program_counter, value),
+				_/*Select { condition, true_exprs, false_exprs, results }*/ => unimplemented!() /*{
+					condition.visit(|e| if Expr(Value(id))=e { last_use[i] = i;});
+					for e in true_exprs.chain(false_exprs) { e.visit(|e| if Expr(Value(id))=e { last_use[id.0] = program_counter;}); }
+				}*/
+			}
+		}
+		for (output_counter, value) in f.output.iter().enumerate() { visitor(&mut last_use, f.statements.len()+output_counter, value); }
+
+		let ref names = f.values.clone();
+		for (program_counter, statement) in f.statements.iter().enumerate() {
+			eprintln!("{program_counter}: {:?} {:?}", statement.to_string(names), last_use.iter().enumerate().filter(|&(_,&pc)| pc==program_counter).map(|(id,_)| &names[id]).format(" "));
+		}
+		let mut registers: Vec<Option<ast::Value>> = vec![];
+		for (program_counter, statement) in f.statements.iter_mut().enumerate() {
+			for (_r, register) in registers.iter_mut().enumerate() { if let Some(id) = register { if program_counter>=last_use[id.0] {
+				eprintln!("-{_r}: {}", names[id.0]);
+				*register= None;
+				}
+			} }
+			use Statement::*;
+			match statement {
+				Value{id,..} => /*{ value.visit(|e| if let Expression::Expr(Expr::Value(id)) = e {*/ if id.0 >= f.input.len() {
+					if !registers.contains(&Some(*id)) {
+						let r =
+							if let Some((r, register)) = registers.iter_mut().enumerate().filter(|(_,register)| register.is_none()).next() { *register = Some(*id); r }
+							else { registers.push(Some(*id)); registers.len()-1 };
+						eprintln!("+{r}: {}", f.values[id.0]);
+						f.values[id.0] = format!("r{r}");
+					}
+				}//}); }
+				_/*Select { condition, true_exprs, false_exprs, results }*/ => unimplemented!()
+			}
+		}
+		let mut s = self::compile(0, &f, name);
 		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
 		s = s.replace(", double mole_proportions0",", double mole_proportions[]");
@@ -198,12 +239,12 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let name = std::path::Path::new(&path).file_stem().unwrap();
 	let name = name.to_str().unwrap();
 	let prefix = args().skip(3).next().unwrap_or("nekrk_".to_string());
-	std::fs::write(target.join(format!("{name}/conductivity.c")), compile(&conductivityNIVT,format!("{prefix}conductivityNIVT")))?;
+	std::fs::write(target.join(format!("{name}/conductivity.c")), compile(conductivityNIVT,format!("{prefix}conductivityNIVT")))?;
 	std::fs::write(target.join(format!("{name}/viscosity.c")), [
 		"__NEKRK_DEVICE__ double sq(double x) { return x*x; }",
-		&compile(&viscosityIVT,format!("{prefix}viscosityIVT")).replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v")
+		&compile(viscosityIVT,format!("{prefix}viscosityIVT")).replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v")
 	].join("\n"))?;
-	std::fs::write(target.join(format!("{name}/diffusivity.c")), compile(&density_diffusivity,format!("{prefix}density_diffusivity")).replace("density_diffusivity(","density_diffusivity(unsigned int id, "))?;
+	std::fs::write(target.join(format!("{name}/diffusivity.c")), compile(density_diffusivity,format!("{prefix}density_diffusivity")).replace("density_diffusivity(","density_diffusivity(unsigned int id, "))?;
 
 	#[cfg(feature="check")] {
 		let transport = transport::properties::<4>(&species, temperature, viscosity, conductivity);

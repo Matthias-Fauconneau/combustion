@@ -10,10 +10,10 @@ bin=[
 ]
 
 [features]
-yaml=['dep:yaml','pest_derive','pest']
+myaml=['yaml','pest_derive','pest'] #dep:yaml
 interpret=['ast/interpret']
 f32=[]
-main=['yaml','itertools','anyhow','color-backtrace']
+main=['myaml','itertools','anyhow','color-backtrace']
 transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow','libc']
 plot=['cvode','ui','image','png','anyhow']

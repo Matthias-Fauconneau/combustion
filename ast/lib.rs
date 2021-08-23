@@ -93,10 +93,10 @@ impl Expr {
 		use Expr::*; match self {
 			F64(x) => x.to_string(),
 			Value(id) => names[id.0].clone(),
-			Add(a, b) => format!("{} + {}", a.to_string(names), b.to_string(names)),
-			Sub(a, b) => format!("{} - {}", a.to_string(names), b.to_string(names)),
-			Mul(a, b) => format!("({}) * ({})", a.to_string(names), b.to_string(names)),
-			Div(a, b) => format!("({}) / ({})", a.to_string(names), b.to_string(names)),
+			Add(a, b) => format!("({} + {})", a.to_string(names), b.to_string(names)),
+			Sub(a, b) => format!("({} - {})", a.to_string(names), b.to_string(names)),
+			Mul(a, b) => format!("({}*{})", a.to_string(names), b.to_string(names)),
+			Div(a, b) => format!("{} / {}", a.to_string(names), b.to_string(names)),
 			Exp(x) => format!("exp({})", x.to_string(names)),
 			_ => format!("{self:?}")
 		}
@@ -145,7 +145,7 @@ impl Expression {
 	//Display(Value)
 }
 impl Statement {
-	fn to_string(&self, names: &[String]) -> String {
+	pub fn to_string(&self, names: &[String]) -> String {
 		use Statement::*;
 		match self {
 			Value{id, value} => format!("{} = {}", names[id.0], value.to_string(names)),

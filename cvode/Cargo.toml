@@ -6,7 +6,7 @@ authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition= '2018'
 
 [dependencies]
-sundials-sys= {git='https://github.com/Matthias-Fauconneau/sundials-sys', default-features=false, features=['cvode','nveccuda']}
+sundials-sys= {git='https://github.com/Matthias-Fauconneau/sundials-sys', default-features=false, features=['cvode']}
 
 [lib]
 path= 'lib.rs'
