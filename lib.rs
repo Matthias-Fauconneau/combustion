@@ -1,5 +1,7 @@
-#![feature(once_cell,in_band_lifetimes,array_methods,format_args_capture,associated_type_bounds,trait_alias,default_free_fn,type_ascription,array_zip,unboxed_closures,fn_traits,const_generics,const_evaluatable_checked,iter_zip,nll)]
-#![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features)]
+//#![feature(,,array_zip,,,const_generics,const_evaluatable_checked,)]
+#![feature(format_args_capture,associated_type_bounds,unboxed_closures,fn_traits,trait_alias, array_methods,iter_zip,default_free_fn)]
+#![feature(once_cell)]
+#![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features,confusable_idents)]
 //#![recursion_limit="9"]
 pub mod model;
 pub use model::{kB, NA, R};
@@ -39,7 +41,7 @@ static standard_atomic_weights : SyncLazy<Map<Element, f64>> = SyncLazy::new(||
 use iter::map;
 
 impl Species {
-	pub fn new(species: &[(&'t str, model::Specie)]) -> Self {
+	pub fn new(species: &[(&str, model::Specie)]) -> Self {
 		let molar_mass = map(species, |(_,s)| s.composition.iter().map(|(element, &count)| (count as f64)*standard_atomic_weights[element]).sum());
 		let thermodynamics = map(species, |(_, model::Specie{thermodynamic: model::NASA7{temperature_ranges, pieces},..})| match temperature_ranges[..] {
 			[_, temperature_split, _] => NASA7{temperature_split, pieces: pieces[..].try_into().unwrap()},
@@ -68,7 +70,7 @@ pub struct State {
     pub amounts: Box<[f64]>
 }
 
-pub fn initial_state(model::Model{species, state, ..}: &model::Model<'t>) -> State {
+pub fn initial_state(model::Model{species, state, ..}: &model::Model<'_>) -> State {
 	let model::State{temperature, pressure, volume, amount_proportions} = state;
 	let species_names = map(&**species, |(name,_)| *name);
 	for (specie,_) in &**amount_proportions { assert!(species_names.contains(specie)); }
@@ -123,7 +125,7 @@ impl Reaction {
 	}
 }
 
-pub fn new(model: &'t model::Model) -> (Box<[&'t str]>, Species, usize, Box<[Reaction]>, State) {
+pub fn new<'t>(model: &'t model::Model) -> (Box<[&'t str]>, Species, usize, Box<[Reaction]>, State) {
 	let species_names = map(&*model.species, |(name,_)| *name);
 	let species = Species::new(&model.species);
 	let active = {

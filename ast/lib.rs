@@ -1,5 +1,7 @@
-#![allow(incomplete_features,non_snake_case,mixed_script_confusables)]
-#![feature(unboxed_closures,fn_traits,in_band_lifetimes,associated_type_bounds,format_args_capture,if_let_guard,type_ascription,default_free_fn)]
+#![allow(incomplete_features,non_snake_case)]
+#![feature(format_args_capture,if_let_guard,associated_type_bounds,unboxed_closures,fn_traits)]
+//#![allow(incomplete_features,,mixed_script_confusables)]
+//#![feature(,in_band_lifetimes,,,type_ascription,default_free_fn)]
 //#![recursion_limit="5"]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 #[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
@@ -293,7 +295,7 @@ pub struct Block<'t> {
 	pub names: &'t mut Vec<String>,
 }
 pub fn push(s: Statement, block: &mut Block) { block.statements.push(s) }
-impl Block<'t> {
+impl<'t> Block<'t> {
 	pub fn new(names: &'t mut Vec<String>) -> Self { Self{statements: vec![], names} }
 	pub fn block(&mut self, build: impl FnOnce(&mut Block)->Expression) -> Expression {
 		let mut block = Block{ statements: vec![], names: &mut self.names };
@@ -305,11 +307,11 @@ impl Block<'t> {
 		self.names.push(name);
 		id
 	}
-	#[track_caller] pub fn def(&mut self, value: impl Into<Expression>, name: impl ToString) -> Value {
-		let value = value.into();
+	#[track_caller] pub fn def(&mut self, value: /*impl Into<*/Expression/*>*/, name: impl ToString) -> Value {
+		//let value = value.into();
 		assert!(!value.is_leaf(), "{value:?}");
 		let name = name.to_string();
-		assert!(!name.is_empty());
+		//assert!(!name.is_empty());
 		let id = self.value(name);
 		self.statements.push(Statement::Value{id: id.clone(), value});
 		id
@@ -318,7 +320,7 @@ impl Block<'t> {
 #[macro_export] macro_rules! l {
 	($f:ident $e:expr) => {{ let e = $e; $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
 	($f:ident, $e:expr, $name:expr) => {{ let e = $e; if e.is_leaf() { e } else { $f.def(e, $name).into() } }};
-	($f:ident, $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { l!($f e).into() } }};
+	($f:ident, $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))).into() } }};
 }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));

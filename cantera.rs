@@ -34,7 +34,7 @@ fn main() -> Result<()> {
 	#[cfg(not(feature="f32"))] type T = f64;
 	#[cfg(feature="f32")] type T = f32;
 	#[cfg(not(feature="transport"))] let rates = {
-		let rates = reaction::rates(&species.thermodynamics, &reactions);
+		let rates = reaction::rates(thermodynamics, &reactions);
 		with_repetitive_input(assemble::<T>(rates, 1), 1)
 	};
 

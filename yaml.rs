@@ -1,5 +1,3 @@
-//#![feature(array_map)]#![allow(non_snake_case,non_upper_case_globals)]
-
 struct Pretty<T>(T);
 impl std::fmt::Display for Pretty<&f64> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {

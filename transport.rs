@@ -16,7 +16,7 @@ fn quadratic_interpolation(x: &[f64; 3], y: &[f64; 3], x0: f64) -> f64 {
 	((x[1]-x[0])*(y[2]-y[1])-(y[1]-y[0])*(x[2]-x[1]))/((x[1]-x[0])*(x[2]-x[0])*(x[2]-x[1]))*(x0 - x[0])*(x0 - x[1]) + ((y[1]-y[0])/(x[1]-x[0]))*(x0-x[1]) + y[1]
 }
 mod polynomial {
-//#![feature(trait_alias)]#![allow(non_snake_case)]
+//#![feature(trait_alias)]
 use {num::sq, iter::{IntoIterator, generate, IntoConstSizeIterator, DotN}};
 pub fn evaluate<const N: usize>(P: &[f64; N], x: f64) -> f64 { P.dot(generate(|k| x.powi(k as i32))) }
 
@@ -140,14 +140,14 @@ use ast::*;
 
 pub fn conductivityNIVT<const D: usize>(conductivityIVT: &[[f64; D]], total_amount: &Value, lnT: &[Expr; D], mole_proportions: &[Value], f: &mut Block) -> Expression  {
 	let (_,[A,B]) = zip(mole_proportions, conductivityIVT).enumerate().map_reduce(f,
-		|f,(k,(X, P))| { let c = f.def(P.dot(lnT.cloned()):Expression, format!("c{k}")); (k,[X*c, X/c]) },
+		|f,(k,(X, P))| { let c = f.def(P.dot(lnT.cloned())/*:Expression*/, format!("c{k}")); (k,[X*c, X/c]) },
 		|f,(_,[A,B]),(k,[a,b])| (k,[f.def(A+a, format!("a{k}")).into(), f.def(B+b, format!("b{k}")).into()]) ).unwrap();
 	A/total_amount + total_amount/B
 }
 
 pub fn viscosityIVT<const D: usize>(molar_mass: &[f64], VviscosityIVVT: &[[f64; D]], lnT: &[Expr; D], mole_fractions: &[Value], f: &mut Block) -> Expression {
 	let K = VviscosityIVVT.len();
-	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| f.def(P.dot(lnT.cloned()):Expression, format!("VviscosityIVVT{k}")));
+	let VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,P)| f.def(P.dot(lnT.cloned())/*:Expression*/, format!("VviscosityIVVT{k}")));
 	let rcp_VviscosityIVVT = map(VviscosityIVVT.iter().enumerate(), |(k,x)| f.def(1./x, format!("rcp_VviscosityIVVT{k}")));
 	sum((0..K).map(|k|
 		&mole_fractions[k] * ast::sq(&VviscosityIVVT[k]) / sum((0..K).map(|j| {
@@ -163,8 +163,9 @@ pub fn density_diffusivity<'t, const D: usize>(molar_mass: &'t [f64], diffusivit
 	let K = mole_proportions.len();
 	let rcp_diffusivityITVT = |f:&mut Block, k,j| {
 		assert!(j<k);
-		let P:[f64;D] = diffusivityITVT[k*K+j];
-		f.def(1./(P.dot(lnT.cloned()):Expression), format!("R{k}_{j}"))
+		let P: [f64; D] = diffusivityITVT[k*K+j];
+		let y: Expression = P.dot(lnT.cloned());
+		f.def(1./y, format!("R{k}_{j}"))
 	};
 	let mut S: Box<[Option<Value>]> = vec![None; K].into();
 	for k in 0..K { for j in 0..k {
@@ -191,13 +192,13 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
 	let T = temperature;
-	let lnT = l!(f ast::ln(1024., T, f));
+	let lnT = l!(f ast::ln(1024., T, f).into());
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
 	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
 	let ref mole_proportions = list(nonbulk_mole_proportions.iter().copied().chain([f.def(sum_mole_proportions-nonbulk_mole_proportions.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
 	use iter::Dot;
 	let ref VT = l!(f ast::sqrt(T));
-	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions):Expression);
+	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions)/*:Expression*/);
 	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
 		output: list([

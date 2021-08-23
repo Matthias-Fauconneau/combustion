@@ -1,4 +1,4 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,bool_to_option,type_ascription)]
+#![feature(format_args_capture,type_ascription, iter_zip)]
 #![allow(non_snake_case,non_upper_case_globals)]
 
 use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
@@ -14,6 +14,9 @@ impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::
 
 impl Builder<'_> {
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].as_ref().unwrap().0) }
+fn value(&self, &Value(id): &Value) -> String {
+	if let Some(r) = self.registers[id] { if !self.names[id].is_empty() { format!("r[{r}]/*{}*/", self.names[id]) } else { format!("r[{r}]") } } else { self.names[id].clone() }
+}
 fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
 	match expr {
 		Expression::Expr(e) => {
@@ -21,7 +24,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
 			match e {
 				&F32(value) => value.to_string(),
 				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { format!("{}",*value) },
-				Value(v) => if let Some(r) = self.registers[v.0] { format!("r[{}]/*{}*/", r, self.names[v.0]) } else { self.names[v.0].clone() },
+				Value(value) => self.value(value),
 				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n +{b}") } else { y };
@@ -51,8 +54,9 @@ fn extend(&mut self, s: &Statement) {
 		Value { id, value } => {
 			let result = self.expr(value, None);
 			let rtype = self.rtype(value);
-			self.builder.push(format!("r[{}]/*{}*/ = {result};", self.registers[id.0].unwrap(), self.names[id.0]));
-			assert!(self.values[id.0].replace((rtype,format!("r[{}]",self.registers[id.0].unwrap()))).is_none());
+			let value = self.value(id);
+			self.builder.push(format!("{value} = {result};"));
+			assert!(self.values[id.0].replace((rtype,value)).is_none());
 		},
 		Select { condition, true_exprs, false_exprs, results } => {
 			let types = map(&**true_exprs, |e| self.rtype(e));
@@ -69,8 +73,8 @@ fn extend(&mut self, s: &Statement) {
 			self.values = scope;
 			assert!(results.len() == false_values.len());
 
-			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("r[{}]/*{}*/ = {value};", self.registers[id.0].unwrap(), self.names[id.0])).format("\n\t");
-			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("r[{}]/*{}*/ = {value};", self.registers[id.0].unwrap(), self.names[id.0])).format("\n\t");
+			let true_values = zip(&**results, &*true_values).map(|(id, value)| format!("{} = {value};", self.value(id))).format(" ").to_string();
+			let false_values = zip(&**results, &*false_values).map(|(id, value)| format!("{} = {value};", self.value(id))).format(" ").to_string();
 
 			self.push(format!("if {condition} {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
 			for (rtype, id) in zip(&*types, &**results) {
@@ -126,7 +130,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let path = if Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = Loader::load_from_str(std::str::from_utf8(&read(&path)?)?)?;
 	let model = parse(&model);
-	let (ref _species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, _, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
+	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, reactions, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 	let K = species.len();
 	let total_amount = amounts.iter().sum::<f64>();
 	let mole_fractions = map(&**amounts, |n| n/total_amount);
@@ -143,7 +147,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let diffusivityITVT = map(&*diffusivityITVT, |P| P.map(|p| (sqrt(temperature)/(R*viscosity))*p));
 
 	let conductivityNIVT = {
-		let_!{ input@[ref sum_mole_proportions, ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
+		let_!{ input@[sum_mole_proportions, lnT, lnT2, lnT3, lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
 		let mut values = ["sum_mole_proportions", "lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert!(input.len() == values.len());
 		let mut function = Block::new(&mut values);
@@ -156,7 +160,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	}}};
 
 	let viscosityIVT = {
-		let_!{ input@[ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(4+K), Value) => {
+		let_!{ input@[lnT, lnT2, lnT3, lnT4, mole_proportions @ ..] = &*map(0..(4+K), Value) => {
 		let mut values = ["lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert!(input.len() == values.len());
 		let mut function = Block::new(&mut values);
@@ -169,7 +173,7 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	}}};
 
 	let density_diffusivity = {
-		let_!{ input@[ref mean_molar_mass_VTN, ref VT, ref lnT, ref lnT2, ref lnT3, ref lnT4, ref mole_proportions @ ..] = &*map(0..(6+K), Value) => {
+		let_!{ input@[mean_molar_mass_VTN, VT, lnT, lnT2, lnT3, lnT4, mole_proportions @ ..] = &*map(0..(6+K), Value) => {
 		let mut values = ["mean_molar_mass_VTN","VT","lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert_eq!(input.len(), values.len());
 		let mut function = Block::new(&mut values);
@@ -181,7 +185,23 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		}
 	}}};
 
-	let compile = |mut f: Function, name| {
+	let rates = {
+		let_!{ input@[lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(6+K), Value) => {
+		let mut values = ["lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))).collect::<Vec<_>>();
+		assert_eq!(input.len(), values.len());
+		let mut function = Block::new(&mut values);
+		let ref mut f = function;
+		use reaction::*;
+		Function{
+			output: map(&*species_rates(thermodynamics, &reactions, T{lnT:*lnT,T:*T,T2:*T2,T3:*T3,T4:*T4,rcpT:*rcpT,rcpT2: f.def(rcpT*rcpT,"rcpT2")}, concentrations, f, species_names), |x| x.into()),
+			statements: function.block.statements.into(),
+			input: vec![Type::F64; input.len()].into(),
+			values: values.into()
+		}
+	}}};
+
+
+	let compile = |mut f: Function, name, array_input, direct| {
 		let mut last_use = vec![0; f.values.len()];
 		fn visitor(last_use: &mut Vec<usize>, program_counter: usize, e: &Expression) {
 			if let Expression::Expr(Expr::Value(id)) = e { last_use[id.0] = program_counter; } else { e.visit(|e| visitor(last_use, program_counter, e)); }
@@ -190,10 +210,11 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 			use Statement::*;
 			match statement {
 				Value{value,..} => visitor(&mut last_use, program_counter, value),
-				_/*Select { condition, true_exprs, false_exprs, results }*/ => unimplemented!() /*{
-					condition.visit(|e| if Expr(Value(id))=e { last_use[i] = i;});
-					for e in true_exprs.chain(false_exprs) { e.visit(|e| if Expr(Value(id))=e { last_use[id.0] = program_counter;}); }
-				}*/
+				Select{condition, true_exprs, false_exprs, ..} => {
+					visitor(&mut last_use, program_counter, condition);
+					for e in &**true_exprs { visitor(&mut last_use, program_counter, e); }
+					for e in &**false_exprs { visitor(&mut last_use, program_counter, e); }
+				}
 			}
 		}
 		for (output_counter, value) in f.output.iter().enumerate() { visitor(&mut last_use, f.statements.len()+output_counter, value); }
@@ -211,28 +232,31 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 				}
 			} }
 			use Statement::*;
+			let mut visitor = |id:ast::Value| if id.0 >= f.input.len() {
+				if !registers.contains(&Some(id)) {
+					let r =
+						if let Some((r, register)) = registers.iter_mut().enumerate().filter(|(_,register)| register.is_none()).next() { *register = Some(id); r }
+						else { registers.push(Some(id)); registers.len()-1 };
+					map[id.0] = Some(r.try_into().unwrap());
+				}
+			};
 			match statement {
-				Value{id,..} => /*{ value.visit(|e| if let Expression::Expr(Expr::Value(id)) = e {*/ if id.0 >= f.input.len() {
-					if !registers.contains(&Some(*id)) {
-						let r =
-							if let Some((r, register)) = registers.iter_mut().enumerate().filter(|(_,register)| register.is_none()).next() { *register = Some(*id); r }
-							else { registers.push(Some(*id)); registers.len()-1 };
-						//eprintln!("+{r}: {}", f.values[id.0]);
-						map[id.0] = Some(r.try_into().unwrap());
-					}
-				}//}); }
-				_/*Select { condition, true_exprs, false_exprs, results }*/ => unimplemented!()
+				Value{id,..} => visitor(*id),
+				Select{results,..} => for id in &**results { visitor(*id) },
 			}
 		}
 		let mut s = self::compile(0, &f, &map, name);
 		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
-		s = s.replace(", double mole_proportions0",", double mole_proportions[]");
-		for k in (0..K).rev() { s = s.replace(&format!(", double mole_proportions{k},"),",").replace(&format!("mole_proportions{k}"), &format!("mole_proportions[{k}]")); }
+		s = s.replace(&format!(", double {array_input}0"),&format!(", double {array_input}[]"));
+		for k in (0..K).rev() { s = s.replace(&format!(", double {array_input}{k},"),",").replace(&format!("{array_input}{k}"), &format!("{array_input}[{k}]")); }
 		if f.output.len() == 1 { s = s.replace(", double out0[]","").replace("out0[id] = ","return ").replace("__ void","__ double"); }
-		else {
+		else if direct {
 			s = s.replace(", double out0[]",", double* out[]");
-			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}["), &format!("out[{k}][")); }
+			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}][id]")); }
+		} else {
+			s = s.replace(", double out0[]",", double out[]");
+			for k in 0..K { s = s.replace(&format!(", double out{k}[]"),"").replace(&format!("out{k}[id]"), &format!("out[{k}]")); }
 		}
 		s.replace("+-","-").replace("double","dfloat")
 	};
@@ -240,12 +264,24 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let name = std::path::Path::new(&path).file_stem().unwrap();
 	let name = name.to_str().unwrap();
 	let prefix = args().skip(3).next().unwrap_or("nekrk_".to_string());
-	std::fs::write(target.join(format!("{name}/conductivity.c")), compile(conductivityNIVT,format!("{prefix}conductivityNIVT")))?;
-	std::fs::write(target.join(format!("{name}/viscosity.c")), [
-		"__NEKRK_DEVICE__ double sq(double x) { return x*x; }",
-		&compile(viscosityIVT,format!("{prefix}viscosityIVT")).replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v")
-	].join("\n"))?;
-	std::fs::write(target.join(format!("{name}/diffusivity.c")), compile(density_diffusivity,format!("{prefix}density_diffusivity")).replace("density_diffusivity(","density_diffusivity(unsigned int id, "))?;
+	let write = |module, content| std::fs::write(target.join(format!("{name}/{module}.c")), content);
+	write("conductivity",
+		compile(conductivityNIVT, format!("{prefix}conductivityNIVT"), "mole_proportions", false)
+	)?;
+	write("viscosity",
+		[
+			"__NEKRK_DEVICE__ double sq(double x) { return x*x; }",
+			&compile(viscosityIVT, format!("{prefix}viscosityIVT"), "mole_proportions", false)
+				.replace("rcp_VviscosityIVVT","r").replace("VviscosityIVVT","v")
+		].join("\n")
+	)?;
+	write("diffusivity",
+		compile(density_diffusivity, format!("{prefix}density_diffusivity"), "mole_proportions", true)
+		.replace("density_diffusivity(","density_diffusivity(unsigned int id, ")
+	)?;
+	write("rates",
+		compile(rates, format!("{prefix}rates"), "concentrations", false)
+	)?;
 
 	#[cfg(feature="check")] {
 		let transport = transport::properties::<4>(&species, temperature, viscosity, conductivity);
