@@ -257,8 +257,8 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 
 pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) -> Function {
 	let active = reactions[0].net.len();
-	let_!{ input@[pressure_R, rcp_pressure_R, volume, T, nonbulk_amounts @ ..] = &*map(0..(5+species.len()-1), Value) => {
-	let mut values = ["pressure_","rcp_pressure_", "volume","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
+	let_!{ input@[pressure_R, rcp_pressure_R, T, volume, nonbulk_amounts @ ..] = &*map(0..(4+species.len()-1), Value) => {
+	let mut values = ["pressure_","rcp_pressure_", "T", "volume"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
 	let lnT = l!(f ln(1024., T, f));
