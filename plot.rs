@@ -17,14 +17,17 @@ fn main() -> Result<()> {
 		s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
 	}
 	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
+	assert!(active < amounts.len()); // Assume bulk specie is inert
 	let state = [&[temperature, volume], &amounts[..active]].concat();
+	let mut input = [&state, &amounts[active..amounts.len()-1]].concat();
 	let mut evaluations = 0;
 	let f = |u: &[f64], f_u: &mut [f64]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		assert!(u.iter().all(|u| u.is_finite()));
-		f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], u).unwrap());
+		input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+		f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
 		assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));

@@ -31,7 +31,7 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 		let output_len = function.output.len();
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));
 		move |constants:&[T], inputs:&[&[T]]| {
-			assert!(constants.len() <= 1);
+			assert!(constants.len() <= 2);
 			assert_eq!(constants.len()+inputs.len(), input_len);
 			let states_len = inputs[0].len();
 			let mut outputs = map(0..output_len, |_| vec![default(); states_len].into_boxed_slice());
@@ -61,7 +61,7 @@ pub struct Function<D: Borrow<Device>, T:Plain> {
 	_marker: PhantomData<T>,
 }
 pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
-	assert!((size_of::<T>() == 4 || size_of::<T>() == 8) && constants.len() == 1 && constants.len()+input.len() == *input_len);
+	assert!((size_of::<T>() == 4 || size_of::<T>() == 8) && constants.len() <= 2 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let device = device.borrow();
 	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
