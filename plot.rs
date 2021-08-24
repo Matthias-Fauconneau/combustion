@@ -1,11 +1,13 @@
-#![feature(destructuring_assignment,format_args_capture,trait_alias,default_free_fn,in_band_lifetimes,unboxed_closures,fn_traits)]#![allow(non_snake_case,non_upper_case_globals)]
+#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
 use {anyhow::Result, iter::{list, map}, combustion::*, device::*};
 fn main() -> Result<()> {
-	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(std::env::args().skip(1).next().unwrap())?)?)?;
+	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
+	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
+	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
-	let (ref species_names, ref species, _, reactions, ref _state) = new(&model);
-	let rates = reaction::rates(&species.thermodynamics, &reactions);
+	let (species_names, ref species, _, reactions, ref _state) = new(&model);
+	let rates = reaction::rates(&species.thermodynamics, &reactions, &species_names);
 	#[cfg(not(feature="f32"))] type T = f64;
 	#[cfg(feature="f32")] type T = f32;
 	let rates = assemble::<T>(rates, 1);
@@ -14,7 +16,7 @@ fn main() -> Result<()> {
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
 		s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
 	}
-	let amounts = map(&**species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
+	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
 	let total_amount = amounts.iter().sum::<f64>();
 	let state = [&[temperature], &amounts[..amounts.len()-1]].concat();
 	let mut input = list([list([total_amount as _])].into_iter().chain(state.iter().map(|&v| list([v as _]))));

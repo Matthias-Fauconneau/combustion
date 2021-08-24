@@ -1,4 +1,4 @@
-#![allow(incomplete_features, non_snake_case)] #![feature(const_generics, const_evaluatable_checked, type_ascription, array_methods)]
+#![allow(non_snake_case)]
 use {sundials_sys::*, std::ffi::c_void as void};
 
 use std::convert::TryInto;

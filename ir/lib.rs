@@ -1,4 +1,4 @@
-#![feature(default_free_fn,format_args_capture,in_band_lifetimes)]
+#![feature(default_free_fn,format_args_capture)]
 use {std::default::default, iter::map};
 pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32, F64}, condcodes::FloatCC};
 use cranelift::{
@@ -17,7 +17,7 @@ type R64 = NotNan<f64>;
 	constants_f64: std::collections::HashMap<R64, Value>,
 }
 
-impl Builder<'t> {
+impl<'t> Builder<'t> {
 	fn new(function: &'t mut Function, function_builder_context: &'t mut FunctionBuilderContext) -> Self { Self{
 			builder: FunctionBuilder::new(function, function_builder_context),
 			//constants_u32: default(),

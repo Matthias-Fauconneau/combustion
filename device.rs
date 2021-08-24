@@ -25,7 +25,7 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	use {std::default::default, iter::{list, map}, ast::*, super::*};
 	#[cfg(not(feature="interpret"))] pub trait Convert = super::Convert;
 	#[cfg(feature="interpret")] pub trait Convert = super::Convert+Into<interpret::DataValue>+From<interpret::DataValue>;
-	pub fn assemble<T:'t+Copy+Default+Convert>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
+	pub fn assemble<'t, T:'t+Copy+Default+Convert>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
 		let function = T::convert(function);
 		let input_len = function.input.len();
 		let output_len = function.output.len();
@@ -51,21 +51,21 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	}
 }
 #[cfg(feature="vpu")] mod device {
-use {std::{mem::size_of, default::default, borrow::Borrow}, iter::{list, map}, vulkan::*, super::*};
+use {std::{mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
 pub struct Function<D: Borrow<Device>, T:Plain> {
 	device: D,
 	input_len: usize,
 	output_len: usize,
 	block_size: usize,
 	pipeline: Pipeline,
-	_marker: std::marker::PhantomData<T>,
+	_marker: PhantomData<T>,
 }
 pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
 	assert!((size_of::<T>() == 4 || size_of::<T>() == 8) && constants.len() == 1 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let device = device.borrow();
 	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
-	let output = map(0..*output_len, |_| Buffer::new(device, &vec![default(); states_len]).unwrap());
+	let output = map(0..*output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
 	let buffers = list(input.iter().chain(&*output));
 	device.bind(pipeline.descriptor_set, &buffers)?;
 	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(*block_size as u32))?;
@@ -80,7 +80,7 @@ pub fn assemble<T:Plain+Convert>(function: ast::Function, block_size: usize) -> 
 	let function = T::convert(function);
 	let device = vulkan::Device::new().unwrap();
 	let pipeline = device.pipeline(&spirv::compile(1, &function).unwrap(), block_size as u32, 1*size_of::<T>(), function.input.len()-1+function.output.len()).unwrap();
-	Function{device, input_len: function.input.len(), output_len: function.output.len(), block_size, pipeline, _marker: default()}
+	Function{device, input_len: function.input.len(), output_len: function.output.len(), block_size, pipeline, _marker: PhantomData}
 }
 
 impl<D: Borrow<Device>, T:Plain+Default> FnOnce<(&[T], &[&[T]])> for Function<D,T> { type Output = self::Output<T>; extern "rust-call" fn call_once(mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call_mut(args) } }

@@ -23,7 +23,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
 			use Expr::*;
 			match e {
 				&F32(value) => value.to_string(),
-				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { format!("{}",*value) },
+				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { let f = format!("{}",*value); if f.contains('.') { f } else { f+"." } },
 				Value(value) => self.value(value),
 				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }

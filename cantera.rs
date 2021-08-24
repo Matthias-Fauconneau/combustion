@@ -1,13 +1,12 @@
 #![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
 #![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip)]
 mod yaml; mod device;
-use {anyhow::Result, std::iter::zip, iter::{Dot, map}, itertools::Itertools, device::*};
+use {anyhow::Result, std::iter::zip, iter::{Dot, map}, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("gri30".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
-	use combustion::*;
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, _reactions, ref state@State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 
 	use std::os::raw::c_char;
