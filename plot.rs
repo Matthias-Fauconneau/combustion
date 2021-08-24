@@ -1,13 +1,13 @@
 #![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn)]#![allow(non_snake_case,non_upper_case_globals)]
 mod yaml; mod device;
-use {anyhow::Result, iter::{list, map}, combustion::*, device::*};
+use {anyhow::Result, iter::map, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
 	let (species_names, ref species, active, reactions, ref _state) = new(&model);
-	let rates = reaction::rates(&species.thermodynamics, &reactions, &species_names);
+	let rates = reaction::rates(&species.molar_mass, &species.thermodynamics, &reactions, &species_names);
 	#[cfg(not(feature="f32"))] type T = f64;
 	#[cfg(feature="f32")] type T = f32;
 	let rates = with_repetitive_input(assemble::<T>(rates, 1), 1);
@@ -24,9 +24,8 @@ fn main() -> Result<()> {
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		assert!(u.iter().all(|u| u.is_finite()));
-		let output = rates(&[pressure_R as _, (1./pressure_R) as _], u).unwrap();
-		assert!(output.iter().all(|u| u[0].is_finite()), "{input:?} {output:?}");
-		for (f_u, output) in f_u.iter_mut().zip(&*output) { *f_u = all_same(output, 1) as _; }
+		f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], u).unwrap());
+		assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 		true

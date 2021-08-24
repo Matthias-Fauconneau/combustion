@@ -255,7 +255,7 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 	map(&*species_rates, |x| x.unwrap())
 }
 
-pub fn rates(species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) -> Function {
+pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) -> Function {
 	let active = reactions[0].net.len();
 	let_!{ input@[pressure_R, rcp_pressure_R, volume, T, nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
 	let mut values = ["pressure_","rcp_pressure_", "volume","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
@@ -277,12 +277,12 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) 
 	use iter::Dot;
 	let energy_rate_RT : Expression = (&species_rates).dot(enthalpy_RT.into_vec());
 	let [molar_heat_capacity_at_CP_R] = thermodynamics(species, [molar_heat_capacity_at_constant_pressure_R], Ts, f, ["molar_heat_capacity_at_CP_R"]);
-	let Cp : Expression = molar_heat_capacity_at_CP_R.dot(concentrations);
-	let dtT_T = Ratio(- energy_rate_RT, Cp);
+	let Cp: Expression = molar_heat_capacity_at_CP_R.dot(concentrations);
+	let dtT_T = f.def(-energy_rate_RT/Cp, "dT_T");
 	let bulk_molar_mass = molar_mass.last().unwrap();
 	let reduced_molar_masses = map(&*molar_mass, |w| 1.-w/bulk_molar_mass); // Ensures conservation of mass (transmutes with bulk specie instead)
-	let dtE = reduced_molar_masses.dot(species_rates);
-	let dtV = V * (dtT_T + T*rcp_pressure_R * dtE);
+	let dtE: Expression = reduced_molar_masses.dot(&species_rates);
+	let dtV = volume * (dtT_T + rcp_pressure_R*T*dtE);
 	Function{
 		output: list([T * dtT_T, dtV].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
 		statements: function.block.statements.into(),
