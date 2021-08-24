@@ -51,9 +51,9 @@ pub const R : f64 = kB*NA;
 }
 
 #[derive(Serialize, Deserialize, Debug)] pub struct State<'t> {
-	pub temperature: f64,
 	pub pressure: f64,
 	pub volume: f64,
+	pub temperature: f64,
 	#[serde(borrow)] pub amount_proportions: Box<[(&'t str, f64)]>
 }
 

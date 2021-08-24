@@ -257,8 +257,8 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 
 pub fn rates(species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) -> Function {
 	let active = reactions[0].net.len();
-	let_!{ input@[pressure_R, total_amount, T, nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
-	let mut values = ["pressure_","total_amount","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
+	let_!{ input@[pressure_R, rcp_pressure_R, volume, T, nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) => {
+	let mut values = ["pressure_","rcp_pressure_", "volume","T"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
 	let lnT = l!(f ln(1024., T, f));
@@ -268,23 +268,23 @@ pub fn rates(species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) 
 	let rcpT = l!(f 1./T);
 	let rcpT2 = l!(f rcpT*rcpT);
 	let Ts = T{lnT,T: *T,T2,T3,T4,rcpT,rcpT2};
-	let total_concentration = l!(f pressure_R / T); // Constant pressure
-	let molar_density = l!(f total_concentration / total_amount);
+	let molar_density = l!(f 1./volume);
 	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| l!(f molar_density*max(0., nonbulk_amount)));
-	let bulk_concentration = l!(f total_concentration - sum(&*nonbulk_concentrations, f).unwrap());
+	let bulk_concentration = l!(f pressure_R * rcpT - sum(&*nonbulk_concentrations, f).unwrap()); // Constant pressure
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
-	//let [a1T, a5rcpT, Gibbs0_RT] = thermodynamics(&species[0..active], [a1T as fn(&[f64;7],T,Cache)->Expression, a5rcpT, Gibbs0_RT], Ts, f, ["a1T","a5/T","Gibbs0/RT"]);
-	//let Gibbs0_RT = map(a1T.iter().zip(&*a5rcpT).zip(Gibbs0_RT.into_vec()), |((a1T,a5rcpT),g)| l!(f -a1T.shallow()+g+a5rcpT.shallow()));
 	let species_rates = species_rates(species, reactions, Ts, &concentrations, /*&Gibbs0_RT,*/ f, species_names);
 	let [enthalpy_RT] = thermodynamics(&species[0..active], [enthalpy_RT], Ts, f, ["enthalpy_RT"]);
-	//let enthalpy_RT = map(a1T.into_vec().into_iter().zip(a5rcpT.into_vec().into_iter()).zip(enthalpy_RT.into_vec()), |((a1T,a5rcpT),h)| a1T+h+a5rcpT);
 	use iter::Dot;
 	let energy_rate_RT : Expression = (&species_rates).dot(enthalpy_RT.into_vec());
 	let [molar_heat_capacity_at_CP_R] = thermodynamics(species, [molar_heat_capacity_at_constant_pressure_R], Ts, f, ["molar_heat_capacity_at_CP_R"]);
 	let Cp : Expression = molar_heat_capacity_at_CP_R.dot(concentrations);
 	let dtT_T = Ratio(- energy_rate_RT, Cp);
+	let bulk_molar_mass = molar_mass.last().unwrap();
+	let reduced_molar_masses = map(&*molar_mass, |w| 1.-w/bulk_molar_mass); // Ensures conservation of mass (transmutes with bulk specie instead)
+	let dtE = reduced_molar_masses.dot(species_rates);
+	let dtV = V * (dtT_T + T*rcp_pressure_R * dtE);
 	Function{
-		output: list([T * dtT_T].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
+		output: list([T * dtT_T, dtV].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
 		statements: function.block.statements.into(),
 		input: vec![Type::F64; input.len()].into(),
 		values: values.into()

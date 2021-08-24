@@ -64,9 +64,9 @@ impl Species {
 }
 
 pub struct State {
-    pub temperature: f64,
     pub pressure_R: f64,
     pub volume: f64,
+    pub temperature: f64,
     pub amounts: Box<[f64]>
 }
 
