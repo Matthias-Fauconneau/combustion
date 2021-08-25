@@ -1,5 +1,9 @@
-#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn)]#![allow(non_snake_case,non_upper_case_globals)]
-mod yaml; mod device;
+#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn)]
+#![allow(non_snake_case,non_upper_case_globals)]
+
+mod yaml; 
+mod device;
+
 use {anyhow::Result, iter::map, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
