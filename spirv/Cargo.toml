@@ -1,9 +1,5 @@
-cargo-features=['edition2021']
-[package]
-edition= '2021'
-name= 'ast-spirv'
-description= 'Translate AST to SPIRV'
-version= '0.0.0'
+package={edition='2021', name='ast-spirv', description='Translate AST to SPIRV', version='0.0.0'}
+lib={path='lib.rs'}
 
 [dependencies]
 ordered-float='*'
@@ -13,6 +9,3 @@ ast= {path='../ast'}
 spirv= {package='spirv_headers', git='https://github.com/Matthias-Fauconneau/rspirv'}
 rspirv={git='https://github.com/Matthias-Fauconneau/rspirv'}
 spirv-tools={version='*', default-features=false, features=['use-installed-tools']}
-
-[lib]
-path= 'lib.rs'

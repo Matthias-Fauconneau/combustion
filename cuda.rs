@@ -1,4 +1,4 @@
-#![feature(format_args_capture,type_ascription, iter_zip)]
+#![feature(format_args_capture,type_ascription, iter_zip, array_zip,destructuring_assignment)]
 #![allow(non_snake_case,non_upper_case_globals)]
 
 use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
@@ -123,12 +123,12 @@ double r[{register_count}];
 
 mod yaml;
 #[cfg(feature = "check")] mod device;
-use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,parse}, combustion::*};
+use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,parse}, combustion::*};
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
 	let path = if Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
-	let model = Loader::load_from_str(std::str::from_utf8(&read(&path)?)?)?;
+	let model = Loader::load_from_str(std::str::from_utf8(&read(&path).context(path.clone())?)?)?;
 	let model = parse(&model);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, reactions, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 	let K = species.len();
@@ -139,7 +139,8 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 	let density = concentration * mean_molar_mass;
 	let viscosity = density * diffusivity;
-	let specific_heat_capacity = R / mean_molar_mass * thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions):f64;
+	let molar_heat_capacity_R: f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
+	let specific_heat_capacity = R / mean_molar_mass * molar_heat_capacity_R;
 	let conductivity = specific_heat_capacity * diffusivity;
 	let transport::Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} = transport::Polynomials::<5>::new(&species, temperature);
 	let VviscosityIVVT = map(&*VviscosityIVVT, |P| P.map(|p| (sqrt(sqrt(temperature)/viscosity))*p));
@@ -148,11 +149,13 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 
 	let conductivityNIVT = {
 		let_!{ input@[sum_mole_proportions, lnT, lnT2, lnT3, lnT4, ref mole_proportions @ ..] = &*map(0..(5+K), Value) => {
-		let mut values = ["sum_mole_proportions", "lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
+		let values = list(["sum_mole_proportions", "lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))));
 		assert!(input.len() == values.len());
+		let lnT = [(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()];
+		let mut values = values.into();
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list([transport::conductivityNIVT(&conductivityIVT, sum_mole_proportions, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()], mole_proportions, &mut function)]),
+			output: list([transport::conductivityNIVT(&conductivityIVT, sum_mole_proportions, &lnT, mole_proportions, &mut function)]),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -161,11 +164,13 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 
 	let viscosityIVT = {
 		let_!{ input@[lnT, lnT2, lnT3, lnT4, mole_proportions @ ..] = &*map(0..(4+K), Value) => {
-		let mut values = ["lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
+		let values = ["lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
 		assert!(input.len() == values.len());
+		let lnT = [(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()];
+		let mut values = values.into();
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list([transport::viscosityIVT(molar_mass, &VviscosityIVVT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()], mole_proportions, &mut function)]),
+			output: list([transport::viscosityIVT(molar_mass, &VviscosityIVVT, &lnT, mole_proportions, &mut function)]),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -174,11 +179,13 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 
 	let density_diffusivity = {
 		let_!{ input@[mean_molar_mass_VTN, VT, lnT, lnT2, lnT3, lnT4, mole_proportions @ ..] = &*map(0..(6+K), Value) => {
-		let mut values = ["mean_molar_mass_VTN","VT","lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))).collect::<Vec<_>>();
+		let values = list(["mean_molar_mass_VTN","VT","lnT","lnT2","lnT3","lnT4"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("mole_proportions{i}"))));
 		assert_eq!(input.len(), values.len());
+		let lnT = [(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()];
+		let mut values = values.into();
 		let mut function = Block::new(&mut values);
 		Function{
-			output: list(transport::density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, &[(1.).into(), lnT.into(), lnT2.into(), lnT3.into(), lnT4.into()], mole_proportions, &mut function)),
+			output: list(transport::density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, &lnT, mole_proportions, &mut function)),
 			statements: function.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -187,13 +194,15 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 
 	let rates = {
 		let_!{ input@[lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(6+K), Value) => {
-		let mut values = ["lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))).collect::<Vec<_>>();
+		let values = list(["lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))));
 		assert_eq!(input.len(), values.len());
+		let mut values = values.into();
 		let mut function = Block::new(&mut values);
 		let ref mut f = function;
 		use reaction::*;
+		let T = T{lnT:*lnT,T:*T,T2:*T2,T3:*T3,T4:*T4,rcpT:*rcpT,rcpT2: f.def(rcpT*rcpT,"rcpT2")};
 		Function{
-			output: map(&*species_rates(thermodynamics, &reactions, T{lnT:*lnT,T:*T,T2:*T2,T3:*T3,T4:*T4,rcpT:*rcpT,rcpT2: f.def(rcpT*rcpT,"rcpT2")}, concentrations, f, species_names), |x| x.into()),
+			output: map(&*species_rates(thermodynamics, &reactions, T, concentrations, f, species_names), |x| x.into()),
 			statements: function.block.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
@@ -202,6 +211,32 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 
 
 	let compile = |mut f: Function, name, array_input, direct| {
+		let [constants, SFU, ALU] = {
+			fn add<T: std::ops::Add, const N: usize>(a: [T;N], b: [T;N]) -> [<T as std::ops::Add>::Output; N] { a.zip(b).map(|(a,b)| a+b) }
+			fn visitor(e: &Expression) -> [usize; 3] {
+				let [constants, SFU, ALU] = e.visit(visitor).into_iter().filter_map(|x| x).reduce(add).unwrap_or([0,0,0]);
+				use Expr::*;
+				match e { Expression::Expr(e) => match e {
+					F32{..}|F64{..} => [constants+1, SFU, ALU],
+					Value(_)|Neg(_/*TODO: fmsub*/) => [constants, SFU, ALU],
+					Div{..}|Sqrt{..}|Exp{..}|Ln{..} => [constants, SFU+1, ALU], //TODO: 1/sqrt
+					Add{..}|Sub{..}|Mul{..}|Sq{..} |Max{..}|LessOrEqual{..} => [constants, SFU, ALU+1], //TODO: FMA
+					},
+					Expression::Block{..} => [constants, SFU, ALU]
+				}
+			}
+			f.statements.iter().map(|statement| {
+				use Statement::*;
+				match statement {
+					Value{value,..} => visitor(value),
+					Select{condition, true_exprs, false_exprs, ..} =>
+						[visitor(condition)].into_iter().chain(true_exprs.iter().map(|e| visitor(e) )).chain(false_exprs.iter().map(|e| visitor(e) )).reduce(add).unwrap()
+				}
+			}).reduce(add).unwrap()
+		};
+		//fn gcd(mut a: usize, mut b: usize) -> usize { while b != 0 { (a,b) = (b, a % b) } a } //ALU/gcd(SFU,ALU), SFU/gcd(SFU,ALU)
+		println!("{name} {SFU} {ALU} {:.0} {constants}", ALU as f64/SFU as f64);//{}+{}/{}, (ALU%SFU)/gcd(SFU,ALU), SFU/gcd(SFU,ALU));
+
 		let mut last_use = vec![0; f.values.len()];
 		fn visitor(last_use: &mut Vec<usize>, program_counter: usize, e: &Expression) {
 			if let Expression::Expr(Expr::Value(id)) = e { last_use[id.0] = program_counter; } else { e.visit(|e| visitor(last_use, program_counter, e)); }
@@ -219,10 +254,6 @@ use {iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Lo
 		}
 		for (output_counter, value) in f.output.iter().enumerate() { visitor(&mut last_use, f.statements.len()+output_counter, value); }
 
-		/*let ref names = f.values;
-		for (program_counter, statement) in f.statements.iter().enumerate() {
-			eprintln!("{program_counter}: {:?} {:?}", statement.to_string(names), last_use.iter().enumerate().filter(|&(_,&pc)| pc==program_counter).map(|(id,_)| &names[id]).format(" "));
-		}*/
 		let mut registers: Vec<Option<ast::Value>> = vec![];
 		let mut map = vec![None; f.values.len()];
 		for (program_counter, statement) in f.statements.iter_mut().enumerate() {

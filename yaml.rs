@@ -16,9 +16,9 @@ impl std::fmt::Display for Pretty<&u8> {
 use {iter::{list, map}, pest::Parser};
 #[derive(pest_derive::Parser)]#[grammar_inline = r#"
 	WHITESPACE = _{ " " }
-	atom = { "H" | "O" | "C" | "AR" | "N" }
+	atom = { "H" | "HE" | "O" | "C" | "AR" | "N" }
 	count = @{ '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
-	specie = @{ (atom ~ count?)+ ~ "(S)"? }
+	specie = @{ (atom ~ count?)+ ~ ("(S)" | "V" | "*")? }
 	term = { count? ~ specie }
 	side = { term ~ ("+" ~ term)* }
 	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
