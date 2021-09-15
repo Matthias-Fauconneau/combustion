@@ -79,14 +79,15 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'_>) -> Sta
 	State{temperature, pressure_R, volume: *volume, amounts}
 }
 
-pub use model::{RateConstant, Troe};
+pub use model::{RateConstant, Troe, SRI};
 
 pub enum ReactionModel {
 	Elementary,
 	Irreversible,
 	ThreeBody { efficiencies: Box<[f64]> },
 	PressureModification { efficiencies: Box<[f64]>, k0: RateConstant },
-	Falloff { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
+	Troe { efficiencies: Box<[f64]>, k0: RateConstant, troe: Troe },
+	SRI { efficiencies: Box<[f64]>, k0: RateConstant, sri: SRI },
 }
 
 pub struct Reaction {
@@ -116,7 +117,8 @@ impl Reaction {
 				Irreversible => ReactionModel::Irreversible,
 				ThreeBody{efficiencies} => ReactionModel::ThreeBody{efficiencies: from(efficiencies)},
 				PressureModification{efficiencies, k0} => ReactionModel::PressureModification{efficiencies: from(efficiencies), k0: *k0},
-				Falloff{efficiencies, k0, troe} => ReactionModel::Falloff{efficiencies: from(efficiencies), k0: *k0, troe: *troe},
+				Troe{efficiencies, k0, troe} => ReactionModel::Troe{efficiencies: from(efficiencies), k0: *k0, troe: *troe},
+				SRI{efficiencies, k0, sri} => ReactionModel::SRI{efficiencies: from(efficiencies), k0: *k0, sri: *sri},
 			}}
 		}
 	}

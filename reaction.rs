@@ -157,25 +157,33 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
 			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf + (f32::MIN_POSITIVE as f64)) // Resolves undetermined form 0/0 as 0
 		},
-		Falloff{efficiencies, k0, troe} => {
+		Troe{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentrations, sum_concentrations, f);
 			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
-			//f.block(|f|{
-				let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
-				let Fcent = {let Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
-					(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
-					(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * def(exp(T/(-T1), f), f, "exp(-T/T1)") } else { y.into() }}),
-					(T2.is_finite()).then(|| def(exp((-T2)*rcpT, f), f, "exp(-T2/T)").into())
-				].into_iter().filter_map(|x| x))};
-				let lnFcent:Expr = if let Some(x) = Fcent.f64() { x.into() } else { def(ln(1./2., Fcent, f), f, "lnFcent").into() }; // 0.1-0.7 => e-3
-				let C = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
-				let N = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
-				let lnPr𐊛C = def(ln(1., max(f32::MIN_POSITIVE as f64, Pr), f) + C, f, "lnPr+C"); // 2m - 2K // Resolves undetermined form -inf/-inf as 1
-				let f1 = f.def(lnPr𐊛C / (-0.14*lnPr𐊛C+N), "f1");
-				let F = exp(lnFcent/(f1*f1+1.), f);
-				Ratio(F * k_inf * Pr, Pr + 1.)
-			//})
+			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
+			let Fcent = {let model::Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
+				(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
+				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * def(exp(T/(-T1), f), f, "exp(-T/T1)") } else { y.into() }}),
+				(T2.is_finite()).then(|| def(exp((-T2)*rcpT, f), f, "exp(-T2/T)").into())
+			].into_iter().filter_map(|x| x))};
+			let lnFcent:Expr = if let Some(x) = Fcent.f64() { x.into() } else { def(ln(1./2., Fcent, f), f, "lnFcent").into() }; // 0.1-0.7 => e-3
+			let C = -0.67*lnFcent.shallow() - 0.4*f64::ln(10.);
+			let N = -1.27*lnFcent.shallow() + 0.75*f64::ln(10.);
+			let lnPr𐊛C = def(ln(1., Pr + f32::MIN_POSITIVE as f64, f) + C, f, "lnPr+C"); // 2m - 2K // Resolves undetermined form -inf/-inf as 1
+			let f1 = f.def(lnPr𐊛C / (-0.14*lnPr𐊛C+N), "f1");
+			let F = exp(lnFcent/(f1*f1+1.), f);
+			Ratio(F * k_inf * Pr, Pr + 1.)
+		}
+		SRI{/*efficiencies, k0, sri*/..} => {
+			/*let efficiency = efficiency(efficiencies, concentrations, sum_concentrations, f);
+			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
+			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
+			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
+			let logPr = ln(1., Pr + f32::MIN_POSITIVE as f64, f) ;
+			let model::SRI{A, B, C, D, E} = *sri;
+			let F = D*pow(A*exp(-B*rcpT)+exp((-1./C)*T), 1./(1.+logPr*logPr))*pow(T, E);
+			Ratio(F * k_inf * Pr, Pr + 1.)*/unimplemented!()
 		}
 	}
 }
@@ -252,13 +260,16 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 					self::thermodynamic(&piece, Ts)
 				}
 			};
-			/*let Gibbs0_RT = (Gibbs0_RT, "Gibbs0_RT");
-			let rcp_equilibrium_constant_0 = net.iter().enumerate().fold(None, |mut p:Option</*Value*/Expression>, (k,&n)| {
-				let t = if n>0 { cache.exp(k, Gibbs0_RT, f) } else { cache.exp_neg(k, Gibbs0_RT, f) };
-				for _ in 0..i8::abs(n) { p = Some(if let Some(p) = p { p*t/*ast::def(p*t, "K0")*/ } else { t.into() }); }
-				p
-			}).unwrap();*/
-			let rcp_equilibrium_constant_0 = min(f32::MAX as f64, exp(sum(net.iter().enumerate().filter(|(_,&n)| n!=0).map(|(k,&n)| (n as f64)*Gibbs0_RT(k, f))), f)); // Changes inf to MAX to resolve undetermined forms 0.inf as 0
+			let rcp_equilibrium_constant_0 = if true {
+				let Gibbs0_RT = (Gibbs0_RT, "Gibbs0_RT");
+				net.iter().enumerate().fold(None, |mut p:Option</*Value*/Expression>, (k,&n)| {
+					let t = if n>0 { cache.exp(k, Gibbs0_RT, f) } else { cache.exp_neg(k, Gibbs0_RT, f) };
+					for _ in 0..i8::abs(n) { p = Some(if let Some(p) = p { p*t/*ast::def(p*t, "K0")*/ } else { t.into() }); }
+					p
+				}).unwrap()
+			} else {
+				min(f32::MAX as f64, exp(sum(net.iter().enumerate().filter(|(_,&n)| n!=0).map(|(k,&n)| (n as f64)*Gibbs0_RT(k, f))), f)) // Changes inf to MAX to resolve undetermined forms 0.inf as 0
+			};
 			let rcp_equilibrium_constant = match -Σnet { // reverse_rate_constant / forward_rate_constant
 				0 => rcp_equilibrium_constant_0,
 				1 => f.def(C0 * rcp_equilibrium_constant_0, "K").into(),
@@ -299,7 +310,7 @@ pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], spec
 	let bulk_concentration = f.def(pressure_R * rcpT - sum(&*nonbulk_concentrations), "bulk_concentration"); // Constant pressure
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
 	let species_rates = species_rates(species, reactions, Ts, &concentrations, /*&Gibbs0_RT,*/ f, species_names);
-	/*let [enthalpy_RT] = thermodynamics(&species[0..active], [enthalpy_RT], Ts, f, ["enthalpy_RT"]);
+	let [enthalpy_RT] = thermodynamics(&species[0..active], [enthalpy_RT], Ts, f, ["enthalpy_RT"]);
 	use iter::Dot;
 	let energy_rate_RT : Expression = (&species_rates).dot(enthalpy_RT.into_vec());
 	let [molar_heat_capacity_at_CP_R] = thermodynamics(species, [molar_heat_capacity_at_constant_pressure_R], Ts, f, ["molar_heat_capacity_at_CP_R"]);
@@ -308,9 +319,9 @@ pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], spec
 	let bulk_molar_mass = molar_mass.last().unwrap();
 	let reduced_molar_masses = map(&*molar_mass, |w| 1.-w/bulk_molar_mass); // Ensures conservation of mass (transmutes with bulk specie instead)
 	let dtE: Expression = reduced_molar_masses.dot(&species_rates);
-	let dtV = volume * (dtT_T + rcp_pressure_R*T*dtE);*/
+	let dtV = volume * (dtT_T + rcp_pressure_R*T*dtE);
 	Function{
-		output: list([/*T * dtT_T, dtV*/f64(0.).unwrap().into(), f64(0.).unwrap().into()].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
+		output: list([T * dtT_T, dtV/*f64(0.).unwrap().into(), f64(0.).unwrap().into()*/].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
 		statements: function.block.statements.into(),
 		input: vec![Type::F64; input.len()].into(),
 		values: values.into()

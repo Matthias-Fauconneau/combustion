@@ -49,7 +49,7 @@ fn equation(equation: &str) -> [Map<&str, u8>; 2] {
 }
 
 pub use yaml::{Yaml, YamlLoader as Loader};
-use combustion::model::*;
+use combustion::model::{self, *};
 
 pub fn parse(yaml: &[Yaml]) -> Model {
 	use std::str::FromStr;
@@ -131,13 +131,20 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 					},
 					Some("three-body") => ThreeBody{efficiencies},
 					// Pr = c x k0 / k∞ [1 = mol/m³ x [k0] / [k∞]] => [k0] = [k∞]/(mol/m³) = ((mol/m³)^(-r))/s => k0[m] = k0[cm] / (1e-2³)^(-r)
-					Some("falloff") if reaction["Troe"].is_badvalue() => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants)},
-					Some("falloff") => Falloff{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants), troe: Troe{
+					Some("falloff") if !reaction["Troe"].is_badvalue() => Troe{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants), troe: model::Troe{
 						A: reaction["Troe"]["A"].as_f64().unwrap(),
 						T1: reaction["Troe"]["T1"].as_f64().unwrap(),
 						T3: reaction["Troe"]["T3"].as_f64().unwrap(),
 						T2: reaction["Troe"]["T2"].as_f64().unwrap_or(f64::INFINITY)
 					}},
+					Some("falloff") if !reaction["SRI"].is_badvalue() => SRI{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants), sri: model::SRI{
+						A: reaction["SRI"]["A"].as_f64().unwrap(),
+						B: reaction["SRI"]["B"].as_f64().unwrap(),
+						C: reaction["SRI"]["C"].as_f64().unwrap(),
+						D: reaction["SRI"]["D"].as_f64().unwrap_or(1.),
+						E: reaction["SRI"]["E"].as_f64().unwrap_or(0.),
+					}},
+					Some("falloff") => PressureModification{efficiencies, k0: rate_constant(&reaction["low-P-rate-constant"], reactants)},
 					Some("pressure-dependent-Arrhenius") => {
 						assert!(reaction["rate-constants"].as_vec().unwrap().len() == 1);
 						if reaction["equation"].as_str().unwrap().contains(" <=> ") { Elementary }
@@ -153,7 +160,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 		[&*active, &*inert].concat().into_boxed_slice()
 	};
-	let initial = list("H2 O2 CO CH2O CH4 C2H6 C2H4 C2H2 C3H6 pC3H4 aC3H4 1-C4H8 2-C4H8 i-C4H8 1,3-C4H6 C4H4 C4H2 C6H6 C7H8 H2O2 CH3OH CH3CHO C2H5OH CH3OCH3 C3H8 n-C4H10 i-C4H10".split(' ')); // CH3CO
+	let initial = list("HE AR N2 CO2 H2 O2 CO CH2O CH4 C2H6 C2H4 C2H2 C3H6 pC3H4 aC3H4 1-C4H8 2-C4H8 i-C4H8 1,3-C4H6 C4H4 C4H2 C6H6 C7H8 H2O2 CH3OH CH3CHO C2H5OH CH3OCH3 C3H8 n-C4H10 i-C4H10".split(' '));
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name,
 			if initial.contains(name) { 1. } else { 0. }))},

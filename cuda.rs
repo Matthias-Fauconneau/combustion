@@ -30,6 +30,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>, wrap: usize) -> Str
 				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { let f = format!("{}",*value); if f.contains('.') { f } else { f+"." } },
 				Value(value) => self.value(value),
 				Neg(x) => { let x = self.expr(x, Some(&e), wrap); format!("-{x}") }
+				Min(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); format!("min({a},{b})") }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); format!("max({a},{b})") }
 				Add(A, b) => {
 					let [a,b] = [A,b].map(|x| self.expr(x, Some(&e), wrap));
@@ -71,7 +72,10 @@ fn extend(&mut self, s: &Statement) {
 		Select { condition, true_exprs, false_exprs, results } => {
 			let types = map(&**true_exprs, |e| self.rtype(e));
 			for (t,e) in zip(&*types, &**false_exprs) { assert!(self.rtype(e) == *t); }
-			for (rtype, id) in zip(&*types, &**results) { if self.registers[id.0].is_none() { self.builder.push(format!("{rtype} {};", self.value(id))); } }
+			for (rtype, id) in zip(&*types, &**results) { if self.registers[id.0].is_none() {
+				let value = self.value(id);
+				if !self.values.iter().filter_map(|v| v.as_ref()).any(|v| v.1 == value) { self.builder.push(format!("{rtype} {value}")) }
+			}}
 
 			let condition = self.expr(condition, None, WRAP);
 			let scope = self.values.clone();
@@ -232,7 +236,7 @@ use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,
 					F32{..}|F64{..} => [constants+1, SFU, ALU],
 					Value(_)|Neg(_/*TODO: fmsub*/) => [constants, SFU, ALU],
 					Div{..}|Sqrt{..}|Exp{..}|Ln{..} => [constants, SFU+1, ALU], //TODO: 1/sqrt
-					Add{..}|Sub{..}|Mul{..}|Sq{..} |Max{..}|LessOrEqual{..} => [constants, SFU, ALU+1], //TODO: FMA
+					Add{..}|Sub{..}|Mul{..}|Sq{..} |Min{..}|Max{..}|LessOrEqual{..} => [constants, SFU, ALU+1], //TODO: FMA
 					},
 					Expression::Block{..} => [constants, SFU, ALU]
 				}

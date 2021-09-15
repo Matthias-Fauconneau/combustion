@@ -35,13 +35,15 @@ pub const R : f64 = kB*NA;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)] pub struct Troe { pub A: f64, pub T3: f64, pub T1: f64, pub T2: f64 }
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)] pub struct SRI { pub A: f64, pub B: f64, pub C: f64, pub D: f64, pub E: f64 }
 
 #[derive(Serialize, Deserialize, Debug)] pub enum ReactionModel<'t> {
 	Elementary,
 	Irreversible,
 	ThreeBody { #[serde(borrow)] efficiencies: Map<&'t str, f64> },
 	PressureModification { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant },
-	Falloff { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant, troe: Troe },
+	Troe { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant, troe: Troe },
+	SRI { #[serde(borrow)] efficiencies: Map<&'t str, f64>, k0: RateConstant, sri: SRI },
 }
 
 #[derive(Serialize, Deserialize, Debug)] pub struct Reaction<'t> {
