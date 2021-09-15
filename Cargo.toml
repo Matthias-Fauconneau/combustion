@@ -3,12 +3,12 @@ lib={path='lib.rs'}
 bin=[
 	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['main','plot']},
-	{name='cuda', path='cuda.rs', required-features=['main','transport']},
+	{name='cuda', path='cuda.rs', required-features=['main']},
 	{name='info', path='info.rs', required-features=['main']},
 ]
 
 [features]
-myaml=['yaml','pest_derive','pest'] #dep:yaml
+myaml=['yaml']#,'pest_derive','pest'] #dep:yaml
 interpret=['ast/interpret']
 f32=[]
 main=['myaml','itertools','anyhow','color-backtrace']
@@ -17,7 +17,7 @@ vpu=['spirv','vulkan','anyhow','libc']
 plot=['cvode','ui','image','png','anyhow']
 cantera=[]
 check=[]
-default=['interpret','main']
+default=['interpret','main','rand']
 
 [dependencies]
 iter={git='https://github.com/Matthias-Fauconneau/iter'}
@@ -32,8 +32,8 @@ linear-map={version='*', features=['serde_impl']}
 itertools={optional=true, version='*' }
 num={git='https://github.com/Matthias-Fauconneau/num'}
 yaml={optional=true, version='*', package='yaml-rust'}
-pest_derive={optional=true, version='*' }
-pest={optional=true, version='*' }
+#pest_derive={optional=true, version='*' }
+#pest={optional=true, version='*' }
 float-pretty-print='*'
 ast={path='ast'}
 rand={optional=true, version='*'}

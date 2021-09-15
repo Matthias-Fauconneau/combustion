@@ -4,8 +4,6 @@
 //#![feature(,in_band_lifetimes,,,type_ascription,default_free_fn)]
 //#![recursion_limit="5"]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
-#[macro_export] macro_rules! let_ { { $p:pat = $e:expr => $b:block } => { if let $p = $e { $b } else { unreachable!() } } }
-#[macro_export] macro_rules! let_mut { { $p:pat = $e:expr => $b:block } => { if let mut $p = $e { $b } else { unreachable!() } } }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)] pub struct Value(pub usize);
 impl From<&Value> for Value { fn from(x: &Value) -> Value { x.clone() } }
@@ -47,6 +45,7 @@ impl Deref for R64 { type Target=f64; fn deref(&self) -> &Self::Target { &self.0
 	ISub(Box<Expression>, Box<Expression>),*/
 	//Load(Variable),
 	Neg(Box<Expression>),
+	Min(Box<Expression>, Box<Expression>),
 	Max(Box<Expression>, Box<Expression>),
 	Add(Box<Expression>, Box<Expression>),
 	Sub(Box<Expression>, Box<Expression>),
@@ -67,12 +66,12 @@ impl Expr {
 	pub fn visit<T>(&self, mut visitor: impl FnMut(&Expression)->T) -> [Option<T>; 2] {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
 		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
-		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
+		Min(a,b)|Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn visit_mut<T>(&mut self, mut visitor: impl FnMut(&mut Expression)->T)  -> [Option<T>; 2]  {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
 		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
-		Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
+		Min(a,b)|Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type { use Expr::*; match self {
 		//&I32(v) => Type::I32,
@@ -85,7 +84,7 @@ impl Expr {
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
 		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
-		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => self::rtype(a,b,rtype),
+		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => self::rtype(a,b,rtype),
 		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
 	}}
 	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Value(_)) }
@@ -185,6 +184,10 @@ fn neg(x: impl Into<Expression>) -> Expression {
 	Expr::Neg(box_(x.into())).into()
 }
 
+pub fn min(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
+	Expr::Min(box_(a.into()), box_(b.into())).into()
+}
+
 pub fn max(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	Expr::Max(box_(a.into()), box_(b.into())).into()
 }
@@ -198,6 +201,7 @@ fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a+b).into() } else {
 		if let Some(a) = a.f32() { if a==0. { return b; } }
 		if let Some(b) = b.f32() { if b==0. { return a; } }
+		//if let Expr::Mul(c, b) = b.expr() { if Some(c)==c.f32() { if c==-1. { return Expr::Sub(box_(a), box_(b)) } } }
 		Expr::Add(box_(a), box_(b))
 	}.into()
 }
@@ -317,11 +321,8 @@ impl<'t> Block<'t> {
 		id
 	}
 }
-#[macro_export] macro_rules! l {
-	($f:ident $e:expr) => {{ let e = $e; $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))) }};
-	($f:ident, $e:expr, $name:expr) => {{ let e = $e; if e.is_leaf() { e } else { $f.def(e, $name).into() } }};
-	($f:ident, $e:expr) => {{ let e = $e; if e.is_leaf() { e } else { $f.def(e, format!("{}:{}: {}", file!(), line!(), stringify!($e))).into() } }};
-}
+#[track_caller] pub fn def(e: impl Into<Expression>, f: &mut Block, name: impl ToString) -> Value { let e = e.into(); f.def(e, name) }
+#[track_caller] pub fn edef(e: impl Into<Expression>, f: &mut Block, name: impl ToString) -> Expression { let e = e.into(); if e.is_leaf() { e } else { f.def(e, name).into() } }
 /*pub fn display<const N: usize>(values: [Value; N], f: &mut Block) -> [Value; N] {
 	f.statements.extend(values.iter().cloned().map(Statement::Display));
 	values

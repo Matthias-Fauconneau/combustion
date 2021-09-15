@@ -1,13 +1,15 @@
 #![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip)]
+#![feature(format_args_capture,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,let_else)]
 mod yaml; mod device;
-use {anyhow::Result, std::iter::zip, iter::{Dot, map}, itertools::Itertools, combustion::*, device::*};
+use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("gri30".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
-	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, _reactions, ref state@State{ref amounts, temperature, pressure_R, ..}) = new(&model);
+	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, reactions, ref state@State{ref amounts, temperature, pressure_R, ..}) = new(&model);
+	let _ = (amounts, temperature, pressure_R);
+	eprintln!("{}", zip(&**amounts,&**species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
 
 	use std::os::raw::c_char;
 	#[link(name = "cantera")] extern "C" {
@@ -23,21 +25,22 @@ fn main() -> Result<()> {
 	let phase_name_cstr_ptr = std::ffi::CStr::from_bytes_with_nul(if path.contains("gri30.") { b"gri30\0" } else { b"gas\0" })?.as_ptr();
 	let phase = unsafe{thermo_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr)};
 	let cantera_species_names = map(0..species.len(), |k| {
-		let mut specie = [0; 8];
+		let mut specie = [0; 32];
 		unsafe{thermo_getSpeciesName(phase, k, specie.len(), specie.as_mut_ptr())};
 		unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
 	});
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
-	let _kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
+	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
 	#[cfg(not(feature="f32"))] type T = f64;
 	#[cfg(feature="f32")] type T = f32;
 	#[cfg(not(feature="transport"))] let rates = {
-		let rates = reaction::rates(thermodynamics, &reactions);
+		let rates = reaction::rates(molar_mass, thermodynamics, &reactions, species_names);
 		with_repetitive_input(assemble::<T>(rates, 1), 1)
 	};
 
 	#[cfg(feature="transport")] let transport = {
+		//std::iter::zip, iter::{Dot,
 		eprintln!("Fit");
 		let (temperature0, viscosity0, thermal_conductivity0) = if true {
 			let total_amount = amounts.iter().sum::<f64>();
@@ -69,7 +72,7 @@ fn main() -> Result<()> {
 		let State{temperature, pressure_R, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 
-		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).unwrap()]).collect::<Box<_>>();
+		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).expect(&cantera_species_names[i])]).collect::<Box<_>>();
 		let amount_fractions = map(&**amounts, |n| n/total_amount);
 		unsafe{thermo_setMoleFractions(phase, amount_fractions.len(), cantera_order(&amount_fractions).as_ptr(), 1)}; // /!\ Needs to be set before pressure
 		unsafe{thermo_setTemperature(phase, *temperature)};
@@ -117,27 +120,26 @@ fn main() -> Result<()> {
 			#[link(name = "cantera")] extern "C" { fn kin_getNetProductionRates(n: i32, len: usize, w_dot: *mut f64) -> i32; }
 			unsafe{kin_getNetProductionRates(kinetics, cantera_species_rates.len(), cantera_species_rates.as_mut_ptr())};
 			let active = _active;
-			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
+			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).expect(specie)]);
 			let cantera_species_rates = order(&map(cantera_species_rates, |c| c*1000.)); // kmol -> mol
 			assert!(cantera_species_rates.len() == active);
 			// Rates
-			let error = |a,b| {
+			let error = |x,r| f64::abs(x-r) / f64::max(r, 1e6) /*{
 				let m=f64::abs(f64::max(a,b));
 				if m < 4e3 { return 0.; }
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
-			};
-			//let error = |a,b| num::relative_error(a,b);
-			let_!{ [_energy_rate_RT, rates @ ..] = &*rates(&[*pressure_R as _], &([&[total_amount as _, *temperature as _], &**nonbulk_amounts].concat()))? => {
+			}*/;
+			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount as _, *temperature as _], &*nonbulk_amounts].concat()))? else { panic!() };
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
-				let (k, e)= rates.iter().zip(&*cantera_rates).map(|(&a,&b)| error(a as _,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+				let (k, e)= rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 				if e > ε {
 					/*println!("{:>10}", species_names.iter().format(" "));
-					println!("{:10.0}", cantera_rates.iter().format(" "));
+					println!("{:10.0}", cantera_species_rates.iter().format(" "));
 					println!("{:10.0}", rates.iter().format(" "));*/
-					println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_rates[k]);
+					println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_species_rates[k]);
 				}
-				(k, e)
+				Ok((k, e))
 			}
 			else {
 				//assert!(std::process::Command::new("make").current_dir("../nekRK/build").arg("-j").status()?.success());
@@ -156,16 +158,15 @@ fn main() -> Result<()> {
 				assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
 				let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 				assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
-				let (k, e) = cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+				let (k, e) = cantera_species_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
 				if e > ε {
-					/*println!("{:.0}", cantera_rates.iter().format(" "));
+					/*println!("{:.0}", cantera_species_rates.iter().format(" "));
 					println!("{:.0}", nekrk.iter().format(" "));
-					println!("{:>6}", cantera_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));*/
-					println!("{} {}", cantera_rates[k], nekrk[k]);
+					println!("{:>6}", cantera_species_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));*/
+					println!("{} {}", cantera_species_rates[k], nekrk[k]);
 				}
-				(k, e)
-			}}}
-			Ok((k, e))
+				Ok((k, e))
+			}
 		}
 	};
 	if false {
@@ -190,6 +191,7 @@ fn main() -> Result<()> {
 		}
 	} else {
 			let (_, e) = test(&state)?;
+			println!("{e:e}");
 			assert!(e < 1e-7, "{e:e}");
 	}
 	Ok(())

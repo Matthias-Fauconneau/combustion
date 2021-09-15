@@ -1,4 +1,4 @@
-#![feature(format_args_capture,type_ascription, iter_zip, array_zip,destructuring_assignment)]
+#![feature(format_args_capture,type_ascription, iter_zip, array_zip,destructuring_assignment,let_else)]
 #![allow(non_snake_case,non_upper_case_globals)]
 
 use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
@@ -6,18 +6,22 @@ use {std::iter::zip, ast::*, iter::{list, map}, itertools::Itertools};
 struct Builder<'t> {
 	builder: Vec<String>,
 	values: Box<[Option<(ast::Type, String)>]>,
-	registers: &'t [Option<u8>],
+	registers: &'t [Option<u16>],
 	names: &'t [String],
 }
 impl std::ops::Deref for Builder<'_> { type Target=Vec<String>; fn deref(&self) -> &Self::Target { &self.builder } }
 impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
+pub const WRAP: usize = 139;
+
 impl Builder<'_> {
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].as_ref().unwrap().0) }
 fn value(&self, &Value(id): &Value) -> String {
-	if let Some(r) = self.registers[id] { if !self.names[id].is_empty() { format!("r[{r}]/*{}*/", self.names[id]) } else { format!("r[{r}]") } } else { self.names[id].clone() }
+	if let Some(r) = self.registers[id] { if !self.names[id].is_empty() { format!("r[{r}]/*{}*/", self.names[id]) } else { format!("r[{r}]") } } else {
+		self.names[id].replace(",","comma").replace("/","div").replace("-","minus").replace("*","star").replace("#","sharp").replace("+","plus").replace("(","leftpar").replace(")","rightpar").replace("'","prime").replace("β","beta").replace("ν","nu") //.replace("ω̇","rates_")
+	}
 }
-fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
+fn expr(&mut self, expr: &Expression, parent: Option<&Expr>, wrap: usize) -> String {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
@@ -25,26 +29,30 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>) -> String {
 				&F32(value) => value.to_string(),
 				&F64(value) => if *value==0. { "0.".to_string() } else if *value==1. { "1.".to_string() } else { let f = format!("{}",*value); if f.contains('.') { f } else { f+"." } },
 				Value(value) => self.value(value),
-				Neg(x) => { let x = self.expr(x, Some(&e)); format!("-{x}") }
-				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); format!("max({a},{b})") }
-				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}+{b}"); let y = if y.len() > 139 { format!("{a}\n +{b}") } else { y };
+				Neg(x) => { let x = self.expr(x, Some(&e), wrap); format!("-{x}") }
+				Max(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); format!("max({a},{b})") }
+				Add(A, b) => {
+					let [a,b] = [A,b].map(|x| self.expr(x, Some(&e), wrap));
+					let y = format!("{a}+{b}");
+					let y = if wrap > 0 && y.len() > wrap { let a = self.expr(A, Some(&e), 0); format!("{a}\n +{b}") } else { y };
+					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") }
+				}
+				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); let y = format!("{a}-{b}");
 					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
-				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}-{b}");
-					if let None|Some(Add(_,_)) = parent { y } else { format!("({y})") } }
-				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); assert!(parent.is_none()); format!("{a}<{b}") }
-				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}*{b}");
+				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); assert!(parent.is_none()); format!("{a}<{b}") }
+				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); let y = format!("{a}*{b}");
 					if let Some(Div(_,_)) = parent { format!("({y})") } else { y } }
-				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e))); let y = format!("{a}/{b}");
+				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x, Some(&e), wrap)); let y = format!("{a}/{b}");
 					if let Some(Div(_,_)) = parent { format!("({y})") } else { y } }
-				Sqrt(x) => { let x = self.expr(x, None); format!("sqrt({x})") }
-				Exp(x) => { let x = self.expr(x, None); format!("exp({x})") }
-				Ln{x,..} => { let x = self.expr(x, None); format!("log({x})") }
-				Sq(x) => { let x = self.expr(x, None); format!("sq({x})") }
+				Sqrt(x) => { let x = self.expr(x, None, wrap); format!("sqrt({x})") }
+				Exp(x) => { let x = self.expr(x, None, wrap); format!("exp({x})") }
+				Ln{x,..} => { let x = self.expr(x, None, wrap); format!("log({x})") }
+				Sq(x) => { let x = self.expr(x, None, wrap); format!("sq({x})") }
 			}
 		}
 		Expression::Block { statements, result } => {
 			for s in &**statements { self.extend(s) }
-			self.expr(result, None)
+			self.expr(result, None, wrap)
 		}
 	}
 }
@@ -52,24 +60,26 @@ fn extend(&mut self, s: &Statement) {
 	use Statement::*;
 	match s {
 		Value { id, value } => {
-			let result = self.expr(value, None);
+			let result = self.expr(value, None, WRAP);
 			let rtype = self.rtype(value);
 			let value = self.value(id);
-			self.builder.push(format!("{value} = {result};"));
+			self.builder.push(format!("{} = {result};",
+				if self.registers[id.0].is_none() && !self.values.iter().filter_map(|v| v.as_ref()).any(|v| v.1 == value) { format!("{rtype} {value}") } else { value.clone() }
+			));
 			assert!(self.values[id.0].replace((rtype,value)).is_none());
 		},
 		Select { condition, true_exprs, false_exprs, results } => {
 			let types = map(&**true_exprs, |e| self.rtype(e));
 			for (t,e) in zip(&*types, &**false_exprs) { assert!(self.rtype(e) == *t); }
-			//for (rtype, id) in zip(&*types, &**results) { self.builder.push(format!("{rtype} r{};", self.registers[id.0])); }
+			for (rtype, id) in zip(&*types, &**results) { if self.registers[id.0].is_none() { self.builder.push(format!("{rtype} {};", self.value(id))); } }
 
-			let condition = self.expr(condition, None);
+			let condition = self.expr(condition, None, WRAP);
 			let scope = self.values.clone();
-			let true_values = map(&**true_exprs, |e| self.expr(e, None));
+			let true_values = map(&**true_exprs, |e| self.expr(e, None, WRAP));
 			self.values = scope;
 			assert!(results.len() == true_values.len());
 			let scope = self.values.clone();
-			let false_values = map(&**false_exprs, |e| self.expr(e, None));
+			let false_values = map(&**false_exprs, |e| self.expr(e, None, WRAP));
 			self.values = scope;
 			assert!(results.len() == false_values.len());
 
@@ -78,14 +88,14 @@ fn extend(&mut self, s: &Statement) {
 
 			self.push(format!("if ({condition}) {{\n\t{true_values}\n}} else {{\n\t{false_values}\n}}"));
 			for (rtype, id) in zip(&*types, &**results) {
-				assert!(self.values[id.0].replace((*rtype, format!("r[{}]",self.registers[id.0].unwrap()))).is_none());
+				assert!(self.values[id.0].replace((*rtype, self.value(id))).is_none());
 			}
 		}
 	}
 }
 }
 
-pub fn compile(constants_len: usize, ast: &ast::Function, registers: &[Option<u8>], name: impl std::fmt::Display) -> String {
+pub fn compile(constants_len: usize, ast: &ast::Function, registers: &[Option<u16>], name: impl std::fmt::Display) -> String {
 	let output_types = {
 		let mut types = Types(ast.input.iter().copied().map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None)).collect());
 		for s in &*ast.statements { types.push(s); }
@@ -99,7 +109,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function, registers: &[Option<u8
 		.chain( ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} in{i}[]")) )
 		.chain( output_types.iter().enumerate().map(|(i, rtype)| format!("{rtype} out{i}[]")) ).format(", ");
 	let input_values = ast.input.iter().enumerate().skip(constants_len).map(|(i, atype)| format!(/*const*/"{atype} {} = in{i}[id];",ast.values[i])).format("\n");
-	let register_count = registers.iter().filter_map(|&x| x).max().unwrap()+1;
+	let register_count = registers.iter().filter_map(|&x| x).max().map(|r| r+1).unwrap_or(0);
 	let mut b = Builder{
 		builder: vec![],
 		values: list(ast.input.iter().enumerate().map(|(i, atype)| Some((*atype, ast.values[i].clone()))).chain((ast.input.len()..ast.values.len()).map(|_| None))),
@@ -109,21 +119,19 @@ pub fn compile(constants_len: usize, ast: &ast::Function, registers: &[Option<u8
 	for s in &*ast.statements { b.extend(s); }
 	let instructions = b.builder.iter().format("\n").to_string();
 	let store = ast.output.iter().enumerate().map(|(i, expr)| {
-		let value = b.expr(expr, None);
+		let value = b.expr(expr, None, WRAP);
 		format!("out{i}[id] = {value};")
 	}).format("\n");
 	format!(r#"__global__ void {name}({parameters}) {{
 const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;
 {input_values}
-double r[{register_count}];
-{instructions}
+{}{instructions}
 {store}
-}}"#).replace("f64","double")
+}}"#, if register_count > 0 { format!("double r[{register_count}];\n") } else { "".into() }).replace("f64","double")
 }
-
 mod yaml;
 #[cfg(feature = "check")] mod device;
-use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,parse}, combustion::*};
+use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,parse}, combustion::*};
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
@@ -132,13 +140,16 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 	let model = parse(&model);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, reactions, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 	let K = species.len();
-	let total_amount = amounts.iter().sum::<f64>();
-	let mole_fractions = map(&**amounts, |n| n/total_amount);
+	let _ = (molar_mass, amounts, temperature, pressure_R);
+	#[cfg(feature="transport")] {
+	use {iter::Dot, num::sqrt};
 	let diffusivity = 1.;
 	let concentration = pressure_R / temperature;
-	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 	let density = concentration * mean_molar_mass;
 	let viscosity = density * diffusivity;
+	let total_amount = amounts.iter().sum::<f64>();
+	let mole_fractions = map(&**amounts, |n| n/total_amount);
+	let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 	let molar_heat_capacity_R: f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 	let specific_heat_capacity = R / mean_molar_mass * molar_heat_capacity_R;
 	let conductivity = specific_heat_capacity * diffusivity;
@@ -191,9 +202,10 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 			values: values.into()
 		}
 	}}};
+	}
 
 	let rates = {
-		let_!{ input@[lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(6+K), Value) => {
+		let input@[lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(6+K), Value) else { panic!() };
 		let values = list(["lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))));
 		assert_eq!(input.len(), values.len());
 		let mut values = values.into();
@@ -207,7 +219,7 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
 		}
-	}}};
+	};
 
 
 	let compile = |mut f: Function, name, array_input, direct| {
@@ -276,6 +288,7 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 				Select{results,..} => for id in &**results { visitor(*id) },
 			}
 		}
+		map = vec![None; f.values.len()]; // Clear register allocation
 		let mut s = self::compile(0, &f, &map, name);
 		s = s.replace("__global__","__NEKRK_DEVICE__").replace("const unsigned int id = blockIdx.x * blockDim.x + threadIdx.x;\n","");
 		for i in 0..f.input.len() { s = s.replace(&format!("in{i}[]"),&f.values[i]).replace(&format!(/*const*/"double {} = in{i}[id];\n",&f.values[i]),""); }
@@ -298,6 +311,7 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 	let name = name.to_str().unwrap();
 	let prefix = args().skip(3).next().unwrap_or("nekrk_".to_string());
 	let write = |module, content| std::fs::write(target.join(format!("{name}/{module}.c")), content);
+	#[cfg(feature="transport")] {
 	write("conductivity",
 		compile(conductivityNIVT, format!("{prefix}conductivityNIVT"), "mole_proportions", false)
 	)?;
@@ -312,6 +326,7 @@ use {anyhow::Context, iter::Dot, num::sqrt, std::{path::Path,fs::read,env::args}
 		compile(density_diffusivity, format!("{prefix}density_diffusivity"), "mole_proportions", true)
 		.replace("density_diffusivity(","density_diffusivity(unsigned int id, ")
 	)?;
+	}
 	write("rates",
 		compile(rates, format!("{prefix}species_rates"), "concentrations", false)
 	)?;

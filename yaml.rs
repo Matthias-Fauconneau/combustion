@@ -13,28 +13,39 @@ impl std::fmt::Display for Pretty<&u8> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result { self.0.fmt(fmt) }
 }
 
-use {iter::{list, map}, pest::Parser};
-#[derive(pest_derive::Parser)]#[grammar_inline = r#"
+use iter::{list, map};
+/*use pest::Parser;
+//('A'..'Z' | '0'..'9' | "-" | "*" | "(" | ")" | "," | "#")*
+#[derive(pest_derive::Parser)]#[grammar_inline = r##"
 	WHITESPACE = _{ " " }
-	atom = { "H" | "HE" | "O" | "C" | "AR" | "N" }
 	count = @{ '2'..'9' | '1'..'9' ~ ('0'..'9')+ }
-	specie = @{ (atom ~ count?)+ ~ ("(S)" | "V" | "*")? }
+	atom = { "H" | "O" | "C" | "AR" | "N" }
+	specie = @{ ("A"|"I"|"P"|"S")? ~ (atom ~ count?)+ ~ ("V")?  }
 	term = { count? ~ specie }
 	side = { term ~ ("+" ~ term)* }
 	equation = { side ~ ("=>"|"<=>") ~ side | side ~ ("+"~"M" | "(+M)") ~ "<=>" ~ side ~ ("+"~"M" | "(+M)") }
-"#] struct EquationParser;
+"##] struct EquationParser;
 fn equation(equation: &str) -> [Map<&str, u8>; 2] {
-	use std::str::FromStr;
 	map(EquationParser::parse(Rule::equation, equation).unwrap().next().unwrap().into_inner(), |side|
 		side.into_inner().map(|term|
 			match &*list(term.into_inner()) {
 				[specie] => (specie.as_str(), 1),
-				[count, specie] => (specie.as_str(), u8::from_str(count.as_str()).unwrap()),
+				[count, specie] => (specie.as_str(), count.as_str().parse().unwrap()),
 				_ => unreachable!(),
 			}
 		)
 		.fold(Map::new(), |mut map, (k, v)| { *map.entry(k).or_insert(0) += v; map })
 	).into_vec().try_into().unwrap()
+}*/
+fn equation(equation: &str) -> [Map<&str, u8>; 2] {
+	let sides: Box<[&str; 2]> = (if equation.contains("<=>") { list(equation.split("<=>")) } else { list(equation.split("=>")) }).try_into().unwrap();
+	sides.map(|side|
+		side.trim().trim_end_matches("(+ M)").trim_end_matches("+ M").trim_end_matches("(+M)").split(" + ").map(str::trim).map(|term| {
+			if term.contains(' ') { let t:Box<[&str; 2]> = list(term.split_whitespace()).try_into().unwrap(); let [count, specie] = *t; (specie, count.parse().expect(term)) }
+			else { (term, 1) }
+		})
+		.fold(Map::new(), |mut map, (k, v)| { *map.entry(k).or_insert(0) += v; map })
+	)
 }
 
 pub use yaml::{Yaml, YamlLoader as Loader};
@@ -104,7 +115,11 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		};
 		Reaction{
 			equation,
-			rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or(&reaction["high-P-rate-constant"]), reactants-1),
+			rate_constant: rate_constant(Some(&reaction["rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or_else(|| Some(&reaction["high-P-rate-constant"]).filter(|v| !v.is_badvalue()).unwrap_or_else(|| {
+				assert!(reaction["type"].as_str() == Some("pressure-dependent-Arrhenius"));
+				assert!(reaction["rate-constants"].as_vec().unwrap().len() == 1);
+				&reaction["rate-constants"].as_vec().unwrap()[0]
+			})), reactants-1),
 			model: {
 				let efficiencies = reaction["efficiencies"].as_hash().map(|h| h.iter().map(|(k,v)| (k.as_str().unwrap(), v.as_f64().unwrap())).collect()).unwrap_or_default();
 				use ReactionModel::*;
@@ -123,7 +138,13 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 						T3: reaction["Troe"]["T3"].as_f64().unwrap(),
 						T2: reaction["Troe"]["T2"].as_f64().unwrap_or(f64::INFINITY)
 					}},
-					_ => unimplemented!()
+					Some("pressure-dependent-Arrhenius") => {
+						assert!(reaction["rate-constants"].as_vec().unwrap().len() == 1);
+						if reaction["equation"].as_str().unwrap().contains(" <=> ") { Elementary }
+						else if reaction["equation"].as_str().unwrap().contains(" => ") { Irreversible }
+						else { unimplemented!() }
+					}
+					_ => unimplemented!("{reaction:?}")
 				}
 			}
 		}
@@ -132,8 +153,10 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 		[&*active, &*inert].concat().into_boxed_slice()
 	};
+	let initial = list("H2 O2 CO CH2O CH4 C2H6 C2H4 C2H2 C3H6 pC3H4 aC3H4 1-C4H8 2-C4H8 i-C4H8 1,3-C4H6 C4H4 C4H2 C6H6 C7H8 H2O2 CH3OH CH3CHO C2H5OH CH3OCH3 C3H8 n-C4H10 i-C4H10".split(' ')); // CH3CO
 	Model{
-		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name, 1.))},
+		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name,
+			if initial.contains(name) { 1. } else { 0. }))},
 		species,
 		reactions,
 		time_step: 1e-7,

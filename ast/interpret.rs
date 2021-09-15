@@ -1,7 +1,11 @@
 use super::*;
 
 #[derive(PartialEq, Debug, Clone)] pub enum DataValue { None, Bool(bool), /*I32(u32),*/ F32(f32), F64(f64) }
-impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::F32(v) => write!(f,"{v:e}"), _ => unimplemented!() } } }
+impl std::fmt::Display for DataValue { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self {
+	Self::F32(v) => write!(f,"{v:e}"),
+	Self::F64(v) => write!(f,"{v:e}"),
+	_ => unimplemented!("{self:?}")
+} } }
 
 impl From<&DataValue> for f32 { fn from(v: &DataValue) -> Self { if let DataValue::F32(v) = v { *v } else { f64::from(v) as _ } } }
 impl From<&DataValue> for f64 { fn from(v: &DataValue) -> Self { if let DataValue::F64(v) = v { *v } else { panic!("{v:?}"); } } }
@@ -24,6 +28,7 @@ fn to_string(state: &State, expr: &Expr) -> String {
 		F32(x) => x.to_string(),
 		F64(x) => x.to_string(),
 		Value(id) => format!("{} = {}", state.debug[id.0], state.values[id.0]),
+		Neg(x) => format!("-{}", to_string(state, x)),
 		Add(a, b) => format!("{} + {}", to_string(state, a), to_string(state, b)),
 		Sub(a, b) => format!("{} - {}", to_string(state, a), to_string(state, b)),
 		Mul(a, b) => format!("({}) * ({})", to_string(state, a), to_string(state, b)),
@@ -36,7 +41,7 @@ fn to_string(state: &State, expr: &Expr) -> String {
 impl DataValue {
 	fn is_valid(&self) -> bool { match self {
 		Self::F32(x) => x.is_finite(),
-		Self::F64(x) => x.is_finite(),
+		Self::F64(x) => !x.is_nan(), //x.is_finite(),
 		_ => true,
 	} }
 }
@@ -56,10 +61,12 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		//Load(variable) => { self.variables[variable.0].unwrap() }
 		Neg(x) if let F32(x) = eval(state, x) => F32(-x),
 		Neg(x) if let F64(x) = eval(state, x) => F64(-x),
+		Min(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(f32::min(a,b)),
+		Min(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(f64::min(a,b)),
 		Max(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(f32::max(a,b)),
 		Max(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(f64::max(a,b)),
-		Add(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a+b),
 		Add(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a+b),
+		Add(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a+b),
 		Sub(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a-b),
 		Sub(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a-b),
 		LessOrEqual(a,b)  if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => Bool(a<=b),
@@ -100,7 +107,8 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 }
 
 fn run(state: &mut State, statements: &[Statement]) {
-	for statement in statements {
+	for (_program_counter, statement) in statements.iter().enumerate() {
+		//eprintln!("{_program_counter}: {statement:?}");
 		use Statement::*;
 		match statement {
 			Value { id, value: expression } => {

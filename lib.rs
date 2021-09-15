@@ -1,8 +1,5 @@
-//#![feature(,,array_zip,,,const_generics,const_evaluatable_checked,)]
-#![feature(format_args_capture,associated_type_bounds,unboxed_closures,fn_traits,trait_alias, array_methods,iter_zip,default_free_fn)]
-#![feature(once_cell)]
+#![feature(format_args_capture,associated_type_bounds,unboxed_closures,fn_traits,trait_alias, array_methods,iter_zip,default_free_fn,let_else,once_cell)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features,confusable_idents)]
-//#![recursion_limit="9"]
 pub mod model;
 pub use model::{kB, NA, R};
 const light_speed : f64 = 299_792_458.;
