@@ -53,11 +53,11 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 #[cfg(feature="vpu")] mod device {
 use {std::{default::default, mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
 pub struct Function<D: Borrow<Device>, T:Plain> {
-	device: D,
+	pub device: D,
 	input_len: usize,
-	output_len: usize,
-	block_size: usize,
-	pipeline: Pipeline,
+	pub output_len: usize,
+	pub block_size: usize,
+	pub pipeline: Pipeline,
 	_marker: PhantomData<T>,
 }
 pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
@@ -94,7 +94,7 @@ impl<D: Borrow<Device>, T:Plain+Default> FnMut<(&[T], &[&[T]])> for Function<D,T
 impl<D: Borrow<Device>, T:Plain+Default> Fn<(&[T], &[&[T]])> for Function<D,T> { extern "rust-call" fn call(&self, (constants, input): (&[T], &[&[T]])) -> Self::Output { call(&self, constants, input) } }
 }
 pub use device::*;
-pub fn all_same<T:PartialEq+Copy+std::fmt::Debug>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
-pub fn with_repetitive_input<T:Copy+PartialEq+std::fmt::Debug>(f: impl Fn(&[T],&[&[T]])->Output<T>, times: usize) -> impl Fn(&[T],&[T])->Result<Box<[T]>> {
+#[allow(dead_code)] pub fn all_same<T:PartialEq+Copy+std::fmt::Debug>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
+#[allow(dead_code)] pub fn with_repetitive_input<T:Copy+PartialEq+std::fmt::Debug>(f: impl Fn(&[T],&[&[T]])->Output<T>, times: usize) -> impl Fn(&[T],&[T])->Result<Box<[T]>> {
 	move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*map(inputs, |x| vec![*x as _; times]), |x| &**x))?, |y| all_same(y, times)))
 }

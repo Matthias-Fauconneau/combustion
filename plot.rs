@@ -13,7 +13,8 @@ fn main() -> Result<()> {
 	let rates = reaction::rates(&species.molar_mass, &species.thermodynamics, &reactions, &species_names);
 	#[cfg(not(feature="f32"))] type T = f64;
 	#[cfg(feature="f32")] type T = f32;
-	let rates = with_repetitive_input(assemble::<T>(rates, 1), 1);
+	let block_size = 1;
+	let rates = assemble::<T>(rates, block_size);
 
 	let State{pressure_R, volume, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -22,15 +23,32 @@ fn main() -> Result<()> {
 	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
 	assert!(active < amounts.len()); // Assume bulk specie is inert
 	let state:Box<[T]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
-	let mut input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
+	let input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
+	//let rates = with_repetitive_input(rates, 1);
+	let states_len = 1;
+	let input = map(input.into_iter(), |x:f64| vec![x as _; states_len]);
+	let Function{ref device, output_len, block_size, pipeline,..} = rates;
+	//use {std::{default::default, mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
+	use {iter::{list/*, map*/}, vulkan::*};
+	let mut input = map(&*input, |array| Buffer::new(device, array).unwrap());
+	let output = map(0..output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
+	let buffers = list(input.iter().chain(&*output));
+	device.bind(pipeline.descriptor_set, &buffers)?;
+	let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
+	let output = map(&*output, |array| array.map(device).unwrap());
+	let constants:[f64;2] = [pressure_R as _, (1./pressure_R) as _];
+	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
 	let mut evaluations = 0;
 	let mut f = |u: &[T], f_u: &mut [T]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
 		assert!(u.iter().all(|u| u.is_finite()));
-		input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
-		f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
+		//input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+		//f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
+		for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+		device.submit_and_wait(command_buffer).unwrap(); // constant constants
+		for (output, f_u) in zip(&*output, f_u.iter_mut()) { *f_u = output[0]; }
 		assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
 		evaluations += 1;
 		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
