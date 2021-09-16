@@ -35,7 +35,7 @@ impl<F: FnMut(&[f64], &mut [f64])->bool> CVODE<F> {
 		assert_eq!(unsafe{CVodeSetLinearSolver(cvode, SUNDenseLinearSolver(u, A), A)}, CV_SUCCESS);
 		CVODE(cvode, std::marker::PhantomData)
 	}
-	pub fn step(&mut self, f: &F, target_t: f64, u: &[f64]) -> (f64, &'static [f64]) {
+	pub fn step(&mut self, f: &mut F, target_t: f64, u: &[f64]) -> (f64, &'static [f64]) {
 		assert_eq!(unsafe{CVodeSetUserData(self.0, f as *const F as *mut void)}, CV_SUCCESS);
 		unsafe{CVodeSetStopTime(self.0, target_t)};
 		let /*mut*/ u = n_vector(u);

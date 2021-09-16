@@ -1,7 +1,7 @@
 #![feature(associated_type_bounds,in_band_lifetimes,default_free_fn)]
 use {std::default::default, fehler::throws, anyhow::Error};
 use std::{mem::size_of, ffi::CStr};
-use ash::{*, vk::*, version::*, extensions::ext::DebugUtils};
+use ash::{*, vk::*, extensions::ext::DebugUtils};
 
 pub struct Device {
 	_entry: Entry,
@@ -24,7 +24,7 @@ impl Device {
 		unsafe {
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(&InstanceCreateInfo::builder()
-				.application_info(&ApplicationInfo::builder().api_version(make_version(1, 2, 0)).application_name(main).application_version(0).engine_name(main))
+				.application_info(&ApplicationInfo::builder().api_version(make_api_version(0, 1, 2, 0)).application_name(main).application_version(0).engine_name(main))
 				//.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
 				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))

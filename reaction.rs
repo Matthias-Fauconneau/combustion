@@ -138,27 +138,27 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 	]).unwrap().expr()
 }
 
-fn efficiency(efficiencies: &[f64], concentrations: &[Value], sum_concentrations: Value, f: &mut Block) -> Expression {
+fn efficiency(efficiencies: &[f64], concentration: Value, concentrations: &[Value], f: &mut Block) -> Expression {
 	use iter::Zip;
 	let non_one_efficiencies:Box<[Value]> = list(efficiencies.zip(concentrations).into_iter().filter_map(|(&e, C)| if e==1. { None } else if e-1. == 1. { Some(*C) } else { Some(f.def((e-1.)*C,"fC")) }));
-	if non_one_efficiencies.is_empty() { sum_concentrations.into() } else { sum_concentrations + sum(non_one_efficiencies.into_vec()) }
+	if non_one_efficiencies.is_empty() { concentration.into() } else { concentration + sum(non_one_efficiencies.into_vec()) }
 }
 
 use super::*;
 
-fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentrations: &[Value], sum_concentrations: Value, f: &mut Block) -> Ratio {
+fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, concentration: Value, concentrations: &[Value], f: &mut Block) -> Ratio {
 	use ReactionModel::*; match model {
 		Elementary|Irreversible => edef(arrhenius(k_inf, T, f), f, "k").into(),
-		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f), f) * efficiency(efficiencies, concentrations, sum_concentrations, f)).into(),
+		ThreeBody{efficiencies} => (chk(arrhenius(k_inf, T, f), f) * efficiency(efficiencies, concentration, concentrations, f)).into(),
 		PressureModification{efficiencies, k0} => {
-			let efficiency = efficiency(efficiencies, concentrations, sum_concentrations, f);
+			let efficiency = efficiency(efficiencies, concentration, concentrations, f);
 			let k0 = arrhenius(k0, T, f);
 			let C_k0 = f.def(efficiency * k0, "C_k0");
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
 			Ratio(C_k0 * k_inf.shallow(), C_k0 + k_inf + (f32::MIN_POSITIVE as f64)) // Resolves undetermined form 0/0 as 0
 		},
 		Troe{efficiencies, k0, troe} => {
-			let efficiency = efficiency(efficiencies, concentrations, sum_concentrations, f);
+			let efficiency = efficiency(efficiencies, concentration, concentrations, f);
 			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
 			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
@@ -176,7 +176,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 			Ratio(F * k_inf * Pr, Pr + 1.)
 		}
 		SRI{/*efficiencies, k0, sri*/..} => {
-			/*let efficiency = efficiency(efficiencies, concentrations, sum_concentrations, f);
+			/*let efficiency = efficiency(efficiencies, concentration, concentrations, f);
 			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
 			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
@@ -188,7 +188,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 	}
 }
 
-pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}: T, concentrations: &[Value], /*Gibbs0_RT: &[Value],*/ f: &mut Block, species_names: &[&str]) -> Box<[Value]> {
+pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}: T, concentration: Value, concentrations: &[Value], f: &mut Block, species_names: &[&str]) -> Box<[Value]> {
 	/*let mut notone = vec![false; species.len()];
 	//fn efficiency(&Reaction{model, ..}) ->
 	for Reaction{model, ..} in reactions {
@@ -215,7 +215,6 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 		}
 	}
 	eprintln!("{add} {}", sub+notone.iter().filter(|&&x| x).count());*/
-	let sum_concentrations = f.def(sum(concentrations), "sum_concentrations");
 	let active = reactions[0].net.len();
 	let rcp_C0 = f.def((1./NASA7::reference_pressure) * T, "RT/P0");
 	let C0 = f.def(NASA7::reference_pressure * rcpT, "P0/RT");
@@ -242,7 +241,7 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 	};
 	let mut species_rates: Box<[Option<Value>]> = vec![None; active].into_boxed_slice();
 	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions {
-		let forward_rate_constant = forward_rate_constant(model, rate_constant, Ts, concentrations, sum_concentrations, f);
+		let forward_rate_constant = forward_rate_constant(model, rate_constant, Ts, concentration, concentrations, f);
 		let Rforward = product_of_exponentiations(concentrations, reactants, f, "Rf");
 		let Rnet = if let ReactionModel::Irreversible = model { Rforward } else {
 			let Gibbs0_RT = |k, f: &mut Block| -> Expression {
@@ -298,18 +297,19 @@ pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], spec
 	let mut values = ["pressure_","rcp_pressure_", "T", "volume"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
+	let molar_density = f.def(1./volume, "molar_density");
+	let rcpT = f.def(1./T, "rcpT");
 	let lnT = def(ln(1024., T, f), f, "lnT");
 	let T2 = f.def(T*T, "T2");
-	let T3 = f.def(T*T2, "T3");
-	let T4 = f.def(T2*T2, "T4");
-	let rcpT = f.def(1./T, "rcpT");
-	let rcpT2 = f.def(rcpT*rcpT, "rcpT2");
-	let Ts = T{lnT,T: *T,T2,T3,T4,rcpT,rcpT2};
-	let molar_density = f.def(1./volume, "molar_density");
 	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| f.def(molar_density*max(0., nonbulk_amount), "nonbulk_concentrations"));
-	let bulk_concentration = f.def(pressure_R * rcpT - sum(&*nonbulk_concentrations), "bulk_concentration"); // Constant pressure
+	let T3 = f.def(T*T2, "T3");
+	let concentration = f.def(pressure_R * rcpT, "concentration");
+	let rcpT2 = f.def(rcpT*rcpT, "rcpT2");
+	let T4 = f.def(T2*T2, "T4");
+	let Ts = T{lnT,T: *T,T2,T3,T4,rcpT,rcpT2};
+	let bulk_concentration = f.def(concentration - sum(&*nonbulk_concentrations), "bulk_concentration"); // Constant pressure
 	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
-	let species_rates = species_rates(species, reactions, Ts, &concentrations, /*&Gibbs0_RT,*/ f, species_names);
+	let species_rates = species_rates(species, reactions, Ts, concentration, &concentrations, f, species_names);
 	let [enthalpy_RT] = thermodynamics(&species[0..active], [enthalpy_RT], Ts, f, ["enthalpy_RT"]);
 	use iter::Dot;
 	let energy_rate_RT : Expression = (&species_rates).dot(enthalpy_RT.into_vec());

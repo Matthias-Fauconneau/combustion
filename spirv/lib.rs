@@ -22,20 +22,20 @@ fn wrap_f32_op(b: &mut rspirv::Builder, rtype: &ast::Type, x: Value, y: impl Fn(
 	}
 }
 
-struct Builder<'t> {
+struct Builder/*<'t>*/ {
 	builder: rspirv::Builder,
 	values: Box<[Option<(ast::Type, Value)>]>,
 	gl: Word,
 	//constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<R32, Value>,
 	constants_f64: std::collections::HashMap<R64, Value>,
-	expressions: std::collections::HashSet<Expr/*(Op, LeafValue, Option<LeafValue>)*/>,
-	names: &'t [String],
+	//expressions: std::collections::HashSet<Expr/*(Op, LeafValue, Option<LeafValue>)*/>,
+	//names: &'t [String],
 }
-impl std::ops::Deref for Builder<'_> { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
-impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
+impl std::ops::Deref for Builder/*<'_>*/ { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
+impl std::ops::DerefMut for Builder/*<'_>*/ { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
-impl Builder<'_> {
+impl Builder/*<'_>*/ {
 //fn u32(&mut self, value: u32) -> Value { *self.constants_u32.entry(value).or_insert_with(|| self.builder.constant_u32(u32, value)) }
 fn f32(&mut self, value: f32) -> Value {
 	let f32 = self.type_float(32);
@@ -57,12 +57,13 @@ fn expr(&mut self, expr: &Expression) -> Value {
 	match expr {
 		Expression::Expr(e) => {
 			use Expr::*;
-			if !(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone()))) { panic!("{}", e.to_string(self.names)) }
+			//if !(e.is_leaf() || (!expr.has_block() && self.expressions.insert(e.clone()))) { panic!("{}", e.to_string(self.names)) }
 			match e {
 				&F32(value) => self.f32(*value),
 				&F64(value) => self.f64(*value),
 				Value(v) => self.values[v.0].unwrap().1,
 				Neg(x) => { let x = self.expr(x); self.f_negate(stype, None, x).unwrap() }
+				Min(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMin as u32, [a,b]).unwrap() }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, [a,b]).unwrap() }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
 				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(stype, None, a, b).unwrap() }
@@ -72,6 +73,7 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				Sqrt(x) => { let x = self.expr(x); self.ext_inst(stype, None, gl, GLOp::Sqrt as u32, [Operand::IdRef(x)]).unwrap() }
 				Exp(x) => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Exp as u32, [Operand::IdRef(x)]).unwrap()) },
 				Ln{x,..} => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Log as u32, [Operand::IdRef(x)]).unwrap()) },
+				Sq(x) => { let x = self.expr(x); self.f_mul(stype, None, x, x).unwrap() }
 			}
 		}
 		Expression::Block { statements, result } => {
@@ -151,14 +153,15 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		})
 	};
 
-	assert!(constants_len==1);
-	let constant0_type = stype(&mut b, &ast.input[0]);
-	let block_struct_constants = b.type_struct([constant0_type]);
-	b.decorate(block_struct_constants, Block, []);
-	b.member_decorate(block_struct_constants, 0, Offset, [0u32.into()]);
-	let constant_pointer_to_constant0 = b.type_pointer(None, StorageClass::PushConstant, constant0_type);
-	let constant_pointer_to_block_struct_constants= b.type_pointer(None, StorageClass::PushConstant, block_struct_constants);
-	let constants = b.variable(constant_pointer_to_block_struct_constants, None, StorageClass::PushConstant, None);
+	let constants_types = &ast.input[0..constants_len];
+	let constants = {
+		let constants = map(constants_types, |constant| stype(&mut b, constant));
+		let block_struct_constants = b.type_struct(constants.into_vec());
+		b.decorate(block_struct_constants, Block, []);
+		for (member, offset) in constants_types.iter().scan(0, |offset, t| { let current = *offset; *offset+=t.bits()/8; Some(current)}).enumerate() { b.member_decorate(block_struct_constants, member as u32, Offset, [offset.into()]); }
+		let constant_pointer_to_block_struct_constants = b.type_pointer(None, StorageClass::PushConstant, block_struct_constants);
+		b.variable(constant_pointer_to_block_struct_constants, None, StorageClass::PushConstant, None)
+	};
 
 	let mut storage_buffer_pointer_to_array = {
 		let mut cache: linear_map::LinearMap<ast::Type, Type> = default();
@@ -192,17 +195,22 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	b.begin_block(None)?;
 	let global_invocation_id3 = b.load(v3u, None, global_invocation_id_ref, None, [])?;
 	let id = b.composite_extract(u32, None, global_invocation_id3, [0])?;
+	let constant_values = map(constants_types.into_iter().enumerate(), |(member, constant_type)| {
+		let stype = stype(&mut b, constant_type);
+		let constant_pointer_to_constant = b.type_pointer(None, StorageClass::PushConstant, stype);
+		let member = b.constant_u32(u32, member as u32);
+		let pointer = b.access_chain(constant_pointer_to_constant, None, constants, [member]).unwrap();
+		(*constant_type, b.load(stype, None, pointer, None, []).unwrap())
+	});
 	let index0 = b.constant_u32(u32, 0);
-	let constant0_pointer = b.access_chain(constant_pointer_to_constant0, None, constants, [index0]).unwrap();
-	let constant0 = (ast.input[0], b.load(constant0_type, None, constant0_pointer, None, [])?);
 	let input_values = map(&*input_pointers, |&(rtype, input)| {
 		let stype = stype(&mut b, &rtype);
 		let storage_buffer_pointer = b.type_pointer(None, StorageClass::StorageBuffer, stype);
 		let input = b.access_chain(storage_buffer_pointer, None, input, [index0, id]).unwrap();
 		(rtype, b.load(stype, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap())
 	});
-	let mut b = Builder{builder: b, gl, values: list([constant0].into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
-																	constants_f32: default(), constants_f64: default(), expressions: default(), names: &ast.values};
+	let mut b = Builder{builder: b, gl, values: list(constant_values.into_vec().into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
+																	constants_f32: default(), constants_f64: default(), /*expressions: default(), names: &ast.values*/};
 	for s in &*ast.statements { b.extend(s); }
 	for (expr, &(rtype, output)) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);

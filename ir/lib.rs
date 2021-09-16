@@ -1,4 +1,4 @@
-#![feature(default_free_fn,format_args_capture)]
+#![feature(default_free_fn,format_args_capture,let_else)]
 use {std::default::default, iter::map};
 pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32, F64}, condcodes::FloatCC};
 use cranelift::{
@@ -38,7 +38,7 @@ fn ushr_imm(x: Value, imm: u8, f: &mut Builder) -> Value { f.ins().ushr_imm(x, i
 fn iadd(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().iadd(a, b) }
 fn isub(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().isub(a, b) }*/
 fn neg(x: Value, f: &mut Builder) -> Value { f.ins().fneg(x) }
-//fn min(&mut self, a: Value, b: Value) -> Value { self.ins().fmin(a, b) }
+fn min(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fmin(a, b) }
 fn max(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fmax(a, b) }
 fn add(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fadd(a, b) }
 fn sub(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fsub(a, b) }
@@ -122,7 +122,7 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
 		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
-		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?}"); a },
+		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?}"); a },
 		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
 		},
 		Expression::Block { statements, result } => { for s in &**statements { self.check_types_and_load_constants(s) } self.pass(result) }
@@ -158,6 +158,7 @@ fn expr(&mut self, e: &Expression) -> Value {
 		IAdd(a, b) => iadd(self.expr(a), self.expr(b), self),
 		ISub(a, b) => isub(self.expr(a), self.expr(b), self),*/
 		Neg(x) => neg(self.expr(x), self),
+		Min(a, b) => min(self.expr(a), self.expr(b), self),
 		Max(a, b) => max(self.expr(a), self.expr(b), self),
 		LessOrEqual(a, b) => { let (a, b) = (self.expr(a), self.expr(b)); self.ins().fcmp(FloatCC::LessThanOrEqual, a, b) },
 		Add(a, b) => add(self.expr(a), self.expr(b), self),
@@ -230,7 +231,7 @@ pub fn compile(ast: &ast::Function) -> Function {
 	f.append_block_params_for_function_params(entry_block);
 	f.switch_to_block(entry_block);
 	f.seal_block(entry_block);
-	let_!{ &[input, output] = f.block_params(entry_block) => {
+	let &[input, output] = f.block_params(entry_block) else {panic!()};
 	let types = ast.input.iter().enumerate().map(|(i, &r#type)| (Value(i), r#type)).collect();
 	let values = ast.input.iter().enumerate().map(|(i, r#type)| (Value(i), load({use ast::Type::*; match r#type {F32=>self::F32, F64=>self::F64}}, input, i, f))).collect();
 	let ref mut f = AstBuilder{builder: f, types, values};
@@ -239,7 +240,7 @@ pub fn compile(ast: &ast::Function) -> Function {
 	for (i, e) in ast.output.iter().enumerate() { f.pass(e); store(f.expr(e), output, i, f); }
 	f.ins().return_(&[]);
 	function
-}}}
+}
 
 #[cfg(feature="jit")] pub fn assemble<T>(function: Function) -> impl Fn(&[T], &mut [T]) {
 	let mut module = cranelift_jit::JITModule::new({

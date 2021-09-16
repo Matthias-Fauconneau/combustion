@@ -1,10 +1,9 @@
-#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn)]
+#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits)]
 #![allow(non_snake_case,non_upper_case_globals)]
-
-mod yaml; 
+mod yaml;
 mod device;
 
-use {anyhow::Result, iter::map, combustion::*, device::*};
+use {std::iter::zip, anyhow::Result, iter::map, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
@@ -22,10 +21,10 @@ fn main() -> Result<()> {
 	}
 	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
 	assert!(active < amounts.len()); // Assume bulk specie is inert
-	let state = [&[temperature, volume], &amounts[..active]].concat();
-	let mut input = [&state, &amounts[active..amounts.len()-1]].concat();
+	let state:Box<[T]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
+	let mut input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
 	let mut evaluations = 0;
-	let f = |u: &[f64], f_u: &mut [f64]| {
+	let mut f = |u: &[T], f_u: &mut [T]| {
 		//use itertools::Itertools;
 		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 		assert!(u[0]>200.);
@@ -38,25 +37,40 @@ fn main() -> Result<()> {
 		true
 	};
 
-	let mut cvode = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state);
+	//let mut integrator = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state)
+	let mut integrator = {
+		struct Explicit<F: FnMut(&[T], &mut [T])->bool> { t: f64, _marker: std::marker::PhantomData<F> }
+		impl<F: FnMut(&[T], &mut [T])->bool> Explicit<F> {
+			pub fn step(&mut self, f: &mut F, target_t: f64, u: &[T]) -> (f64, Box<[T]>) {
+				let dt = (target_t-self.t) as T;
+				self.t = target_t;
+				let mut f_u = vec![0.; u.len()];
+				f(u, &mut f_u);
+				let u = map(zip(u, f_u), |(u, f_u)| u+dt*f_u);
+				(self.t, u)
+			}
+		}
+		Explicit{t: 0., _marker: std::marker::PhantomData}
+	};
 	let plot_min_time = 0.0002;
-	let (mut time, mut state) = (0., &*state);
+	let (mut time, mut state) = (0., state);
 	let start = std::time::Instant::now();
 	while time < plot_min_time {
 		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
+		while time < next_time { (time, state) = integrator.step(&mut f, next_time, &state); }
 		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
 	println!("T {}", state[0]);
-	let mut min = 0f64;
-	let values = map(0..(0.0004/model.time_step) as usize, |_| if let [temperature, volume, active_amounts@..] = state {
-		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature, *volume*1e3].into_boxed_slice(), map(active_amounts, |v| v/active_amounts.iter().sum::<f64>())].into_boxed_slice());
+	let mut min:T = 0.;
+	let values = map(0..(0.0004/model.time_step) as usize, |_| {
+		let [temperature, volume, active_amounts@..] = &state[..] else { unreachable!() };
+		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature as _, (*volume*1e3) as _].into_boxed_slice(), map(active_amounts, |v| (v/active_amounts.iter().sum::<T>()) as _)].into_boxed_slice());
 		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = cvode.step(&f, next_time, state); }
-		min = min.min(state[1..].iter().copied().reduce(f64::min).unwrap());
+		while time < next_time { (time, state) = integrator.step(&mut f, next_time, &state); }
+		min = min.min(state[1..].iter().copied().reduce(T::min).unwrap());
 		value
-	} else { unreachable!() });
+	});
 	let end = std::time::Instant::now();
 	let time = (end-start).as_secs_f64();
 	println!("T {}", state[0]);
