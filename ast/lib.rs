@@ -53,9 +53,9 @@ impl Deref for R64 { type Target=f64; fn deref(&self) -> &Self::Target { &self.0
 	Mul(Box<Expression>, Box<Expression>),
 	//MulAdd(Box<Expression>, Box<Expression>, Box<Expression>),
 	Div(Box<Expression>, Box<Expression>),
-	/*FPromote(Box<Expression>),
+	FPromote(Box<Expression>),
 	FDemote(Box<Expression>),
-	FCvtToSInt(Box<Expression>),
+	/*FCvtToSInt(Box<Expression>),
 	FCvtFromSInt(Box<Expression>),*/
 	Sqrt(Box<Expression>),
 	Exp(Box<Expression>),
@@ -65,12 +65,12 @@ impl Deref for R64 { type Target=f64; fn deref(&self) -> &Self::Target { &self.0
 impl Expr {
 	pub fn visit<T>(&self, mut visitor: impl FnMut(&Expression)->T) -> [Option<T>; 2] {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
+		Neg(x)|FPromote(x)|FDemote(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
 		Min(a,b)|Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn visit_mut<T>(&mut self, mut visitor: impl FnMut(&mut Expression)->T)  -> [Option<T>; 2]  {use Expr::*; match self {
 		F32(_)|F64(_)|Value(_) => [None, None],
-		Neg(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
+		Neg(x)|FPromote(x)|FDemote(x)|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => [Some(visitor(x)), None],
 		Min(a,b)|Max(a, b)|Add(a, b)|Sub(a, b)|LessOrEqual(a, b)|Mul(a, b)|Div(a, b) => { [visitor(a), visitor(b)].map(Some) }
 	}}
 	pub fn rtype(&self, rtype: &impl Fn(&Value)->Type) -> Type { use Expr::*; match self {
@@ -78,14 +78,14 @@ impl Expr {
 		F32(_) => Type::F32,
 		F64(_) => Type::F64,
 		Value(v) => rtype(v),
-		//Cast(to, x) => { self.pass(x); *to },
+		//Cast(to, _) => { *to },
 		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => x.rtype(rtype),
-		/*FPromote(x) => { self.pass(x); ast::Type::F64 },
-		FDemote(x) => { self.pass(x); ast::Type::F32 },
-		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
-		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
+		FPromote(_) => { Type::F64 },
+		FDemote(_) => { Type::F32 },
+		/*FCvtToSInt(_)  => { Type::I32 }
+		FCvtFromSInt(_) => { Type::F32 },*/
 		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => self::rtype(a,b,rtype),
-		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
+		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.rtype(x)); assert!(a==b && b==c); a },
 	}}
 	pub fn is_leaf(&self) -> bool { use Expr::*; matches!(self, F32(_)|F64(_)|Value(_)) }
 	pub fn has_block(&self) -> bool { self.visit(Expression::has_block).into_iter().filter_map(|x| x).any(|x| x) }
@@ -239,9 +239,9 @@ pub fn sqrt(x: impl Into<Expression>) -> Expression {
 	Expr::Sqrt(box_(x.into())).into()
 }
 
-/*pub fn fpromote(x: impl Into<Expression>) -> Expression { Expression::FPromote(box_(x.into())) }
-pub fn fdemote(x: impl Into<Expression>) -> Expression { Expression::FDemote(box_(x.into())) }
-pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
+pub fn fpromote(x: impl Into<Expression>) -> Expression { Expr::FPromote(box_(x.into())).into() }
+pub fn fdemote(x: impl Into<Expression>) -> Expression { Expr::FDemote(box_(x.into())).into() }
+/*pub fn fcvt_to_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtToSInt(box_(x.into())) }
 pub fn fcvt_from_sint(x: impl Into<Expression>) -> Expression { Expression::FCvtFromSInt(box_(x.into())) }
 pub fn fma(a: impl Into<Expression>, b: impl Into<Expression>, c: impl Into<Expression>) -> Expression { Expression::MulAdd(box_(a.into()), box_(b.into()), box_(c.into())) }*/
 

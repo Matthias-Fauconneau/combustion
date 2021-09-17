@@ -2,7 +2,7 @@ use {anyhow::Result, iter::map};
 type Output<T> = Result<Box<[Box<[T]>]>>;
 pub trait Convert { fn convert(f: ast::Function) -> ast::Function; }
 impl Convert for f64 { fn convert(f: ast::Function) -> ast::Function { f } }
-impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
+/*impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	use {ast::*, Expr::*};
 	f.input = vec![Type::F32; f.input.len()].into();
 	fn demote(e: &mut Expression) {
@@ -17,7 +17,26 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 			for e in &mut **false_exprs { demote(e); }
 		}
 	}}
-	for e in &mut *f.output{ demote(e); }
+	for e in &mut *f.output { demote(e); }
+	f
+}}*/
+impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
+	use ast::*;
+	f.input = vec![Type::F32; f.input.len()].into();
+	fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
+	fn promote_input(input_len: usize, e: &mut Expression) {
+		if let Expression::Expr(Expr::Value(Value(id))) = e { if *id < input_len { replace_with(e, |e| fpromote(e)); } }
+		else { e.visit_mut(|e| promote_input(input_len, e)); }
+	}
+	for s in &mut *f.statements { use Statement::*; match s {
+		Value{value,..} => promote_input(f.input.len(), value),
+		Select { condition, true_exprs, false_exprs, .. } => {
+			promote_input(f.input.len(), condition);
+			for e in &mut **true_exprs { promote_input(f.input.len(), e); }
+			for e in &mut **false_exprs { promote_input(f.input.len(), e); }
+		}
+	}}
+	for e in &mut *f.output { replace_with(e, |mut e| { promote_input(f.input.len(), &mut e); fdemote(e) }); }
 	f
 }}
 

@@ -24,35 +24,49 @@ fn main() -> Result<()> {
 	assert!(active < amounts.len()); // Assume bulk specie is inert
 	let state : Box<[f32]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
 	let input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
-	//let rates = with_repetitive_input(rates, 1);
-	let states_len = 1;
-	let input = map(input.into_iter(), |x| vec![x as _; states_len]);
-	let Function{ref device, output_len, block_size, pipeline,..} = rates;
-	//use {std::{default::default, mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
-	use {iter::{list/*, map*/}, vulkan::*};
-	let mut input = map(&*input, |array| Buffer::new(device, array).unwrap());
-	let output = map(0..output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
-	let buffers = list(input.iter().chain(&*output));
-	device.bind(pipeline.descriptor_set, &buffers)?;
-	let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
-	let output = map(&*output, |array| array.map(device).unwrap());
-	let constants : [T; 2] = [pressure_R as _, (1./pressure_R) as _];
-	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
-	let mut evaluations = 0;
-	let mut f = |u: &[T], f_u: &mut [T]| {
-		//use itertools::Itertools;
-		//println!("{:3} {:.2e}", "u", u.iter().format(", "));
-		assert!(u[0]>200.);
-		assert!(u.iter().all(|u| u.is_finite()));
-		//input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
-		//f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
-		for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
-		device.submit_and_wait(command_buffer).unwrap(); // constant constants
-		for (output, f_u) in zip(&*output, f_u.iter_mut()) { *f_u = output[0]; }
-		assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
-		evaluations += 1;
-		//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
-		true
+
+	//let mut evaluations = 0;
+	#[cfg(not(feature="vpu"))] let mut f = {
+		let rates = with_repetitive_input(rates, 1);
+		let mut input = input;
+		move |u: &[T], f_u: &mut [T]| {
+			assert!(u[0]>200.);
+			assert!(u.iter().all(|u| u.is_finite()));
+			input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+			f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
+			assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
+			//evaluations += 1;
+			true
+		}
+	};
+	#[cfg(feature="vpu")] let mut f = {
+		use {iter::list, vulkan::*};
+		let states_len = 1;
+		let input = map(input.into_iter(), |x| vec![x as _; states_len]);
+		let Function{ref device, output_len, block_size, pipeline,..} = rates;
+		let mut input = map(&*input, |array| Buffer::new(device, array).unwrap());
+		let output = map(0..output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
+		let buffers = list(input.iter().chain(&*output));
+		device.bind(pipeline.descriptor_set, &buffers)?;
+		let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
+		let output = map(&*output, |array| array.map(device).unwrap());
+		let constants : [T; 2] = [pressure_R as _, (1./pressure_R) as _];
+		let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
+		|u: &[T], f_u: &mut [T]| {
+			//use itertools::Itertools;
+			//println!("{:3} {:.2e}", "u", u.iter().format(", "));
+			assert!(u[0]>200.);
+			assert!(u.iter().all(|u| u.is_finite()));
+			//input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+			//f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
+			for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+			device.submit_and_wait(command_buffer).unwrap(); // constant constants
+			for (output, f_u) in zip(&*output, f_u.iter_mut()) { *f_u = output[0]; }
+			assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
+			//evaluations += 1;
+			//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
+			true
+		}
 	};
 
 	//let mut integrator = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state)
@@ -69,7 +83,7 @@ fn main() -> Result<()> {
 	};
 	let plot_min_time = 0.0002;
 	let (mut time, mut state) = (0., state);
-	let start = std::time::Instant::now();
+	//let start = std::time::Instant::now();
 	while time < plot_min_time {
 		time += integrator.step(&mut f, model.time_step as f32, &mut state);
 		//dbg!(time/plot_min_time, time, state[0]);
@@ -84,10 +98,10 @@ fn main() -> Result<()> {
 		min = min.min(state[1..].iter().copied().reduce(f32::min).unwrap());
 		value
 	});
-	let end = std::time::Instant::now();
-	let time = (end-start).as_secs_f64();
-	println!("T {}", state[0]);
-	println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
+	//let end = std::time::Instant::now();
+	//let time = (end-start).as_secs_f64();
+	//println!("T {}", state[0]);
+	//println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
 	//println!("{:.0e}", min);
 	let key = map((0..active).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
 	let mut s = map(0..active, |i| i);

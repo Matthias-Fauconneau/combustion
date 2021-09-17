@@ -56,7 +56,7 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		Cast(Type::F32, from) => F32(f32::from_bits(eval(state, from).i32())),
 		And(a,b) => I32(eval(state, a).i32()&eval(state, b).i32()),
 		Or(a,b) => I32(eval(state, a).i32()|eval(state, b).i32()),*/
-		//IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FPromote(_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!("{e:?}"),
+		//IShLImm(_,_)|UShRImm(_,_)|IAdd(_,_)|ISub(_,_)|FCvtToSInt(_)|FCvtFromSInt(_) => panic!("{e:?}"),
 		Value(id) => state[id.0].clone(),
 		//Load(variable) => { self.variables[variable.0].unwrap() }
 		Neg(x) if let F32(x) = eval(state, x) => F32(-x),
@@ -76,8 +76,8 @@ fn eval(state: &State, expression: &Expression) -> DataValue {
 		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| eval(state, x).f64()); F64(f64::mul_add(a,b,c)) },
 		Div(a,b) if let [F32(a), F32(b)] = [a,b].map(|x| eval(state, x)) => F32(a/b),
 		Div(a,b) if let [F64(a), F64(b)] = [a,b].map(|x| eval(state, x)) => F64(a/b),
-		//FDemote(x) => F32(eval(state, x).f64() as f32),
-		//FPromote(x) => F64(eval(state, x).f32() as f64),
+		FDemote(x) => F32(f64::from(eval(state, x)) as f32),
+		FPromote(x) => F64(f32::from(eval(state, x)) as f64),
 		Sqrt(x) if let F32(x) = eval(state, x) => F32(f32::sqrt(x)),
 		Sqrt(x) if let F64(x) = eval(state, x) => F64(f64::sqrt(x)),
 		//Exp(x) if let F32(x) = eval(state, x) => F32(f32::exp(x)),
