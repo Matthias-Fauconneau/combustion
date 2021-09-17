@@ -11,7 +11,7 @@ fn r#mut<'t>(v: N_Vector) -> &'t mut [f64] {
 	unsafe{std::slice::from_raw_parts_mut(N_VGetArrayPointer_Serial(v), len(v))}.try_into().unwrap()
 }
 
-pub struct CVODE<F: FnMut(&[f64], &mut [f64])->bool>(*mut void, std::marker::PhantomData<F>);
+pub struct CVODE<F: FnMut(&[f64], &mut [f64])->bool>{cvode: *mut void, t: f64, _marker: std::marker::PhantomData<F>};
 
 impl<F: FnMut(&[f64], &mut [f64])->bool> CVODE<F> {
 	pub fn new(relative_tolerance: f64, absolute_tolerance: f64, u: &[f64]) -> Self {
@@ -33,13 +33,16 @@ impl<F: FnMut(&[f64], &mut [f64])->bool> CVODE<F> {
 		assert_eq!(unsafe{CVodeSStolerances(cvode, relative_tolerance, absolute_tolerance)}, CV_SUCCESS);
 		let A = unsafe{SUNDenseMatrix(len(u) as i64, len(u) as i64)};
 		assert_eq!(unsafe{CVodeSetLinearSolver(cvode, SUNDenseLinearSolver(u, A), A)}, CV_SUCCESS);
-		CVODE(cvode, std::marker::PhantomData)
+		CVODE{cvode, t: 0., std::marker::PhantomData}
 	}
-	pub fn step(&mut self, f: &mut F, target_t: f64, u: &[f64]) -> (f64, &'static [f64]) {
-		assert_eq!(unsafe{CVodeSetUserData(self.0, f as *const F as *mut void)}, CV_SUCCESS);
-		unsafe{CVodeSetStopTime(self.0, target_t)};
+	pub fn step(&mut self, f: &mut F, dt: f64, u: &mut [f64]) -> f64 {
+		assert_eq!(unsafe{CVodeSetUserData(self.cvode, f as *const F as *mut void)}, CV_SUCCESS);
+		let target_t = self.t+dt;
+		unsafe{CVodeSetStopTime(self.cvode, target_t)};
 		let /*mut*/ u = n_vector(u);
-		let mut reached_t = f64::NAN; unsafe{CVode(self.0, target_t, u, &mut reached_t, CV_ONE_STEP)};
-		(reached_t, r#ref(u))
+		let mut reached_t = f64::NAN; unsafe{CVode(self.cvode, target_t, u, &mut reached_t, CV_ONE_STEP)};
+		let dt = reached_t-self.t;
+		self.t = reached_t;
+		dt
 	}
 }

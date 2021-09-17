@@ -22,11 +22,11 @@ fn main() -> Result<()> {
 	}
 	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
 	assert!(active < amounts.len()); // Assume bulk specie is inert
-	let state:Box<[T]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
+	let state : Box<[f32]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
 	let input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
 	//let rates = with_repetitive_input(rates, 1);
 	let states_len = 1;
-	let input = map(input.into_iter(), |x:f64| vec![x as _; states_len]);
+	let input = map(input.into_iter(), |x| vec![x as _; states_len]);
 	let Function{ref device, output_len, block_size, pipeline,..} = rates;
 	//use {std::{default::default, mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
 	use {iter::{list/*, map*/}, vulkan::*};
@@ -36,7 +36,7 @@ fn main() -> Result<()> {
 	device.bind(pipeline.descriptor_set, &buffers)?;
 	let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
 	let output = map(&*output, |array| array.map(device).unwrap());
-	let constants:[f64;2] = [pressure_R as _, (1./pressure_R) as _];
+	let constants : [T; 2] = [pressure_R as _, (1./pressure_R) as _];
 	let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
 	let mut evaluations = 0;
 	let mut f = |u: &[T], f_u: &mut [T]| {
@@ -57,36 +57,31 @@ fn main() -> Result<()> {
 
 	//let mut integrator = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state)
 	let mut integrator = {
-		struct Explicit<F: FnMut(&[T], &mut [T])->bool> { t: f64, _marker: std::marker::PhantomData<F> }
+		struct Explicit<F: FnMut(&[T], &mut [T])->bool> { f_u: Box<[T]>, _marker: std::marker::PhantomData<F> }
 		impl<F: FnMut(&[T], &mut [T])->bool> Explicit<F> {
-			pub fn step(&mut self, f: &mut F, target_t: f64, u: &[T]) -> (f64, Box<[T]>) {
-				let dt = (target_t-self.t) as T;
-				self.t = target_t;
-				let mut f_u = vec![0.; u.len()];
-				f(u, &mut f_u);
-				let u = map(zip(u, f_u), |(u, f_u)| u+dt*f_u);
-				(self.t, u)
+			pub fn step(&mut self, f: &mut F, dt: f32, u: &mut [f32]) -> f32 {
+				f(&map(&*u,|&u| u as _), &mut self.f_u);
+				for (u, &f_u) in zip(u.iter_mut(), &*self.f_u) { *u += dt*f_u as f32; }
+				dt
 			}
 		}
-		Explicit{t: 0., _marker: std::marker::PhantomData}
+		Explicit{f_u: vec![0.; state.len()].into(), _marker: std::marker::PhantomData}
 	};
 	let plot_min_time = 0.0002;
 	let (mut time, mut state) = (0., state);
 	let start = std::time::Instant::now();
 	while time < plot_min_time {
-		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = integrator.step(&mut f, next_time, &state); }
+		time += integrator.step(&mut f, model.time_step as f32, &mut state);
 		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
 	println!("T {}", state[0]);
-	let mut min:T = 0.;
+	let mut min:f32 = 0.;
 	let values = map(0..(0.0004/model.time_step) as usize, |_| {
 		let [temperature, volume, active_amounts@..] = &state[..] else { unreachable!() };
-		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature as _, (*volume*1e3) as _].into_boxed_slice(), map(active_amounts, |v| (v/active_amounts.iter().sum::<T>()) as _)].into_boxed_slice());
-		let next_time = time + model.time_step;
-		while time < next_time { (time, state) = integrator.step(&mut f, next_time, &state); }
-		min = min.min(state[1..].iter().copied().reduce(T::min).unwrap());
+		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature as f64, (*volume*1e3) as f64].into_boxed_slice(), map(active_amounts, |&v| (v as f32/active_amounts.iter().sum::<f32>()) as f64)].into_boxed_slice());
+		time += integrator.step(&mut f, model.time_step as f32, &mut state);
+		min = min.min(state[1..].iter().copied().reduce(f32::min).unwrap());
 		value
 	});
 	let end = std::time::Instant::now();
@@ -100,7 +95,7 @@ fn main() -> Result<()> {
 	let species_names = map(&*select, |&k| species_names[k]);
 	let values = map(Vec::from(values).into_iter(), |(t, sets)| {
 		let [sets_0, sets_1] = *std::convert::TryInto::<Box<[_;2]>>::try_into(sets).unwrap();
-		(t, vec![sets_0, map(&*select, |&k| sets_1[k])].into_boxed_slice())
+		(t as f64, vec![sets_0, map(&*select, |&k| sets_1[k])].into_boxed_slice())
 	});
 	let mut plot = ui::plot::Plot::new(vec![&["T","V"] as &[_], &species_names].into_boxed_slice(), values.to_vec());
 	if true { Ok(ui::app::run(plot)?) }
