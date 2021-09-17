@@ -24,10 +24,13 @@ fn main() -> Result<()> {
 	assert!(active < amounts.len()); // Assume bulk specie is inert
 	let state : Box<[f32]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
 	let input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
+	let states_len = 1;
+	let input = map(input.into_iter(), |x| vec![x as _; states_len]);
 
 	//let mut evaluations = 0;
 	#[cfg(not(feature="vpu"))] let mut f = {
-		let rates = with_repetitive_input(rates, 1);
+		let rates = move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*inputs, |x| &**x))?, |y| all_same(y, times)));
+		//with_repetitive_input(rates, 1);
 		let mut input = input;
 		move |u: &[T], f_u: &mut [T]| {
 			assert!(u[0]>200.);
@@ -39,20 +42,18 @@ fn main() -> Result<()> {
 			true
 		}
 	};
+	#[cfg(feature="vpu")] use {iter::list, vulkan::*};
+	#[cfg(feature="vpu")] let Function{ref device, output_len, block_size, pipeline,..} = rates;
+	#[cfg(feature="vpu")] 	let mut input = map(&*input, |array| Buffer::new(device, array).unwrap());
+	#[cfg(feature="vpu")] 	let output = map(0..output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
 	#[cfg(feature="vpu")] let mut f = {
-		use {iter::list, vulkan::*};
-		let states_len = 1;
-		let input = map(input.into_iter(), |x| vec![x as _; states_len]);
-		let Function{ref device, output_len, block_size, pipeline,..} = rates;
-		let mut input = map(&*input, |array| Buffer::new(device, array).unwrap());
-		let output = map(0..output_len, |_| Buffer::new(device, &vec![0.; states_len]).unwrap());
 		let buffers = list(input.iter().chain(&*output));
 		device.bind(pipeline.descriptor_set, &buffers)?;
 		let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
 		let output = map(&*output, |array| array.map(device).unwrap());
 		let constants : [T; 2] = [pressure_R as _, (1./pressure_R) as _];
 		let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
-		|u: &[T], f_u: &mut [T]| {
+		move |u: &[T], f_u: &mut [T]| {
 			//use itertools::Itertools;
 			//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 			assert!(u[0]>200.);

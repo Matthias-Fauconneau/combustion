@@ -63,6 +63,8 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				&F64(value) => self.f64(*value),
 				Value(v) => self.values[v.0].unwrap().1,
 				Neg(x) => { let x = self.expr(x); self.f_negate(stype, None, x).unwrap() }
+				FPromote(x) => { let x = self.expr(x); self.f_convert(stype, None, x).unwrap() }
+				FDemote(x) => { let x = self.expr(x); self.f_convert(stype, None, x).unwrap() }
 				Min(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMin as u32, [a,b]).unwrap() }
 				Max(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, [a,b]).unwrap() }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
