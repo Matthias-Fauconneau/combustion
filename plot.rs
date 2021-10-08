@@ -57,11 +57,11 @@ fn main() -> Result<()> {
 			//input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
 			//f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
 			for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
-			println!("{u:?} {f_u:?}");
+			//println!("{u:?} {f_u:?}");
 			device.submit_and_wait(command_buffer).unwrap(); // constant constants
 			for (output, f_u) in zip(&*output, f_u.iter_mut()) { *f_u = output[0]; }
 			assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
-			assert!(num::abs(f_u[0]) < 1., "{u:?} {f_u:?}");
+			//assert!(num::abs(f_u[0]) < 1., "{u:?} {f_u:?}");
 			//evaluations += 1;
 			//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 			true

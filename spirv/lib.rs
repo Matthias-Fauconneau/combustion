@@ -11,7 +11,7 @@ fn stype(b: &mut rspirv::Builder, rtype: &ast::Type) -> Type { b.type_float(rtyp
 fn wrap_f32_op(b: &mut rspirv::Builder, rtype: &ast::Type, x: Value, y: impl Fn(&mut rspirv::Builder, Value)->Value) -> Value {
 	use ast::Type::*;
 	match rtype {
-		F32 => x,
+		F32 => y(b, x),
 		F64 => {
 			let f32 = b.type_float(32);
 			let x = b.f_convert(f32, None, x).unwrap();
@@ -26,7 +26,7 @@ struct Builder<'t> {
 	builder: rspirv::Builder,
 	values: Box<[Option<(ast::Type, Value)>]>,
 	gl: Word,
-	debug: Word,
+	//debug: Word,
 	//constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<R32, Value>,
 	constants_f64: std::collections::HashMap<R64, Value>,
@@ -88,13 +88,13 @@ fn expr(&mut self, expr: &Expression) -> Value {
 }
 
 fn extend(&mut self, s: &Statement) {
-	let [void, debug] = [self.type_void(), self.debug];
 	use Statement::*;
 	match s {
 		Value { id, value } => {
 			let result = self.expr(value);
+			self.names;/*let [void, debug] = [self.type_void(), self.debug];
 			let format = self.builder.string(format!("{} %f", self.names[id.0]));
-			self.ext_inst(void, None, debug, DebugPrintFOp::DebugPrintf as u32, [IdRef(format), IdRef(result)]).unwrap();
+			self.ext_inst(void, None, debug, DebugPrintFOp::DebugPrintf as u32, [IdRef(format), IdRef(result)]).unwrap();*/
 			let rtype = self.rtype(value);
 			assert!(self.values[id.0].replace((rtype,result)).is_none());
 		},
@@ -148,7 +148,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	//b.execution_mode_id(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
 	b.execution_mode(f, ExecutionMode::LocalSize, [1, 1, 1]);
 	let gl = b.ext_inst_import("GLSL.std.450");
-	let debug = b.ext_inst_import("NonSemantic.DebugPrintf");
+	//let debug = b.ext_inst_import("NonSemantic.DebugPrintf");
 	let v3u = b.type_vector(u32, 3);
 	let workgroup_size = b.spec_constant_composite(v3u, [local_size, u32_1, u32_1]);
 	b.decorate(workgroup_size, BuiltIn, [Operand::BuiltIn(BuiltIn::WorkgroupSize)]);
@@ -222,7 +222,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	});
 	let mut b = Builder{
 		builder: b,
-		gl, debug,
+		gl, //debug,
 		values: list(constant_values.into_vec().into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
 		constants_f32: default(), constants_f64: default(), /*expressions: default(),*/ names: &ast.values};
 	for s in &*ast.statements { b.extend(s); }
