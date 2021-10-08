@@ -163,7 +163,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
 			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
 			let Fcent = {let model::Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
-				(T3 > 1e-31).then(|| { let y = 1.-A; if T3<1e30 { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
+				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
 				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * def(exp(T/(-T1), f), f, "exp(-T/T1)") } else { y.into() }}),
 				(T2.is_finite()).then(|| def(exp((-T2)*rcpT, f), f, "exp(-T2/T)").into())
 			].into_iter().filter_map(|x| x))};
@@ -323,7 +323,7 @@ pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], spec
 	Function{
 		output: list([T * dtT_T, dtV/*f64(0.).unwrap().into(), f64(0.).unwrap().into()*/].into_iter().chain(species_rates.into_vec().into_iter().map(|e| e.into()))),
 		statements: function.block.statements.into(),
-		input: vec![Type::F64; input.len()].into(),
+		input: vec![Type::F32; input.len()].into(),
 		values: values.into()
 	}
 }

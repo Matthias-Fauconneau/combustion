@@ -173,11 +173,7 @@ pub fn density_diffusivity<'t, const D: usize>(molar_mass: &'t [f64], diffusivit
 		replace_with(&mut S[k], |S| {let t = mole_proportions[j]*rcp_diffusivityITVT; Some(f.def(if let Some(S) = S { S+t } else { t }, format!("S{k}_{j}")))});
 		replace_with(&mut S[j], |S| {let t = mole_proportions[k]*rcp_diffusivityITVT; Some(f.def(if let Some(S) = S { S+t } else { t }, format!("S{j}_{k}")))});
 	}}
-	//let rcp_diffusivityITVT = map(0..K, |k| map(0..k, |j| rcp_diffusivityITVT(k,j)));
-	S.into_vec().into_iter().enumerate().map(move |(k, S)|
-		(mean_molar_mass_VTN - VT * 	molar_mass[k] * mole_proportions[k])
-	/ S.unwrap()//(0..K).filter(|&j| j != k).map(|j| mole_proportions[j] * rcp_diffusivityITVT[std::cmp::max(k,j)][std::cmp::min(k,j)]).sum::<Expression>()
-	)
+	S.into_vec().into_iter().enumerate().map(move |(k, S)| (mean_molar_mass_VTN - VT * 	molar_mass[k] * mole_proportions[k]) / S.unwrap())
 }
 
 pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityIVT, VviscosityIVVT, diffusivityITVT} : &Polynomials<D>, temperature0: f64, viscosity: f64, conductivity: f64) -> Function {
@@ -208,7 +204,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 			density_diffusivity(molar_mass, &diffusivityITVT, mean_molar_mass_VTN, VT, lnT, mole_proportions, f)
 		)),
 		statements: function.statements.into(),
-		input: vec![Type::F64; input.len()].into(),
+		input: vec![Type::F32; input.len()].into(),
 		values: values.into()
 	}
 }}}

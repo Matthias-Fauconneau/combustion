@@ -3,9 +3,9 @@ lib={path='lib.rs'}
 
 [dependencies]
 ordered-float='*'
-iter= {git='https://github.com/Matthias-Fauconneau/iter'}
+iter={git='https://github.com/Matthias-Fauconneau/iter'}
 linear-map='*'
-ast= {path='../ast'}
-spirv= {package='spirv_headers', git='https://github.com/Matthias-Fauconneau/rspirv'}
+ast={path='../ast'}
+spirv={git='https://github.com/Matthias-Fauconneau/rspirv'}
 rspirv={git='https://github.com/Matthias-Fauconneau/rspirv'}
 spirv-tools={version='*', default-features=false, features=['use-installed-tools']}

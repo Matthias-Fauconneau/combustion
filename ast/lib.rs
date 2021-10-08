@@ -1,8 +1,4 @@
-#![allow(incomplete_features,non_snake_case)]
-#![feature(format_args_capture,if_let_guard,associated_type_bounds,unboxed_closures,fn_traits)]
-//#![allow(incomplete_features,,mixed_script_confusables)]
-//#![feature(,in_band_lifetimes,,,type_ascription,default_free_fn)]
-//#![recursion_limit="5"]
+#![allow(non_snake_case)]#![feature(format_args_capture,if_let_guard,associated_type_bounds,unboxed_closures,fn_traits)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)] pub struct Value(pub usize);
@@ -80,8 +76,8 @@ impl Expr {
 		Value(v) => rtype(v),
 		//Cast(to, _) => { *to },
 		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Exp(x)|Ln{x,..}|Sq(x) => x.rtype(rtype),
-		FPromote(_) => { Type::F64 },
-		FDemote(_) => { Type::F32 },
+		FPromote(x) => { assert!(x.rtype(rtype)==Type::F32); Type::F64 },
+		FDemote(x) => { assert!(x.rtype(rtype)==Type::F64); Type::F32 },
 		/*FCvtToSInt(_)  => { Type::I32 }
 		FCvtFromSInt(_) => { Type::F32 },*/
 		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => self::rtype(a,b,rtype),

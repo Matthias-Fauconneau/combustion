@@ -1,5 +1,5 @@
 #![allow(incomplete_features)]#![feature(format_args_capture,default_free_fn,if_let_guard)]
-use {std::default::default, iter::{list, map}, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *}};
+use {std::default::default, iter::{list, map}, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *, Operand::IdRef}};
 
 type Type= Word;
 type Value = Word;
@@ -22,20 +22,21 @@ fn wrap_f32_op(b: &mut rspirv::Builder, rtype: &ast::Type, x: Value, y: impl Fn(
 	}
 }
 
-struct Builder/*<'t>*/ {
+struct Builder<'t> {
 	builder: rspirv::Builder,
 	values: Box<[Option<(ast::Type, Value)>]>,
 	gl: Word,
+	debug: Word,
 	//constants_u32: std::collections::HashMap<u32, Value>,
 	constants_f32: std::collections::HashMap<R32, Value>,
 	constants_f64: std::collections::HashMap<R64, Value>,
 	//expressions: std::collections::HashSet<Expr/*(Op, LeafValue, Option<LeafValue>)*/>,
-	//names: &'t [String],
+	names: &'t [String],
 }
-impl std::ops::Deref for Builder/*<'_>*/ { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
-impl std::ops::DerefMut for Builder/*<'_>*/ { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
+impl std::ops::Deref for Builder<'_> { type Target=rspirv::Builder; fn deref(&self) -> &Self::Target { &self.builder } }
+impl std::ops::DerefMut for Builder<'_> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.builder } }
 
-impl Builder/*<'_>*/ {
+impl Builder<'_> {
 //fn u32(&mut self, value: u32) -> Value { *self.constants_u32.entry(value).or_insert_with(|| self.builder.constant_u32(u32, value)) }
 fn f32(&mut self, value: f32) -> Value {
 	let f32 = self.type_float(32);
@@ -51,6 +52,7 @@ fn f64(&mut self, value: f64) -> Value {
 }
 fn rtype(&self, e: &Expression) -> ast::Type { e.rtype(&|value| self.values[value.0].unwrap().0) }
 fn stype(&mut self, rtype: &ast::Type) -> Type { stype(self, rtype) }
+
 fn expr(&mut self, expr: &Expression) -> Value {
 	let rtype = self.rtype(expr);
 	let [bool, f32, gl, stype] = [self.type_bool(), self.type_float(32), self.gl, self.stype(&rtype)];
@@ -65,16 +67,16 @@ fn expr(&mut self, expr: &Expression) -> Value {
 				Neg(x) => { let x = self.expr(x); self.f_negate(stype, None, x).unwrap() }
 				FPromote(x) => { let x = self.expr(x); self.f_convert(stype, None, x).unwrap() }
 				FDemote(x) => { let x = self.expr(x); self.f_convert(stype, None, x).unwrap() }
-				Min(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMin as u32, [a,b]).unwrap() }
-				Max(a, b) => { let [a,b] = [a,b].map(|x| Operand::IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, [a,b]).unwrap() }
+				Min(a, b) => { let [a,b] = [a,b].map(|x| IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMin as u32, [a,b]).unwrap() }
+				Max(a, b) => { let [a,b] = [a,b].map(|x| IdRef(self.expr(x))); self.ext_inst(stype, None, gl, GLOp::FMax as u32, [a,b]).unwrap() }
 				Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
 				Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(stype, None, a, b).unwrap() }
 				LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
 				Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(stype, None, a, b).unwrap() }
 				Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(stype, None, a, b).unwrap() }
-				Sqrt(x) => { let x = self.expr(x); self.ext_inst(stype, None, gl, GLOp::Sqrt as u32, [Operand::IdRef(x)]).unwrap() }
-				Exp(x) => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Exp as u32, [Operand::IdRef(x)]).unwrap()) },
-				Ln{x,..} => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Log as u32, [Operand::IdRef(x)]).unwrap()) },
+				Sqrt(x) => { let x = self.expr(x); self.ext_inst(stype, None, gl, GLOp::Sqrt as u32, [IdRef(x)]).unwrap() }
+				Exp(x) => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Exp as u32, [IdRef(x)]).unwrap()) },
+				Ln{x,..} => { let x = self.expr(x); wrap_f32_op(self, &rtype, x, |b,x| b.ext_inst(f32, None, gl, GLOp::Log as u32, [IdRef(x)]).unwrap()) },
 				Sq(x) => { let x = self.expr(x); self.f_mul(stype, None, x, x).unwrap() }
 			}
 		}
@@ -84,11 +86,15 @@ fn expr(&mut self, expr: &Expression) -> Value {
 		}
 	}
 }
+
 fn extend(&mut self, s: &Statement) {
+	let [void, debug] = [self.type_void(), self.debug];
 	use Statement::*;
 	match s {
 		Value { id, value } => {
 			let result = self.expr(value);
+			let format = self.builder.string(format!("{} %f", self.names[id.0]));
+			self.ext_inst(void, None, debug, DebugPrintFOp::DebugPrintf as u32, [IdRef(format), IdRef(result)]).unwrap();
 			let rtype = self.rtype(value);
 			assert!(self.values[id.0].replace((rtype,result)).is_none());
 		},
@@ -131,6 +137,7 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	b.capability(Capability::Shader); b.capability(Capability::VulkanMemoryModel);
 	if ast.input.contains(&ast::Type::F64) { b.capability(Capability::Float64); }
 	b.memory_model(AddressingModel::Logical, MemoryModel::Vulkan);
+	b.extension("SPV_KHR_non_semantic_info");
 	let void = b.type_void();
 	let u32 = b.type_int(32, 0);
 	let function_void = b.type_function(void, vec![]);
@@ -138,8 +145,10 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 	let local_size = b.spec_constant_u32(u32, 1);
 	b.decorate(local_size, SpecId, [0u32.into()]);
 	let u32_1 = b.constant_u32(u32, 1);
-	b.execution_mode_id(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
+	//b.execution_mode_id(f, ExecutionMode::LocalSizeId, [local_size, u32_1, u32_1]);
+	b.execution_mode(f, ExecutionMode::LocalSize, [1, 1, 1]);
 	let gl = b.ext_inst_import("GLSL.std.450");
+	let debug = b.ext_inst_import("NonSemantic.DebugPrintf");
 	let v3u = b.type_vector(u32, 3);
 	let workgroup_size = b.spec_constant_composite(v3u, [local_size, u32_1, u32_1]);
 	b.decorate(workgroup_size, BuiltIn, [Operand::BuiltIn(BuiltIn::WorkgroupSize)]);
@@ -211,8 +220,11 @@ pub fn compile(constants_len: usize, ast: &ast::Function) -> Result<Box<[u32]>, 
 		let input = b.access_chain(storage_buffer_pointer, None, input, [index0, id]).unwrap();
 		(rtype, b.load(stype, None, input, Some(MemoryAccess::NONTEMPORAL), []).unwrap())
 	});
-	let mut b = Builder{builder: b, gl, values: list(constant_values.into_vec().into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
-																	constants_f32: default(), constants_f64: default(), /*expressions: default(), names: &ast.values*/};
+	let mut b = Builder{
+		builder: b,
+		gl, debug,
+		values: list(constant_values.into_vec().into_iter().chain(input_values.into_vec()).map(Some).chain((ast.input.len()..ast.values.len()).map(|_| None))),
+		constants_f32: default(), constants_f64: default(), /*expressions: default(),*/ names: &ast.values};
 	for s in &*ast.statements { b.extend(s); }
 	for (expr, &(rtype, output)) in ast.output.iter().zip(&*output) {
 		let value = b.expr(expr);

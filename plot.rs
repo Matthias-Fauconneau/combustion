@@ -11,10 +11,8 @@ fn main() -> Result<()> {
 	let model = yaml::parse(&model);
 	let (species_names, ref species, active, reactions, ref _state) = new(&model);
 	let rates = reaction::rates(&species.molar_mass, &species.thermodynamics, &reactions, &species_names);
-	#[cfg(not(feature="f32"))] type T = f64;
-	#[cfg(feature="f32")] type T = f32;
 	let block_size = 1;
-	let rates = assemble::<T>(rates, block_size);
+	let rates = assemble(rates, block_size);
 
 	let State{pressure_R, volume, temperature, ..} = initial_state(&model);
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
@@ -29,14 +27,12 @@ fn main() -> Result<()> {
 
 	//let mut evaluations = 0;
 	#[cfg(not(feature="vpu"))] let mut f = {
-		let rates = move |constants, inputs| Ok(map(&*f(&map(constants, |x| *x as _), &map(&*inputs, |x| &**x))?, |y| all_same(y, times)));
-		//with_repetitive_input(rates, 1);
 		let mut input = input;
 		move |u: &[T], f_u: &mut [T]| {
 			assert!(u[0]>200.);
 			assert!(u.iter().all(|u| u.is_finite()));
-			input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
-			f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
+			for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+			f_u.copy_from_slice(&map(&*rates(&[pressure_R as _, (1./pressure_R) as _], &map(&*input, |x| &**x)).unwrap(), |y| all_same(y, states_len)));
 			assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
 			//evaluations += 1;
 			true
@@ -51,19 +47,21 @@ fn main() -> Result<()> {
 		device.bind(pipeline.descriptor_set, &buffers)?;
 		let mut input = map(input.iter_mut(), |array| array.map_mut(device).unwrap());
 		let output = map(&*output, |array| array.map(device).unwrap());
-		let constants : [T; 2] = [pressure_R as _, (1./pressure_R) as _];
+		let constants : [f32; 2] = [pressure_R as _, (1./pressure_R) as _];
 		let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
-		move |u: &[T], f_u: &mut [T]| {
+		move |u: &[f32], f_u: &mut [f32]| {
 			//use itertools::Itertools;
 			//println!("{:3} {:.2e}", "u", u.iter().format(", "));
-			assert!(u[0]>200.);
+			assert!(u[0]>200. && u[0] < 3000., "{u:?}");
 			assert!(u.iter().all(|u| u.is_finite()));
 			//input[..2+active].copy_from_slice(u); // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
 			//f_u.copy_from_slice(&rates(&[pressure_R as _, (1./pressure_R) as _], &input).unwrap());
 			for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
+			println!("{u:?} {f_u:?}");
 			device.submit_and_wait(command_buffer).unwrap(); // constant constants
 			for (output, f_u) in zip(&*output, f_u.iter_mut()) { *f_u = output[0]; }
 			assert!(f_u.iter().all(|u| u.is_finite()), "{u:?} {f_u:?}");
+			assert!(num::abs(f_u[0]) < 1., "{u:?} {f_u:?}");
 			//evaluations += 1;
 			//println!("{:3} {:.2e}", "f_u", f_u.iter().format(", "));
 			true
@@ -72,8 +70,8 @@ fn main() -> Result<()> {
 
 	//let mut integrator = cvode::CVODE::new(/*relative_tolerance:*/ 1e-4, /*absolute_tolerance:*/ 1e-7, &state)
 	let mut integrator = {
-		struct Explicit<F: FnMut(&[T], &mut [T])->bool> { f_u: Box<[T]>, _marker: std::marker::PhantomData<F> }
-		impl<F: FnMut(&[T], &mut [T])->bool> Explicit<F> {
+		struct Explicit<F: FnMut(&[f32], &mut [f32])->bool> { f_u: Box<[f32]>, _marker: std::marker::PhantomData<F> }
+		impl<F: FnMut(&[f32], &mut [f32])->bool> Explicit<F> {
 			pub fn step(&mut self, f: &mut F, dt: f32, u: &mut [f32]) -> f32 {
 				f(&map(&*u,|&u| u as _), &mut self.f_u);
 				for (u, &f_u) in zip(u.iter_mut(), &*self.f_u) { *u += dt*f_u as f32; }

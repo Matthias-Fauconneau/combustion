@@ -1,4 +1,4 @@
-#![feature(associated_type_bounds,in_band_lifetimes,default_free_fn)]
+#![feature(associated_type_bounds, in_band_lifetimes, default_free_fn, format_args_capture)]
 use {std::default::default, fehler::throws, anyhow::Error};
 use std::{mem::size_of, ffi::CStr};
 use ash::{*, vk::*, extensions::ext::DebugUtils};
@@ -25,19 +25,29 @@ impl Device {
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(&InstanceCreateInfo::builder()
 				.application_info(&ApplicationInfo::builder().api_version(make_api_version(0, 1, 2, 0)).application_name(main).application_version(0).engine_name(main))
-				//.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
+				.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
-				//.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
+				.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
 				, None)?;
 			let debug_utils = DebugUtils::new(&entry, &instance);
 			unsafe extern "system" fn vulkan_debug_callback(severity: DebugUtilsMessageSeverityFlagsEXT, r#type: DebugUtilsMessageTypeFlagsEXT, data: *const DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> Bool32 {
 				let data = *data;
-				println!("{:?}:\n{:?} [{:?} ({})] : {:?}\n", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)), data.message_id_number, Some(data.p_message).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)) );
+				if severity == DebugUtilsMessageSeverityFlagsEXT::INFO &&
+						r#type == DebugUtilsMessageTypeFlagsEXT::VALIDATION &&
+						CStr::from_ptr(data.p_message_id_name).to_str().unwrap() == "UNASSIGNED-DEBUG-PRINTF"
+				{
+					let message = CStr::from_ptr(data.p_message).to_str().unwrap();
+					let [_, _, message]:[&str;3] = *{let t:Box<_> = message.split(" | ").collect::<Box<_>>().try_into().unwrap(); t};
+					if let Some(message) = message.strip_suffix("nan") { panic!("{message}"); }
+					println!("{message}");
+				} else if severity != DebugUtilsMessageSeverityFlagsEXT::VERBOSE && severity != DebugUtilsMessageSeverityFlagsEXT::INFO {
+					println!("{:?}:\n{:?} [{:?} ({})] : {:?}\n", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)), data.message_id_number, Some(data.p_message).filter(|p| !p.is_null()).map(|p| CStr::from_ptr(p)) );
+				}
 				FALSE
 			}
 
 			let _debug_utils_messenger = debug_utils.create_debug_utils_messenger(&DebugUtilsMessengerCreateInfoEXT{
-				message_severity: DebugUtilsMessageSeverityFlagsEXT::ERROR|DebugUtilsMessageSeverityFlagsEXT::WARNING,
+				message_severity: DebugUtilsMessageSeverityFlagsEXT::all(),
 				message_type: DebugUtilsMessageTypeFlagsEXT::all(), pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?;
 
 			let device = *instance.enumerate_physical_devices()?.first().unwrap();
@@ -72,7 +82,7 @@ pub fn as_u8<T>(slice: &[T]) -> &[u8] { unsafe{std::slice::from_raw_parts(slice.
 
 pub trait Plain: Copy {}
 impl Plain for f32 {}
-impl Plain for f64 {}
+//impl Plain for f64 {}
 impl<T:Plain> Buffer<T> {
 	#[throws] pub fn map(&'t self, device: &'t Device) -> Map<T> {
 		Map{device, memory: &self.memory, map: unsafe { std::slice::from_raw_parts(device.map_memory(self.memory, 0, (self.len * size_of::<T>()) as u64, default())? as *const T, self.len)} }

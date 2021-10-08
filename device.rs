@@ -1,51 +1,38 @@
 use {anyhow::Result, iter::map};
 type Output<T> = Result<Box<[Box<[T]>]>>;
-pub trait Convert { fn convert(f: ast::Function) -> ast::Function; }
-impl Convert for f64 { fn convert(f: ast::Function) -> ast::Function { f } }
-/*impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
-	use {ast::*, Expr::*};
-	f.input = vec![Type::F32; f.input.len()].into();
-	fn demote(e: &mut Expression) {
-		if let Expression::Expr(F64(x)) = e { *e = f32(f64::from(*x) as _).expect(&format!("{:e} overflows f32, retry with f64",f64::from(*x))).into() }
-		else { e.visit_mut(demote); }
-	}
-	for s in &mut *f.statements { use Statement::*; match s {
-		Value{value,..} => demote(value),
-		Select { condition, true_exprs, false_exprs, .. } => {
-			demote(condition);
-			for e in &mut **true_exprs { demote(e); }
-			for e in &mut **false_exprs { demote(e); }
-		}
-	}}
-	for e in &mut *f.output { demote(e); }
-	f
-}}*/
-impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
+#[cfg(not(feature="f32"))] fn convert(f: ast::Function) -> ast::Function { f }
+#[cfg(feature="f32")] fn convert(mut f: ast::Function) -> ast::Function {
 	use ast::*;
-	f.input = vec![Type::F32; f.input.len()].into();
-	fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
-	fn promote_input(input_len: usize, e: &mut Expression) {
-		if let Expression::Expr(Expr::Value(Value(id))) = e { if *id < input_len { replace_with(e, |e| fpromote(e)); } }
-		else { e.visit_mut(|e| promote_input(input_len, e)); }
-	}
+	//fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
+	fn visit(_input_len: usize, e: &mut Expression) { match e {
+		//Expression::Expr(Expr::Value(Value(id))) => { if *id < _input_len { replace_with(e, |e| fpromote(e)); } },
+		Expression::Expr(Expr::F64(x)) => { *e = f32(f64::from(*x) as _).expect(&format!("{:e} overflows f32, retry with f64",f64::from(*x))).into(); } // Demote constants
+		//else if let Expression::Expr(Expr::F64(x)) = e { *e = f64(f64::from(*x) as f32 as f64).unwrap().into(); } // Round constants*/
+		/*Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
+		Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(stype, None, a, b).unwrap() }
+		LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
+		Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(stype, None, a, b).unwrap() }
+		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(stype, None, a, b).unwrap() }*/
+		_ => { e.visit_mut(|e| visit(_input_len, e)); }
+	}}
 	for s in &mut *f.statements { use Statement::*; match s {
-		Value{value,..} => promote_input(f.input.len(), value),
+		Value{value,..} => visit(f.input.len(), value),
 		Select { condition, true_exprs, false_exprs, .. } => {
-			promote_input(f.input.len(), condition);
-			for e in &mut **true_exprs { promote_input(f.input.len(), e); }
-			for e in &mut **false_exprs { promote_input(f.input.len(), e); }
+			visit(f.input.len(), condition);
+			for e in &mut **true_exprs { visit(f.input.len(), e); }
+			for e in &mut **false_exprs { visit(f.input.len(), e); }
 		}
 	}}
-	for e in &mut *f.output { replace_with(e, |mut e| { promote_input(f.input.len(), &mut e); fdemote(e) }); }
+	for e in &mut *f.output { visit(f.input.len(), e); /*replace_with(e, |mut e| { fdemote(e) });*/ }
 	f
-}}
+}
 
 #[cfg(not(feature="vpu"))] mod device {
 	use {std::default::default, iter::{list, map}, ast::*, super::*};
-	#[cfg(not(feature="interpret"))] pub trait Convert = super::Convert;
-	#[cfg(feature="interpret")] pub trait Convert = super::Convert+Into<interpret::DataValue>+From<interpret::DataValue>;
-	pub fn assemble<'t, T:'t+Copy+Default+Convert>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
-		let function = T::convert(function);
+	#[cfg(not(feature="interpret"))] pub trait Interpret = Sized;
+	#[cfg(feature="interpret")] pub trait Interpret = Into<interpret::DataValue>+From<interpret::DataValue>;
+	pub fn assemble<'t, T:'t+Copy+Default+Interpret>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
+		let function = convert(function);
 		let input_len = function.input.len();
 		let output_len = function.output.len();
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));
@@ -70,17 +57,16 @@ impl Convert for f32 { fn convert(mut f: ast::Function) -> ast::Function {
 	}
 }
 #[cfg(feature="vpu")] mod device {
-use {std::{default::default, mem::size_of, borrow::Borrow, marker::PhantomData}, iter::{list, map}, vulkan::*, super::*};
-pub struct Function<D: Borrow<Device>, T:Plain> {
+use {std::{default::default, mem::size_of, borrow::Borrow}, iter::{list, map}, vulkan::*, super::*};
+pub struct Function<D: Borrow<Device>> {
 	pub device: D,
 	input_len: usize,
 	pub output_len: usize,
 	pub block_size: usize,
 	pub pipeline: Pipeline,
-	_marker: PhantomData<T>,
 }
-pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D,T>, constants: &[T], input: &[&[T]]) -> Output<T> {
-	assert!((size_of::<T>() == 4 || size_of::<T>() == 8) && constants.len() <= 2 && constants.len()+input.len() == *input_len);
+pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, device, block_size, pipeline,..}: &Function<D>, constants: &[T], input: &[&[T]]) -> Output<T> {
+	assert!(size_of::<T>() == 4 && constants.len() <= 2 && constants.len()+input.len() == *input_len);
 	let states_len = input[0].len();
 	let device = device.borrow();
 	let input = map(&*input, |array| Buffer::new(device, array).unwrap());
@@ -95,22 +81,32 @@ pub fn call<D: Borrow<Device>, T:Plain+Default>(Function{input_len, output_len, 
 	Ok(map(&*output, |array| (*array.map(device).unwrap()).into()))
 }
 
-pub fn assemble<T:Plain+Convert>(function: ast::Function, block_size: usize) -> Function<Device, T> {
-	let function = T::convert(function);
+pub fn assemble(function: ast::Function, block_size: usize) -> Function<Device> {
+	let function = convert(function);
+	assert!(function.input.iter().all(|&t| t==ast::Type::F32));
+	let output_types = {
+		let mut types = ast::Types(function.input.iter().copied().map(Some).chain((function.input.len()..function.values.len()).map(|_| None)).collect());
+		for s in &*function.statements { types.push(s); }
+		map(&*function.output, |output| {
+			types.expr(output);
+			types.rtype(output)
+		})
+	};
+	assert!(output_types.iter().all(|&t| t==ast::Type::F32));
 	let device = vulkan::Device::new().unwrap();
 	let constants_len = 2;
 	let pipeline = device.pipeline(
 		&spirv::compile(constants_len, &function).unwrap(),
 		block_size as u32,
-		constants_len*size_of::<T>(),
+		constants_len*size_of::<f32>(),
 		function.input.len()-constants_len+function.output.len()
 	).unwrap();
-	Function{device, input_len: function.input.len(), output_len: function.output.len(), block_size, pipeline, _marker: PhantomData}
+	Function{device, input_len: function.input.len(), output_len: function.output.len(), block_size, pipeline}
 }
 
-impl<D: Borrow<Device>, T:Plain+Default> FnOnce<(&[T], &[&[T]])> for Function<D,T> { type Output = self::Output<T>; extern "rust-call" fn call_once(mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call_mut(args) } }
-impl<D: Borrow<Device>, T:Plain+Default> FnMut<(&[T], &[&[T]])> for Function<D,T> { extern "rust-call" fn call_mut(&mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call(args) } }
-impl<D: Borrow<Device>, T:Plain+Default> Fn<(&[T], &[&[T]])> for Function<D,T> { extern "rust-call" fn call(&self, (constants, input): (&[T], &[&[T]])) -> Self::Output { call(&self, constants, input) } }
+impl<D: Borrow<Device>, T:Plain+Default> FnOnce<(&[T], &[&[T]])> for Function<D> { type Output = self::Output<T>; extern "rust-call" fn call_once(mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call_mut(args) } }
+impl<D: Borrow<Device>, T:Plain+Default> FnMut<(&[T], &[&[T]])> for Function<D> { extern "rust-call" fn call_mut(&mut self, args: (&[T], &[&[T]])) -> Self::Output { self.call(args) } }
+impl<D: Borrow<Device>, T:Plain+Default> Fn<(&[T], &[&[T]])> for Function<D> { extern "rust-call" fn call(&self, (constants, input): (&[T], &[&[T]])) -> Self::Output { call(&self, constants, input) } }
 }
 pub use device::*;
 #[allow(dead_code)] pub fn all_same<T:PartialEq+Copy+std::fmt::Debug>(array:&[T], times: usize) -> T { assert!(array.len() == times); for &v in array { assert_eq!(v, array[0]); } array[0] }
