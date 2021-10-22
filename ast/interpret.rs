@@ -29,18 +29,21 @@ fn to_string(state: &State, expr: &Expr) -> String {
 		F64(x) => x.to_string(),
 		Value(id) => format!("{} = {}", state.debug[id.0], state.values[id.0]),
 		Neg(x) => format!("-{}", to_string(state, x)),
-		Add(a, b) => format!("{} + {}", to_string(state, a), to_string(state, b)),
-		Sub(a, b) => format!("{} - {}", to_string(state, a), to_string(state, b)),
+		Add(a, b) => format!("({}) + ({})", to_string(state, a), to_string(state, b)),
+		Sub(a, b) => format!("({}) - ({})", to_string(state, a), to_string(state, b)),
 		Mul(a, b) => format!("({}) * ({})", to_string(state, a), to_string(state, b)),
 		Div(a, b) => format!("({}) / ({})", to_string(state, a), to_string(state, b)),
 		Exp(x) => format!("exp({})", to_string(state, x)),
+		Ln{x,..} => format!("ln({})", to_string(state, x)),
+		Min(a, b) => format!("min({}, {})", to_string(state, a), to_string(state, b)),
+		Max(a, b) => format!("max({}, {})", to_string(state, a), to_string(state, b)),
 		e => panic!("{:?}", e),
 	}
 }
 
 impl DataValue {
 	fn is_valid(&self) -> bool { match self {
-		Self::F32(x) => x.is_finite(),
+		Self::F32(x) => !x.is_nan(), //x.is_finite(),
 		Self::F64(x) => !x.is_nan(), //x.is_finite(),
 		_ => true,
 	} }
@@ -115,6 +118,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 				let result= eval(state, expression);
 				assert!(state[id.0] == DataValue::None);
 				assert!(result.is_valid() /*&& f32::abs(x)<1e28*/, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression));
+				println!("{} = {} = {result}", state.debug[id.0], to_string(state, expression));
 				state[id.0] = result;
 			},
 			Select { condition, true_exprs, false_exprs, results } => {

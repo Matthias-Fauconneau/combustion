@@ -47,9 +47,9 @@ fn mul(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fmul(a, b) }
 //fn fma(a: Value, b: Value, c: Value, f: &mut Builder) -> Value { add(mul(a, b, f), c, f) }
 fn div(a: Value, b: Value, f: &mut Builder) -> Value { f.ins().fdiv(a, b) }
 fn sqrt(x: Value, f: &mut Builder) -> Value { f.ins().sqrt(x) }
-/*fn fpromote(x: Value, f: &mut Builder) -> Value { f.ins().fpromote(F64, x) }
+fn fpromote(x: Value, f: &mut Builder) -> Value { f.ins().fpromote(F64, x) }
 fn fdemote(x: Value, f: &mut Builder) -> Value { f.ins().fdemote(F32, x) }
-fn fcvt_to_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_to_sint(I32, x) }
+/*fn fcvt_to_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_to_sint(I32, x) }
 fn fcvt_from_sint(x: Value, f: &mut Builder) -> Value { f.ins().fcvt_from_sint(F32, x) }*/
 fn store(value: Value, base: Value, index: usize, f: &mut Builder) { f.ins().store(MemFlags::trusted(), value, base, (index*std::mem::size_of::<f32>()) as i32); }
 
@@ -118,9 +118,9 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 		Neg(x)/*|IShLImm(x,_)|UShRImm(x,_)*/|Sqrt(x)|Sq(x) => self.pass(x),
 		Exp(x) => {self.pass(x); exp_approx_constants(self); ast::Type::F32}, //self.inline_pass(x, exp_approx),
 		Ln{x0,x} => {self.pass(x); ln_approx_constants(**x0, self); ast::Type::F32},  //self.inline_pass(x, |x,f| ln_approx(**x0, x, f)),
-		/*FPromote(x) => { self.pass(x); ast::Type::F64 },
+		FPromote(x) => { self.pass(x); ast::Type::F64 },
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
-		FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
+		/*FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
 		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
 		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?}"); a },
 		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
@@ -167,9 +167,9 @@ fn expr(&mut self, e: &Expression) -> Value {
 		//MulAdd(a, b, c) => fma(self.expr(a), self.expr(b), self.expr(c), self),
 		Div(a, b) => div(self.expr(a), self.expr(b), self),
 		Sqrt(x) => sqrt(self.expr(x), self),
-		/*FPromote(x) => fpromote(self.expr(x), self),
+		FPromote(x) => fpromote(self.expr(x), self),
 		FDemote(x) => fdemote(self.expr(x), self),
-		FCvtToSInt(x) => fcvt_to_sint(self.expr(x), self),
+		/*FCvtToSInt(x) => fcvt_to_sint(self.expr(x), self),
 		FCvtFromSInt(x) => fcvt_from_sint(self.expr(x), self),*/
 		Exp(x) => exp_approx(self.expr(x), self), //self.inline_expr(x, exp_approx),
 		Ln{x0,x} => ln_approx(**x0, self.expr(x), self), //self.inline_expr(x, |x,f| ln_approx(**x0, x, f)),

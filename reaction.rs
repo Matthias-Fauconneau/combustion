@@ -226,12 +226,24 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 	fn get(cache: &mut Box<[Option<Value>]>, k: usize, x: (&mut impl FnMut(usize,&mut Block)->Expression, &str), f: &mut Block) -> Value {
 		*cache[k].get_or_insert_with(|| { let e = x.0(k,f); f.def(e, format!("{}{k}",x.1))})
 	}
+	fn max() -> f32 {
+		let mut max = f32::cbrt(f32::MAX);
+		while max*max*max > f32::MAX {
+			use float_next_after::NextAfter;
+			max = max.next_after(f32::NEG_INFINITY);
+		}
+		max
+	}
 	impl Cache {
 		fn exp(&mut self, k: usize, (mut x,name): (impl Fn(usize,&mut Block)->Expression, &str), f: &mut Block) -> Value {
-			get(&mut self.exp, k, (&mut |k,f| exp(get(&mut self.x,k,(&mut x, name),f), f), &format!("exp{}",name)), f)
+			get(&mut self.exp, k, (&mut |k,f|
+				min(max() as f64, exp(get(&mut self.x,k,(&mut x, name),f), f)) // Saturates to MAX^⅓ to resolve (max^3).0 as 0
+				, &format!("exp{}",name)), f)
 		}
 		fn exp_neg(&mut self, k: usize, (mut x,name): (impl Fn(usize,&mut Block)->Expression, &str), f: &mut Block) -> Value {
-			get(&mut self.exp_neg, k, (&mut |k,f| exp(-get(&mut self.x,k,(&mut x, name),f), f), &format!("exp_neg{}",name)), f)
+			get(&mut self.exp_neg, k, (&mut |k,f|
+				min(f32::cbrt(f32::MAX) as f64, exp(-get(&mut self.x,k,(&mut x, name),f), f)) // Saturates to MAX^⅓ to resolve (max^3).0 as 0
+				, &format!("exp_neg{}",name)), f)
 		}
 	}
 	let mut cache = Cache{

@@ -1,10 +1,9 @@
-package={name='combustion', description='Chemical reaction kinetics and species transport properties', version='0.0.0', edition='2021', default-run='cuda'}
+package={name='combustion', description='Chemical reaction kinetics and species transport properties', version='0.0.0', edition='2021', default-run='cantera'}
 lib={path='lib.rs'}
 bin=[
 	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['main','plot']},
-	{name='cuda', path='cuda.rs', required-features=['main']},
-	{name='info', path='info.rs', required-features=['main']},
+#	{name='cuda', path='cuda.rs', required-features=['main']},
 ]
 
 [features]
@@ -35,6 +34,7 @@ yaml={optional=true, version='*', package='yaml-rust'}
 #pest_derive={optional=true, version='*' }
 #pest={optional=true, version='*' }
 float-pretty-print='*'
+float_next_after='*'
 ast={path='ast'}
 rand={optional=true, version='*'}
 nalgebra={optional=true, version='*'}

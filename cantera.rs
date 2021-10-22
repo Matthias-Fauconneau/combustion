@@ -3,7 +3,7 @@
 mod yaml; mod device;
 use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
-	let path = std::env::args().skip(1).next().unwrap_or("gri30".to_string());
+	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
@@ -32,11 +32,9 @@ fn main() -> Result<()> {
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
-	#[cfg(not(feature="f32"))] type T = f64;
-	#[cfg(feature="f32")] type T = f32;
 	#[cfg(not(feature="transport"))] let rates = {
 		let rates = reaction::rates(molar_mass, thermodynamics, &reactions, species_names);
-		with_repetitive_input(assemble::<T>(rates, 1), 1)
+		with_repetitive_input(assemble::<f32>(rates, 1), 1)
 	};
 
 	#[cfg(feature="transport")] let transport = {
@@ -79,7 +77,7 @@ fn main() -> Result<()> {
 		unsafe{thermo_setPressure(phase, pressure_R * R)}; // /!\ Needs to be set after mole fractions
 
 		let ref nonbulk_amounts = amounts[0..amounts.len()-1];
-		//let ref nonbulk_amounts = map(nonbulk_amounts, |&n| n as _);
+		let ref nonbulk_amounts = map(nonbulk_amounts, |&n| n as f32);
 		#[cfg(feature="transport")] {
 			#[link(name = "cantera")] extern "C" {
 				fn trans_newDefault(th: i32, loglevel: i32) -> i32;
@@ -129,7 +127,7 @@ fn main() -> Result<()> {
 				if m < 4e3 { return 0.; }
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			}*/;
-			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount as _, *temperature as _], &*nonbulk_amounts].concat()))? else { panic!() };
+			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount as f32, *temperature as _] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
 				let (k, e)= rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
@@ -190,9 +188,10 @@ fn main() -> Result<()> {
 			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%1000==0 { println!("{i}") }
 		}
 	} else {
-			let (_, e) = test(&state)?;
-			println!("{e:e}");
-			assert!(e < 1e-7, "{e:e}");
+		println!("{state:?}");
+		let (_, e) = test(&state)?;
+		println!("{e:e}");
+		assert!(e < 1e-2, "{e:e}");
 	}
 	Ok(())
 }
