@@ -160,7 +160,7 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 		let (active, inert) : (Vec<_>, _) = species.to_vec().into_iter().partition(|(specie,_)| reactions.iter().any(|Reaction{equation,..}| equation[0].get(specie).unwrap_or(&0) != equation[1].get(specie).unwrap_or(&0)));
 		[&*active, &*inert].concat().into_boxed_slice()
 	};
-	let initial = list("HE AR N2 CO2 H2 O2 CO CH2O CH4 C2H6 C2H4 C2H2 C3H6 pC3H4 aC3H4 1-C4H8 2-C4H8 i-C4H8 1,3-C4H6 C4H4 C4H2 C6H6 C7H8 H2O2 CH3OH CH3CHO C2H5OH CH3OCH3 C3H8 n-C4H10 i-C4H10".split(' '));
+	let initial = list("HE AR N2 CO2 H2 O2 CO CH2O CH4 C2H6 C2H4 C2H2 C3H6 pC3H4 aC3H4 1-C4H8 2-C4H8 i-C4H8 1,3-C4H6 C4H4 C4H2 C6H6 C7H8 CH3OH CH3CHO C2H5OH CH3OCH3 C3H8 n-C4H10 i-C4H10".split(' '));
 	Model{
 		state: State{volume: 1., temperature: 1000., pressure: 101325., amount_proportions: map(&*species, |(name,_)| (*name,
 			if initial.contains(name) { 1. } else { 0. }))},

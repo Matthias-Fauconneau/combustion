@@ -131,11 +131,13 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 			(activation_temperature != 0.).then(|| f.def((-activation_temperature) * rcpT, "-Ea/kT"))
 		].into_iter().filter_map(|x| x))
 		.map(|x| {let e=exp(x, f); f.def(e, "exp(β'lnT-Ea/kT)").into()});
-	Π([
+		//.map(|x| {let e=min(f32::MAX as f64, exp(x, f)); f.def(e, "exp(β'lnT-Ea/kT)").into()}); // Saturates to MAX to resolve any inf-inf in dT_T to an arbitrary finite value
+	let k = Π([
 		Some(f64(A).unwrap_or_else(|x| {/*println!("A:{A:e}");*/ x}) /* * f64::powf(T0, temperature_exponent_remainder)*/),
 		temperature_factor.map(|x| x.into()),
 		exp
-	]).unwrap().expr()
+	]).unwrap();
+	min(f32::MAX as f64, k).expr() // Saturates to MAX to resolve any k*0 to 0
 }
 
 fn efficiency(efficiencies: &[f64], concentration: Value, concentrations: &[Value], f: &mut Block) -> Expression {

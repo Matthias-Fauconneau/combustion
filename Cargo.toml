@@ -9,7 +9,6 @@ bin=[
 [features]
 myaml=['yaml']#,'pest_derive','pest'] #dep:yaml
 interpret=['ast/interpret']
-f32=[]
 main=['myaml','itertools','anyhow','color-backtrace']
 transport=['nalgebra']
 vpu=['spirv','vulkan','anyhow','libc']

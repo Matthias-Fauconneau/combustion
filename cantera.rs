@@ -62,9 +62,8 @@ fn main() -> Result<()> {
 		}
 	};
 
-	let ε= 2e-6;
-	#[cfg(feature="f32")] let ε = f64::max(ε, 6e-4);
-	#[cfg(feature="ir")] let ε = f64::max(ε, 5e-2);
+	let ε= 1e-3;
+	#[cfg(feature="ir")] let ε = f64::max(ε, 1e-2);
 
 	let test = move |state: &State| -> Result<_> {
 		let State{temperature, pressure_R, amounts, ..} = state;
@@ -167,31 +166,33 @@ fn main() -> Result<()> {
 			}
 		}
 	};
-	if false {
+	if true {
 		let mut random= rand::thread_rng();
 		let mut max = 0.;
+		let start = std::time::Instant::now();
 		for i in 0.. {
 			assert!(state.volume == 1.);
 			let volume = state.volume;
 			use rand::Rng;
-			let temperature = random.gen_range(1000. .. 2800.);
-			let pressure = random.gen_range(0. .. 1e5);
+			let temperature = random.gen_range(1000. .. 2700.);
+			let pressure = random.gen_range(1000. .. 1e5);
 			let pressure_R = pressure/R; //random.gen_range(0. .. 10e6)/R;
 			let total_amount = pressure_R * volume / temperature;
-			let amount_proportions = map(0..species.len(), |_| random.gen());
+			let amount_proportions = map(&**amounts, |&x| random.gen::<f64>() * if x != 0. { 1. } else { 1e-17 });
 			let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 			let amount_fractions = map(&*amounts, |n| n/total_amount);
+			//println!("T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}]", amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
 			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
 			let k = species_names[k];
 			assert!(e < ε, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
-				amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
-			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%1000==0 { println!("{i}") }
+				amount_fractions=zip(&**species_names, amount_fractions.iter()).format_with(", ",|(specie,e),f| f(&format_args!("{specie}:{:.0}%", e*100.))));
+			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100000==0 { println!("{i} {max:.0e} {:.0}K/s", (i as f64/1000.)/start.elapsed().as_secs_f64()) }
 		}
 	} else {
 		println!("{state:?}");
 		let (_, e) = test(&state)?;
 		println!("{e:e}");
-		assert!(e < 1e-2, "{e:e}");
+		assert!(e < 2e-3, "{e:e}");
 	}
 	Ok(())
 }

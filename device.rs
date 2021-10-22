@@ -1,18 +1,9 @@
 use {anyhow::Result, iter::map};
 type Output<T> = Result<Box<[Box<[T]>]>>;
-#[cfg(not(feature="f32"))] fn convert(f: ast::Function) -> ast::Function { f }
-#[cfg(feature="f32")] fn convert(mut f: ast::Function) -> ast::Function {
+fn convert(mut f: ast::Function) -> ast::Function {
 	use ast::*;
-	//fn replace_with<T, F: FnOnce(T) -> T>(x: &mut T, f: F) {unsafe{std::ptr::write(x, f(std::ptr::read(x)))}}
 	fn visit(_input_len: usize, e: &mut Expression) { match e {
-		//Expression::Expr(Expr::Value(Value(id))) => { if *id < _input_len { replace_with(e, |e| fpromote(e)); } },
 		Expression::Expr(Expr::F64(x)) => { *e = f32(f64::from(*x) as _).expect(&format!("{:e} overflows f32, retry with f64",f64::from(*x))).into(); } // Demote constants
-		//else if let Expression::Expr(Expr::F64(x)) = e { *e = f64(f64::from(*x) as f32 as f64).unwrap().into(); } // Round constants*/
-		/*Add(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_add(stype, None, a, b).unwrap() }
-		Sub(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_sub(stype, None, a, b).unwrap() }
-		LessOrEqual(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_ord_less_than_equal(bool, None, a, b).unwrap() }
-		Mul(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_mul(stype, None, a, b).unwrap() }
-		Div(a, b) => { let [a,b] = [a,b].map(|x| self.expr(x)); self.f_div(stype, None, a, b).unwrap() }*/
 		_ => { e.visit_mut(|e| visit(_input_len, e)); }
 	}}
 	for s in &mut *f.statements { use Statement::*; match s {
@@ -23,7 +14,7 @@ type Output<T> = Result<Box<[Box<[T]>]>>;
 			for e in &mut **false_exprs { visit(f.input.len(), e); }
 		}
 	}}
-	for e in &mut *f.output { visit(f.input.len(), e); /*replace_with(e, |mut e| { fdemote(e) });*/ }
+	for e in &mut *f.output { visit(f.input.len(), e); }
 	f
 }
 
