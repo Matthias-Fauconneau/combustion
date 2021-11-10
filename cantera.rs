@@ -4,9 +4,9 @@ mod yaml; mod device;
 use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
-	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
-	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
-	let model = yaml::parse(&model);
+	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
+	let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
+	let model = yaml::parse(&yaml);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, reactions, ref state@State{ref amounts, temperature, pressure_R, ..}) = new(&model);
 	let _ = (amounts, temperature, pressure_R);
 	eprintln!("{}", zip(&**amounts,&**species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));

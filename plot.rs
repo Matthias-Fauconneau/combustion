@@ -6,7 +6,7 @@ mod device;
 use {std::iter::zip, anyhow::Result, iter::map, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
-	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
+	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
 	let model = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&model);
 	let (species_names, ref species, active, reactions, ref _state) = new(&model);
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 	//let mut evaluations = 0;
 	#[cfg(not(feature="vpu"))] let mut f = {
 		let mut input = input;
-		move |u: &[T], f_u: &mut [T]| {
+		move |u: &[f32], f_u: &mut [f32]| {
 			assert!(u[0]>200.);
 			assert!(u.iter().all(|u| u.is_finite()));
 			for (input, &u) in zip(input[..2+active].iter_mut(), u) { input[0] = u; } // T, V, active, non bulk inert (non bulk inerts are input parameters but not reaction state)
@@ -110,7 +110,8 @@ fn main() -> Result<()> {
 		let [sets_0, sets_1] = *std::convert::TryInto::<Box<[_;2]>>::try_into(sets).unwrap();
 		(t as f64, vec![sets_0, map(&*select, |&k| sets_1[k])].into_boxed_slice())
 	});
-	let mut plot = ui::plot::Plot::new(vec![&["T","V"] as &[_], &species_names].into_boxed_slice(), values.to_vec());
+	let keys = vec![&["T","V"] as &[_], &species_names];
+	let mut plot = ui::plot::Plot::new(&keys, &values);
 	if true { Ok(ui::app::run(plot)?) }
 	else {
 		let mut target = image::Image::zero((3840, 2160).into());
