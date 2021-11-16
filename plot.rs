@@ -1,9 +1,9 @@
-#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits)]
+#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits,box_patterns)]
 #![allow(non_snake_case,non_upper_case_globals)]
 mod yaml;
 mod device;
 
-use {std::iter::zip, anyhow::Result, iter::map, combustion::*, device::*};
+use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
@@ -14,7 +14,8 @@ fn main() -> Result<()> {
 	let block_size = 1;
 	let rates = assemble(rates, block_size);
 
-	let State{pressure_R, volume, temperature, ..} = initial_state(&model);
+	let state@State{pressure_R, volume, temperature, ..} = initial_state(&model);
+	if false { println!("{}", serde_yaml::to_string(&state)?); }
 	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
 		s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
 	}
@@ -50,7 +51,6 @@ fn main() -> Result<()> {
 		let constants : [f32; 2] = [pressure_R as _, (1./pressure_R) as _];
 		let command_buffer = device.command_buffer(&pipeline, as_u8(&constants), (states_len as u32)/(block_size as u32))?;
 		move |u: &[f32], f_u: &mut [f32]| {
-			//use itertools::Itertools;
 			//println!("{:3} {:.2e}", "u", u.iter().format(", "));
 			assert!(u[0]>200. && u[0] < 3000., "{u:?}");
 			assert!(u.iter().all(|u| u.is_finite()));
@@ -88,30 +88,43 @@ fn main() -> Result<()> {
 		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
-	println!("T {}", state[0]);
+	//eprintln!("T {}", state[0]);
+	eprintln!("T {}", state[0]);
 	let mut min:f32 = 0.;
-	let values = map(0..(0.0004/model.time_step) as usize, |_| {
+	let points = map(0..(0.0004/model.time_step) as usize, |_| {
 		let [temperature, volume, active_amounts@..] = &state[..] else { unreachable!() };
-		let value = ((time-plot_min_time)*1e3, vec![vec![*temperature as f64, (*volume*1e3) as f64].into_boxed_slice(), map(active_amounts, |&v| (v as f32/active_amounts.iter().sum::<f32>()) as f64)].into_boxed_slice());
+		let point = ((time-plot_min_time)*1e3, vec![vec![*temperature as f64, (*volume*1e3) as f64].into_boxed_slice(), map(active_amounts, |&v| (v as f32/active_amounts.iter().sum::<f32>()) as f64)].into_boxed_slice());
 		time += integrator.step(&mut f, model.time_step as f32, &mut state);
 		min = min.min(state[1..].iter().copied().reduce(f32::min).unwrap());
-		value
+		point
 	});
 	//let end = std::time::Instant::now();
 	//let time = (end-start).as_secs_f64();
 	//println!("T {}", state[0]);
 	//println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
 	//println!("{:.0e}", min);
-	let key = map((0..active).map(|k| values.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
+	if true {
+		let H = species_names.iter().position(|&name| name=="H").unwrap();
+		let max_H = points.iter().map(|point|{
+			let (_, box [ box [_, _], ref active_amounts]) = point else { unreachable!() };
+			ordered_float::OrderedFloat(active_amounts[H])
+		}).position_max().unwrap();
+		let point = if false { &points[max_H] } else { points.last().unwrap() };
+		let (_, box [ box [temperature, volume], ref active_amounts]) = point else { unreachable!() };
+		let amounts = [&active_amounts, &amounts[active..]].concat().into_boxed_slice(); // Inerts stays during reaction
+		let state = State{pressure_R, volume: *volume, temperature: *temperature, amounts};
+		println!("{}", serde_yaml::to_string(&state)?);
+	}
+	let key = map((0..active).map(|k| points.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
 	let mut s = map(0..active, |i| i);
-	let (_, _, select) = s.select_nth_unstable_by(species.len()-6, |&a,&b| key[a].partial_cmp(&key[b]).unwrap());
+	let (_, _, select) = s.select_nth_unstable_by(species.len()-5, |&a,&b| key[a].partial_cmp(&key[b]).unwrap());
 	let species_names = map(&*select, |&k| species_names[k]);
-	let values = map(Vec::from(values).into_iter(), |(t, sets)| {
+	let points = map(Vec::from(points).into_iter(), |(t, sets)| {
 		let [sets_0, sets_1] = *std::convert::TryInto::<Box<[_;2]>>::try_into(sets).unwrap();
 		(t as f64, vec![sets_0, map(&*select, |&k| sets_1[k])].into_boxed_slice())
 	});
 	let keys = vec![&["T","V"] as &[_], &species_names];
-	let mut plot = ui::plot::Plot::new(&keys, &values);
+	let mut plot = ui::plot::Plot::new(&keys, &points);
 	if true { Ok(ui::app::run(plot)?) }
 	else {
 		let mut target = image::Image::zero((3840, 2160).into());

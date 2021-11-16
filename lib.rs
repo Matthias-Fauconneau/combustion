@@ -60,7 +60,7 @@ impl Species {
 	pub fn len(&self) -> usize { self.molar_mass.len() }
 }
 
-#[derive(Debug)] pub struct State {
+#[derive(Debug,serde::Serialize)] pub struct State {
     pub pressure_R: f64,
     pub volume: f64,
     pub temperature: f64,

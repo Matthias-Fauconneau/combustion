@@ -118,7 +118,7 @@ fn run(state: &mut State, statements: &[Statement]) {
 				let result= eval(state, expression);
 				assert!(state[id.0] == DataValue::None);
 				assert!(result.is_valid() /*&& f32::abs(x)<1e28*/, "{} = {result}: {expression:?} {}", state.debug[id.0], to_string(state, expression));
-				println!("{} = {} = {result}", state.debug[id.0], to_string(state, expression));
+				//println!("{} = {} = {result}", state.debug[id.0], to_string(state, expression));
 				state[id.0] = result;
 			},
 			Select { condition, true_exprs, false_exprs, results } => {

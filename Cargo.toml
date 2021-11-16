@@ -21,7 +21,7 @@ default=['interpret','main','rand','plot']
 iter={git='https://github.com/Matthias-Fauconneau/iter'}
 ordered-float='*'
 derive_more='*'
-fehler='*'
+fehler={git='https://github.com/withoutboats/fehler'}
 anyhow={optional=true, version='*' }
 serde={version='*', features=['derive']}
 strum='*'
@@ -47,6 +47,7 @@ image={optional=true, git='https://github.com/Matthias-Fauconneau/image'}
 png={optional=true, package= 'image', version='*', default-features=false, features= ['png']}
 libc={optional=true, version='*'}
 cuda= {optional=true, package='rustacuda', git='https://github.com/Matthias-Fauconneau/RustaCuda'}
+serde_yaml= '*'
 
 [patch.'https://github.com/Matthias-Fauconneau/ui']
 ui={optional=true, path='../ui', features= ['plot']}
