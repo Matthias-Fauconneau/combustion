@@ -1,13 +1,20 @@
 #![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
 #![feature(format_args_capture,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,let_else)]
 mod yaml; mod device;
-use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
+use {std::iter::zip, anyhow::Result, iter::{map, Dot}, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
 	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
 	let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&yaml);
-	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, reactions, ref state@State{ref amounts, temperature, pressure_R, ..}) = new(&model);
+	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, _reactions, /*ref state@State{ref amounts, temperature, pressure_R, ..}*/..) = new(&model);
+	let state = State{
+		pressure_R: 101325.0 / R,
+		volume: 1.,
+		temperature: 1556.971923828125,
+		amounts: vec![0.09260429441928864, 0.052496496587991717, 0.7380790114402771, 0.07698292285203934, 0.012342223897576332, 0.02748161181807518, 0.000013450758160615806, 6.392859575043985e-10, 1.880952380952381].into_boxed_slice()
+	};
+	let ref state@State{ref amounts, temperature, pressure_R, ..} = state;
 	let _ = (amounts, temperature, pressure_R);
 	eprintln!("{}", zip(&**amounts,&**species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
 
@@ -30,7 +37,7 @@ fn main() -> Result<()> {
 		unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
 	});
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
-	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
+	let _kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
 	#[cfg(not(feature="transport"))] let rates = {
 		let rates = reaction::rates(molar_mass, thermodynamics, &reactions, species_names);
@@ -53,12 +60,11 @@ fn main() -> Result<()> {
 			(temperature, viscosity, thermal_conductivity)
 		} else { (1., 1., 1.) };
 		let transport = transport::properties::<5>(&species, temperature0, viscosity0, thermal_conductivity0);
-		let transport = with_repetitive_input(assemble::<T>(transport, 1), 1);
+		let transport = with_repetitive_input(assemble(transport, 1), 1);
 		move |total_amount:f64, temperature:f64, nonbulk_amounts:&[f64]| -> (f64, f64, Box<[f64]>) {
-			let nonbulk_amounts = map(&*nonbulk_amounts, |&n| n as _);
-			let_!{ [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount as _, (temperature/temperature0) as _], &*nonbulk_amounts].concat())).unwrap() => {
-				(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusion, |D| viscosity0*(*D as f64)))
-			}}
+			let nonbulk_amounts = map(&*nonbulk_amounts, |&n| n as f32);
+			let [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount as f32, (temperature/temperature0) as f32], &*nonbulk_amounts].concat())).unwrap() else { panic!() };
+			(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusion, |&D:&f32| viscosity0*(D as f64)))
 		}
 	};
 
@@ -75,8 +81,7 @@ fn main() -> Result<()> {
 		unsafe{thermo_setTemperature(phase, *temperature)};
 		unsafe{thermo_setPressure(phase, pressure_R * R)}; // /!\ Needs to be set after mole fractions
 
-		let ref nonbulk_amounts = amounts[0..amounts.len()-1];
-		let ref nonbulk_amounts = map(nonbulk_amounts, |&n| n as f32);
+		let nonbulk_amounts = &amounts[0..amounts.len()-1];
 		#[cfg(feature="transport")] {
 			#[link(name = "cantera")] extern "C" {
 				fn trans_newDefault(th: i32, loglevel: i32) -> i32;
@@ -166,7 +171,7 @@ fn main() -> Result<()> {
 			}
 		}
 	};
-	if true {
+	if false {
 		let mut random= rand::thread_rng();
 		let mut max = 0.;
 		let start = std::time::Instant::now();

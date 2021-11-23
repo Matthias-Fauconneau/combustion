@@ -1,5 +1,8 @@
 #![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits,box_patterns)]
 #![allow(non_snake_case,non_upper_case_globals)]
+/*fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
+	s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
+}*/
 mod yaml;
 mod device;
 
@@ -14,12 +17,22 @@ fn main() -> Result<()> {
 	let block_size = 1;
 	let rates = assemble(rates, block_size);
 
-	let state@State{pressure_R, volume, temperature, ..} = initial_state(&model);
-	if false { println!("{}", serde_yaml::to_string(&state)?); }
-	fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
-		s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
+	let ref state@State{pressure_R, volume, temperature, ref amounts} = {
+		let State{pressure_R, volume, temperature, ..} = initial_state(&model);
+		//let amounts = parse("H2:2,O2:1,N2:2");
+		let equivalence_ratio = 1.;
+		let amounts = std::collections::HashMap::<_, _>::from_iter([("H2", 1.),("O2", 1./(2.*equivalence_ratio)),("N2",1./(2.*equivalence_ratio)*79./21.)]);
+		let amounts = map(&*species_names, |s| *amounts.get(s).unwrap_or(&0.));
+		State{pressure_R, volume, temperature, amounts}
+	};
+	//let amounts = &state.amounts;
+	#[derive(serde::Serialize)] struct StandardState { pressure: f64, volume: f64, temperature: f64, quantities: Box<[f64]> }
+	impl From<&State> for StandardState { 
+		fn from(State{pressure_R, temperature, amounts, ..}: &State) -> Self {
+			Self{pressure: pressure_R*R, temperature: *temperature, quantities: amounts.clone()}
+		}
 	}
-	let amounts = map(&*species_names, |s| *parse("H2:2,O2:1,N2:2").get(s).unwrap_or(&0.));
+	if true { println!("{}", serde_yaml::to_string(&StandardState::from(state))?); }
 	assert!(active < amounts.len()); // Assume bulk specie is inert
 	let state : Box<[f32]> = map([&[temperature, volume], &amounts[..active]].concat(), |v| v as _);
 	let input = [&*state, &*map(&amounts[active..amounts.len()-1], |&v| v as _)].concat();
@@ -91,7 +104,7 @@ fn main() -> Result<()> {
 	//eprintln!("T {}", state[0]);
 	eprintln!("T {}", state[0]);
 	let mut min:f32 = 0.;
-	let points = map(0..(0.0004/model.time_step) as usize, |_| {
+	let points = map(0..(0.001/model.time_step) as usize, |_| {
 		let [temperature, volume, active_amounts@..] = &state[..] else { unreachable!() };
 		let point = ((time-plot_min_time)*1e3, vec![vec![*temperature as f64, (*volume*1e3) as f64].into_boxed_slice(), map(active_amounts, |&v| (v as f32/active_amounts.iter().sum::<f32>()) as f64)].into_boxed_slice());
 		time += integrator.step(&mut f, model.time_step as f32, &mut state);
@@ -104,16 +117,18 @@ fn main() -> Result<()> {
 	//println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
 	//println!("{:.0e}", min);
 	if true {
-		let H = species_names.iter().position(|&name| name=="H").unwrap();
+		let H = species_names.iter().position(|&name| name=="OH").unwrap();
 		let max_H = points.iter().map(|point|{
 			let (_, box [ box [_, _], ref active_amounts]) = point else { unreachable!() };
 			ordered_float::OrderedFloat(active_amounts[H])
 		}).position_max().unwrap();
-		let point = if false { &points[max_H] } else { points.last().unwrap() };
-		let (_, box [ box [temperature, volume], ref active_amounts]) = point else { unreachable!() };
-		let amounts = [&active_amounts, &amounts[active..]].concat().into_boxed_slice(); // Inerts stays during reaction
-		let state = State{pressure_R, volume: *volume, temperature: *temperature, amounts};
-		println!("{}", serde_yaml::to_string(&state)?);
+		let from = /*amounts*/|point: &(f32, Box<[Box<[f64]>]>)| -> State {
+			let (_, box [ box [temperature, volume], ref active_amounts]) = point else { unreachable!() };
+			let amounts = [&active_amounts, &amounts[active..]].concat().into_boxed_slice(); // Inerts stays during reaction
+			State{pressure_R, volume: *volume, temperature: *temperature, amounts}
+		};
+		println!("{}", serde_yaml::to_string(&StandardState::from(&from(&points[max_H])))?);
+		println!("{}", serde_yaml::to_string(&StandardState::from(&from(points.last().unwrap())))?);
 	}
 	let key = map((0..active).map(|k| points.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
 	let mut s = map(0..active, |i| i);

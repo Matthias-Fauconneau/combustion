@@ -182,19 +182,19 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 	let diffusivityITVT = map(&**diffusivityITVT, |P| P.map(|p| (sqrt(temperature0)/(R*viscosity))*p));
 
 	let K = molar_mass.len();
-	let_!{ input@[ref sum_mole_proportions, ref temperature, ref nonbulk_mole_proportions @ ..] = &*map(0..(2+K-1), Value) => {
+	let input@[ref sum_mole_proportions, ref temperature, ref nonbulk_mole_proportions @ ..] = &*map(0..(2+K-1), Value) else { panic!() };
 	let mut values = ["sum_mole_proportions","temperature"].iter().map(|s| s.to_string()).chain((0..K-1).map(|i| format!("nonbulk_mole_proportions[{i}]"))).collect::<Vec<_>>();
 	assert!(input.len() == values.len());
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;
 	let T = temperature;
-	let lnT = l!(f ast::ln(1024., T, f).into());
+	let lnT = def(ast::ln(1024., T, f), f, "lnT");
 	//let ref lnT = scan((1.).into(), |x| { let y = x.clone(); replace_with(x, |x| (x * lnT).expr()); l!(f, y) }); // Would need a scan(||->T) i.e no early return i.e impl ExactSize
-	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| l!(f, x * lnT).expr()); y })};
+	let ref lnT = {let mut x:Expr=(1.).into(); eval(|_| { let y = x.clone(); replace_with(&mut x, |x| edef(x * lnT, f, "x.lnT").expr()); y })};
 	let ref mole_proportions = list(nonbulk_mole_proportions.iter().copied().chain([f.def(sum_mole_proportions-nonbulk_mole_proportions.iter().sum::<Expression>(), format!("mole_proportions{}",K-1))]));
 	use iter::Dot;
-	let ref VT = l!(f ast::sqrt(T));
-	let ref mean_molar_massN = l!(f molar_mass.copied().dot(mole_proportions)/*:Expression*/);
+	let ref VT = f.def(ast::sqrt(T), "sqrtT");
+	let ref mean_molar_massN = f.def(molar_mass.copied().dot(mole_proportions)/*:Expression*/, "mean_molar_massN");
 	let ref mean_molar_mass_VTN = f.def(mean_molar_massN * VT, "mean_molar_mass_VTN");
 	Function{
 		output: list([
@@ -207,7 +207,7 @@ pub fn properties_<const D: usize>(molar_mass: &[f64], Polynomials{conductivityI
 		input: vec![Type::F32; input.len()].into(),
 		values: values.into()
 	}
-}}}
+}
 
 pub fn properties<const D: usize>(species: &Species, temperature: f64, viscosity: f64, conductivity: f64) -> Function {
 	properties_(&species.molar_mass, &Polynomials::<D>::new(&species, temperature), temperature, viscosity, conductivity)
