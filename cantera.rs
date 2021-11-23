@@ -8,6 +8,7 @@ fn main() -> Result<()> {
 	let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&yaml);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, _reactions, /*ref state@State{ref amounts, temperature, pressure_R, ..}*/..) = new(&model);
+	let species_names = &**species_names;
 	let state = State{
 		pressure_R: 101325.0 / R,
 		volume: 1.,
@@ -15,8 +16,9 @@ fn main() -> Result<()> {
 		amounts: vec![0.09260429441928864, 0.052496496587991717, 0.7380790114402771, 0.07698292285203934, 0.012342223897576332, 0.02748161181807518, 0.000013450758160615806, 6.392859575043985e-10, 1.880952380952381].into_boxed_slice()
 	};
 	let ref state@State{ref amounts, temperature, pressure_R, ..} = state;
+	let amounts = &**amounts;
 	let _ = (amounts, temperature, pressure_R);
-	eprintln!("{}", zip(&**amounts,&**species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
+	eprintln!("{}", zip(amounts, species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
 
 	use std::os::raw::c_char;
 	#[link(name = "cantera")] extern "C" {
@@ -45,11 +47,13 @@ fn main() -> Result<()> {
 	};
 
 	#[cfg(feature="transport")] let transport = {
-		//std::iter::zip, iter::{Dot,
-		eprintln!("Fit");
 		let (temperature0, viscosity0, thermal_conductivity0) = if true {
+			let pressure_R =  101325.0 / R;
+	        let temperature = 1000.;
+	        let equivalence_ratio = 1.;
+	        let amounts = [1., 1./(2.*equivalence_ratio), 0., 0., 0., 0., 0., 0., 1./(2.*equivalence_ratio)*79./21.];//.into_boxed_slice()
 			let total_amount = amounts.iter().sum::<f64>();
-			let mole_fractions = map(&**amounts, |n| n/total_amount);
+			let mole_fractions = map(&amounts, |n| n/total_amount);
 			let diffusivity = 1.;
 			let concentration = pressure_R / temperature;
 			let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
@@ -59,12 +63,14 @@ fn main() -> Result<()> {
 			let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
 			(temperature, viscosity, thermal_conductivity)
 		} else { (1., 1., 1.) };
+		eprintln!("Fit");
 		let transport = transport::properties::<5>(&species, temperature0, viscosity0, thermal_conductivity0);
 		let transport = with_repetitive_input(assemble(transport, 1), 1);
 		move |total_amount:f64, temperature:f64, nonbulk_amounts:&[f64]| -> (f64, f64, Box<[f64]>) {
 			let nonbulk_amounts = map(&*nonbulk_amounts, |&n| n as f32);
-			let [thermal_conductivity, viscosity, density_diffusion @ ..] = &*transport(&[], &([&[total_amount as f32, (temperature/temperature0) as f32], &*nonbulk_amounts].concat())).unwrap() else { panic!() };
-			(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusion, |&D:&f32| viscosity0*(D as f64)))
+			let [thermal_conductivity, viscosity, density_diffusivity @ ..] = &*transport(&[], &([&[total_amount as f32, (temperature/temperature0) as f32], &*nonbulk_amounts].concat())).unwrap() else { panic!() };
+			dbg!(viscosity0);
+			(thermal_conductivity0*(*thermal_conductivity as f64), viscosity0*(*viscosity as f64), map(density_diffusivity, |&D:&f32| viscosity0*(D as f64)))
 		}
 	};
 
@@ -95,7 +101,7 @@ fn main() -> Result<()> {
 			let ref cantera_diffusion = {
 				let mut array = vec![0.; species.len()];
 				assert!(unsafe{trans_getMixDiffCoeffs(cantera_transport, array.len() as i32, array.as_mut_ptr())} == 0);
-				let order = |o: &[f64]| map(&**species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
+				let order = |o: &[f64]| map(species_names, |specie| o[cantera_species_names.iter().position(|s| s==specie).unwrap()]);
 				order(&map(array, |d| d/*/(pressure_R*NA*kB)*/))
 			};
 			eprintln!("Cantera");
@@ -183,14 +189,14 @@ fn main() -> Result<()> {
 			let pressure = random.gen_range(1000. .. 1e5);
 			let pressure_R = pressure/R; //random.gen_range(0. .. 10e6)/R;
 			let total_amount = pressure_R * volume / temperature;
-			let amount_proportions = map(&**amounts, |&x| random.gen::<f64>() * if x != 0. { 1. } else { 1e-17 });
+			let amount_proportions = map(amounts, |&x| random.gen::<f64>() * if x != 0. { 1. } else { 1e-17 });
 			let amounts = map(&*amount_proportions, |amount_proportion| total_amount * amount_proportion/amount_proportions.iter().sum::<f64>());
 			let amount_fractions = map(&*amounts, |n| n/total_amount);
 			//println!("T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}]", amount_fractions=amount_fractions.iter().format_with(", ",|e,f| f(&format_args!("{:.0}%", e*100.))));
 			let (k, e) = test(&State{temperature, pressure_R, volume, amounts})?;
 			let k = species_names[k];
 			assert!(e < ε, "{k}: ε:{e:.0e} T:{temperature:.0}K P:{pressure:.0}Pa X:[{amount_fractions}] (was:{max:.0e})",
-				amount_fractions=zip(&**species_names, amount_fractions.iter()).format_with(", ",|(specie,e),f| f(&format_args!("{specie}:{:.0}%", e*100.))));
+				amount_fractions=zip(species_names, amount_fractions.iter()).format_with(", ",|(specie,e),f| f(&format_args!("{specie}:{:.0}%", e*100.))));
 			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100000==0 { println!("{i} {max:.0e} {:.0}K/s", (i as f64/1000.)/start.elapsed().as_secs_f64()) }
 		}
 	} else {
