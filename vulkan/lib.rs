@@ -1,4 +1,4 @@
-#![feature(associated_type_bounds, in_band_lifetimes, default_free_fn, format_args_capture)]
+#![feature(associated_type_bounds, in_band_lifetimes, default_free_fn)]
 use {std::default::default, fehler::throws, anyhow::Error};
 use std::{mem::size_of, ffi::CStr};
 use ash::{*, vk::*, extensions::ext::DebugUtils};

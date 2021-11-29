@@ -1,4 +1,4 @@
-#![allow(incomplete_features)]#![feature(format_args_capture,default_free_fn,if_let_guard)]
+#![allow(incomplete_features)]#![feature(default_free_fn,if_let_guard)]
 use {std::default::default, iter::{list, map}, ast::*, ::spirv::{*, Decoration::*, BuiltIn}, ::rspirv::dr::{self as rspirv, *, Operand::IdRef}};
 
 type Type= Word;

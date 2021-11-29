@@ -1,4 +1,4 @@
-#![allow(non_snake_case)]#![feature(format_args_capture,if_let_guard,associated_type_bounds,unboxed_closures,fn_traits)]
+#![allow(non_snake_case)]#![feature(if_let_guard,associated_type_bounds,unboxed_closures,fn_traits)]
 fn box_<T>(t: T) -> Box<T> { Box::new(t) }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)] pub struct Value(pub usize);
@@ -165,7 +165,7 @@ impl From<&mut Value> for Expr { fn from(x: &mut Value) -> Expr { (&*x).into() }
 
 impl Expr {
 	pub fn f32(&self) -> Option<f32> { use Expr::*; match self { F32(x) => Some(f32::from(*x)), F64(x) => Some(f64::from(*x) as _), _ => None } }
-	pub fn f64(&self) -> Option<f64> { use Expr::*; match self { F32(x) => Some(f32::from(*x) as _), F64(x) => Some(f64::from(*x)), _ => None } }
+	pub fn f64(&self) -> Option<f64> { use Expr::*; match self { F32(x) => Some(f32::from(*x) as _), F64(x) => { assert!((f64::from(*x) as f32).is_finite()); Some(f64::from(*x)) }, _ => None } }
 }
 
 /*pub fn cast(to: Type, x: impl Into<Expression>) -> Expression { Expression::Cast(to, box_(x.into())) }
@@ -214,7 +214,7 @@ fn add(a: impl Into<Expression>, b: impl Into<Expression>) -> Expression {
 #[track_caller] fn mul<A:Into<Expression>, B:Into<Expression>>(a: A, b: B) -> Expression {
 	let [a,b] = [a.into(), b.into()];
 	//assert!(!matches!(&*a, Expr::Div(_,_)) && !matches!(&*b, Expr::Div(_,_)), "({a:?}) * ({b:?})");
-	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { (a*b).into() } else {
+	if let [Some(a), Some(b)] = [a.f64(),b.f64()] { assert!(((a*b) as f32).is_finite(), "{a} {b}"); (a*b).into() } else {
 		for x in [&a,&b] { if let Some(x) = x.f32() { if x == 0. { return f64(0.).unwrap().into() } } }
 		if let Some(a) = a.f32() { if a==1. { return b; } else if a==-1. { return -b } }
 		if let Some(b) = b.f32() { if b==1. { return a; } else if b==-1. { return -a } }

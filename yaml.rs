@@ -166,6 +166,6 @@ pub fn parse(yaml: &[Yaml]) -> Model {
 			if initial.contains(name) { 1. } else { 0. }))},
 		species,
 		reactions,
-		time_step: 1e-7,
+		time_step: 1e-8,
 	}
 }

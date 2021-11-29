@@ -123,20 +123,18 @@ fn arrhenius(&RateConstant{preexponential_factor: A, temperature_exponent, activ
 		else if temperature_exponent >= 1.5 { (Some(T2), temperature_exponent-2.) }
 		else if temperature_exponent >= 0.5 { (Some(T), temperature_exponent-1.) }
 		else { (None, temperature_exponent) };
-	let temperature_exponent_remainder = temperature_exponent_remainder as f32 as f64;
-	//const _T0: f64 = 1.; //1024.;
+	let temperature_factor = temperature_factor.map(|x| x.into());
+	//let temperature_exponent_remainder = temperature_exponent_remainder;// as f32 as f64;
+	//const T0: f64 = 1024.; // preexponential_factor overflow can be compensated when temperature_exponent is quite negative (TODO: add to exp argument instead of multiplying)
 	//eprintln!("{temperature_exponent}, {temperature_exponent_remainder} {activation_temperature}");
-	let exp = Σ([
-			(temperature_exponent_remainder != 0.).then(|| if temperature_exponent_remainder==1. { lnT } else { f.def(temperature_exponent_remainder * (lnT/*-f64::ln(T0)*/), "β'lnT") }),
-			(activation_temperature != 0.).then(|| f.def((-activation_temperature) * rcpT, "-Ea/kT"))
-		].into_iter().filter_map(|x| x))
-		.map(|x| {let e=exp(x, f); f.def(e, "exp(β'lnT-Ea/kT)").into()});
-		//.map(|x| {let e=min(f32::MAX as f64, exp(x, f)); f.def(e, "exp(β'lnT-Ea/kT)").into()}); // Saturates to MAX to resolve any inf-inf in dT_T to an arbitrary finite value
-	let k = Π([
-		Some(f64(A).unwrap_or_else(|x| {/*println!("A:{A:e}");*/ x}) /* * f64::powf(T0, temperature_exponent_remainder)*/),
-		temperature_factor.map(|x| x.into()),
-		exp
-	]).unwrap();
+	let x = Σ([
+		(temperature_exponent_remainder as f32 != 0.).then(|| if temperature_exponent_remainder as f32==1. { lnT } else { f.def(temperature_exponent_remainder * (lnT/*-f64::ln(T0)*/), "β'lnT") }),
+		(activation_temperature != 0.).then(|| f.def((-activation_temperature) * rcpT, "-Ea/kT"))
+	].into_iter().filter_map(|x| x));
+	let mul = |a:Option<Value>,b| if let Some(a) = a { a*b } else { b };
+	let k = mul(temperature_factor, if let Some(x) = x {let e=exp(x+f64::ln(A), f); f.def(e, "exp(β'lnT-Ea/kT)").into()} else { f64(A).unwrap().into() });
+	//.map(|x| {let e=min(f32::MAX as f64, exp(x, f)); f.def(e, "exp(β'lnT-Ea/kT)").into()}); // Saturates to MAX to resolve any inf-inf in dT_T to an arbitrary finite value
+	//assert!(A!=1. || temperature_factor.is_some() || x.is_some(), "{A} {temperature_exponent} {activation_temperature} {temperature_factor:?} {exp:?}");
 	min(f32::MAX as f64, k).expr() // Saturates to MAX to resolve any k*0 to 0
 }
 
@@ -161,12 +159,28 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 		},
 		Troe{efficiencies, k0, troe} => {
 			let efficiency = efficiency(efficiencies, concentration, concentrations, f);
-			let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
-			let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
-			let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
+			let (k_inf, Pr) = {
+				let (factor, ref k0, ref k_inf) = {
+					let (mut k0, mut k_inf) = (*k0, *k_inf);
+					let factor = k_inf.preexponential_factor;
+					k0.preexponential_factor /= factor;
+					//assert!((k0.preexponential_factor as f32).is_finite(), "{k0:?} {k_inf:?}");
+					k_inf.preexponential_factor = 1.;
+					(factor, k0, k_inf)
+				};
+				let k0 = {let e = arrhenius(k0, T, f); f.def(e, "k_0")};
+				if k_inf.temperature_exponent == 0. && k_inf.activation_temperature == 0. {
+					let Pr = f.def(efficiency * k0, "Pr");
+					(f64(factor).unwrap().into(), Pr)
+				} else {
+					let k_inf = edef(arrhenius(k_inf, T, f), f, "k_inf");
+					let Pr = f.def(efficiency * k0 / (k_inf.shallow() + f32::MIN_POSITIVE as f64), "Pr"); // Resolves undetermined form 0/0 as 0
+					(factor * k_inf, Pr)
+				}
+			};
 			let Fcent = {let model::Troe{A, T3, T1, T2} = *troe; let T{T,rcpT,..}=T; ast::sum([
-				(T3 > 1e-30).then(|| { let y = 1.-A; if T3<1e30 { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
-				(T1 > 1e-30).then(|| { let y = A; if T1<1e30 { y * def(exp(T/(-T1), f), f, "exp(-T/T1)") } else { y.into() }}),
+				/*(T3 > 1e-30)*/true.then(|| { let y = 1.-A; if /*T3<1e30*/true { y * def(exp(T/(-T3), f),  f, "exp(-T/T3)") } else { y.into() }}), // skipping exp(-T/T3~1e-30) increases difference to Cantera from e-8 to e-3 on synthetic test with all mole fractions equals (including radicals)*/
+				/*(T1 > 1e-30)*/true.then(|| { let y = A; if T1<1e30 { y * def(exp(T/(-T1), f), f, "exp(-T/T1)") } else { y.into() }}),
 				(T2.is_finite()).then(|| def(exp((-T2)*rcpT, f), f, "exp(-T2/T)").into())
 			].into_iter().filter_map(|x| x))};
 			let lnFcent:Expr = if let Some(x) = Fcent.f64() { x.into() } else { def(ln(1./2., Fcent, f), f, "lnFcent").into() }; // 0.1-0.7 => e-3

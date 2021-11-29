@@ -1,19 +1,27 @@
 #![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
-#![feature(format_args_capture,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,let_else)]
+#![feature(default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,let_else)]
+
 mod yaml; mod device;
-use {std::iter::zip, anyhow::Result, iter::{map, Dot}, itertools::Itertools, combustion::*, device::*};
+use {std::iter::zip, anyhow::{Result/*, ensure*/}, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
-	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());
-	let path = if std::path::Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
+	let arg = std::env::args().skip(1).next().unwrap_or("gri30".to_string());
+	let (path, name) = if std::path::Path::new(&arg).exists() { (arg, None) } else { (format!("/usr/local/share/cantera/data/{arg}.yaml"), Some(arg)) };
 	let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&yaml);
-	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, _reactions, /*ref state@State{ref amounts, temperature, pressure_R, ..}*/..) = new(&model);
+	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, reactions, /*ref state@State{ref amounts, temperature, pressure_R, ..}*/..) = new(&model);
 	let species_names = &**species_names;
-	let state = State{
-		pressure_R: 101325.0 / R,
-		volume: 1.,
-		temperature: 1556.971923828125,
-		amounts: vec![0.09260429441928864, 0.052496496587991717, 0.7380790114402771, 0.07698292285203934, 0.012342223897576332, 0.02748161181807518, 0.000013450758160615806, 6.392859575043985e-10, 1.880952380952381].into_boxed_slice()
+	let state = {
+		let name = name.unwrap();
+		let path = format!("../test/share/mechanisms/{name}.final");
+		let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?).unwrap();
+		let state = &yaml[0];
+		let X = state["X"].as_hash().unwrap();
+		State{
+			pressure_R: state["pressure"].as_f64().unwrap() / R,
+			volume: 1.,
+			temperature: state["temperature"].as_f64().unwrap(),
+			amounts: map(species_names, |&name| X[&yaml::Yaml::from_str(name)].as_f64().unwrap())
+		}
 	};
 	let ref state@State{ref amounts, temperature, pressure_R, ..} = state;
 	let amounts = &**amounts;
@@ -39,11 +47,11 @@ fn main() -> Result<()> {
 		unsafe{std::ffi::CStr::from_ptr(specie.as_ptr()).to_str().unwrap().to_owned()}
 	});
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
-	let _kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
+	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
 	#[cfg(not(feature="transport"))] let rates = {
 		let rates = reaction::rates(molar_mass, thermodynamics, &reactions, species_names);
-		with_repetitive_input(assemble::<f32>(rates, 1), 1)
+		with_repetitive_input(assemble::<f64>(rates, 1), 1)
 	};
 
 	#[cfg(feature="transport")] let transport = {
@@ -59,6 +67,7 @@ fn main() -> Result<()> {
 			let mean_molar_mass = zip(&**molar_mass, &*mole_fractions).map(|(m,x)| m*x).sum::<f64>();
 			let density = concentration * mean_molar_mass;
 			let viscosity = density * diffusivity;
+			use iter::Dot;
 			let mean_molar_heat_capacity_at_CP_R:f64 = thermodynamics.iter().map(|a| a.molar_heat_capacity_at_constant_pressure_R(temperature)).dot(mole_fractions);
 			let thermal_conductivity = mean_molar_heat_capacity_at_CP_R * R / mean_molar_mass * viscosity;
 			(temperature, viscosity, thermal_conductivity)
@@ -137,7 +146,7 @@ fn main() -> Result<()> {
 				if m < 4e3 { return 0.; }
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			}*/;
-			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount as f32, *temperature as _] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
+			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
 			assert!(rates.len() == active, "{}", rates.len());
 			if true {
 				let (k, e)= rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
@@ -162,7 +171,8 @@ fn main() -> Result<()> {
 				let stdout = std::str::from_utf8(&stdout)?;
 				use iter::list;
 				let lines = list(stdout.split("\n"));
-				let ref nekrk_species_names = list(lines[0].trim().split(" "));
+				let nekrk_species_names = list(lines[0].trim().split(" "));
+				let nekrk_species_names = &*nekrk_species_names;
 				assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
 				let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
 				assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
@@ -203,7 +213,7 @@ fn main() -> Result<()> {
 		println!("{state:?}");
 		let (_, e) = test(&state)?;
 		println!("{e:e}");
-		assert!(e < 2e-3, "{e:e}");
+		//ensure!(e < 2e-3, "{e:e}");
 	}
 	Ok(())
 }

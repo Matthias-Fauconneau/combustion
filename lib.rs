@@ -1,4 +1,4 @@
-#![feature(format_args_capture,associated_type_bounds,unboxed_closures,fn_traits,trait_alias, array_methods,iter_zip,default_free_fn,let_else,once_cell)]
+#![feature(associated_type_bounds,unboxed_closures,fn_traits,trait_alias, array_methods,iter_zip,default_free_fn,let_else,once_cell)]
 #![allow(non_upper_case_globals,non_snake_case,uncommon_codepoints,incomplete_features,confusable_idents)]
 pub mod model;
 pub use model::{kB, NA, R};

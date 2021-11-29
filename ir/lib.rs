@@ -1,4 +1,4 @@
-#![feature(default_free_fn,format_args_capture,let_else)]
+#![feature(default_free_fn,let_else)]
 use {std::default::default, iter::map};
 pub use cranelift::codegen::ir::{function::Function, types::{Type, I32, I64, F32, F64}, condcodes::FloatCC};
 use cranelift::{
@@ -122,7 +122,7 @@ fn pass(&mut self, e: &Expression) -> ast::Type { // check_types_and_load_consta
 		FDemote(x) => { self.pass(x); ast::Type::F32 },
 		/*FCvtToSInt(x)  => { self.pass(x); ast::Type::I32 }
 		FCvtFromSInt(x) => { self.pass(x); ast::Type::F32 },*/
-		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?}"); a },
+		/*And(a,b)|Or(a,b)|IAdd(a,b)|ISub(a,b)|*/Min(a,b)|Max(a,b)|Add(a,b)|Sub(a,b)|Mul(a,b)|Div(a,b)|LessOrEqual(a,b) => { let [a,b] = [a,b].map(|x| self.pass(x)); assert!(a==b,"{e:?} {a:?} {b:?}"); a },
 		//MulAdd(a,b,c) => { let [a,b,c] = [a,b,c].map(|x| self.pass(x)); assert!(a==b && b==c); a },
 		},
 		Expression::Block { statements, result } => { for s in &**statements { self.check_types_and_load_constants(s) } self.pass(result) }

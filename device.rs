@@ -1,6 +1,6 @@
 use {anyhow::Result, iter::map};
 type Output<T> = Result<Box<[Box<[T]>]>>;
-fn convert(mut f: ast::Function) -> ast::Function {
+#[allow(dead_code)] fn convert(mut f: ast::Function) -> ast::Function {
 	use ast::*;
 	fn visit(_input_len: usize, e: &mut Expression) { match e {
 		Expression::Expr(Expr::F64(x)) => { *e = f32(f64::from(*x) as _).expect(&format!("{:e} overflows f32, retry with f64",f64::from(*x))).into(); } // Demote constants
@@ -23,7 +23,7 @@ fn convert(mut f: ast::Function) -> ast::Function {
 	#[cfg(not(feature="interpret"))] pub trait Interpret = Sized;
 	#[cfg(feature="interpret")] pub trait Interpret = Into<interpret::DataValue>+From<interpret::DataValue>;
 	pub fn assemble<'t, T:'t+Copy+Default+Interpret>(function: Function, _block_size: usize) -> impl 't+Fn(&[T], &[&[T]]) -> Output<T> {
-		let function = convert(function);
+		//let function = convert(function);
 		let input_len = function.input.len();
 		let output_len = function.output.len();
 		#[cfg(feature="ir")] let function = ir::assemble(ir::compile(&function));

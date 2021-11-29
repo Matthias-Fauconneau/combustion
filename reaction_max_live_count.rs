@@ -1,4 +1,4 @@
-#![feature(format_args_capture,in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip)]
+#![feature(in_band_lifetimes,default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip)]
 #![allow(non_snake_case,non_upper_case_globals)]
 mod yaml;
 use {std::{iter::zip, cmp::max}, anyhow::Error, std::env::*, combustion::*};

@@ -1,4 +1,4 @@
-#![feature(format_args_capture,trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits,box_patterns)]
+#![feature(trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits,box_patterns)]
 #![allow(non_snake_case,non_upper_case_globals)]
 /*fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
 	s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
@@ -18,18 +18,18 @@ fn main() -> Result<()> {
 	let rates = assemble(rates, block_size);
 
 	let ref state@State{pressure_R, volume, temperature, ref amounts} = {
-		let State{pressure_R, volume, temperature, ..} = initial_state(&model);
-		//let amounts = parse("H2:2,O2:1,N2:2");
+		let State{pressure_R, ..} = initial_state(&model);
 		let equivalence_ratio = 1.;
-		let amounts = std::collections::HashMap::<_, _>::from_iter([("H2", 1.),("O2", 1./(2.*equivalence_ratio)),("N2",1./(2.*equivalence_ratio)*79./21.)]);
+		//let amounts = std::collections::HashMap::<_, _>::from_iter([("H2", equivalence_ratio),("O2", 1./2.),("N2",79./21./2.)]);
+		let amounts = std::collections::HashMap::<_, _>::from_iter([("CH4", equivalence_ratio),("O2", 2.),("N2",79./21.)]);
 		let amounts = map(&*species_names, |s| *amounts.get(s).unwrap_or(&0.));
-		State{pressure_R, volume, temperature, amounts}
+		State{pressure_R, volume: 1., temperature: 1100., amounts}
 	};
 	//let amounts = &state.amounts;
-	#[derive(serde::Serialize)] struct StandardState { pressure: f64, volume: f64, temperature: f64, quantities: Box<[f64]> }
+	#[derive(serde::Serialize)] struct StandardState { pressure: f64, temperature: f64, X: Box<[f64]> }
 	impl From<&State> for StandardState { 
 		fn from(State{pressure_R, temperature, amounts, ..}: &State) -> Self {
-			Self{pressure: pressure_R*R, temperature: *temperature, quantities: amounts.clone()}
+			Self{pressure: pressure_R*R, temperature: *temperature, X: amounts.clone()}
 		}
 	}
 	if true { println!("{}", serde_yaml::to_string(&StandardState::from(state))?); }
@@ -93,22 +93,32 @@ fn main() -> Result<()> {
 		}
 		Explicit{f_u: vec![0.; state.len()].into(), _marker: std::marker::PhantomData}
 	};
-	let plot_min_time = 0.0002;
+	let plot_min_time = 0.;
 	let (mut time, mut state) = (0., state);
 	//let start = std::time::Instant::now();
+	println!("{plot_min_time}");
 	while time < plot_min_time {
-		time += integrator.step(&mut f, model.time_step as f32, &mut state);
+		time += integrator.step(&mut f, model.time_step as f32, &mut state) as f64;
 		//dbg!(time/plot_min_time, time, state[0]);
 		//assert!(state[0]<1500.);
 	}
 	//eprintln!("T {}", state[0]);
 	eprintln!("T {}", state[0]);
-	let mut min:f32 = 0.;
-	let points = map(0..(0.001/model.time_step) as usize, |_| {
+	//let mut min:f32 = 0.;
+	let duration = 0.3;
+	//let steps = duration/model.time_step;
+	let points = 3840;
+	let point_duration = duration/(points as f64);
+	//let points_steps = ((points as f64)/steps).ceil();
+	//assert!(points_steps == 1);
+	let points = map(0..points, |_| {
 		let [temperature, volume, active_amounts@..] = &state[..] else { unreachable!() };
 		let point = ((time-plot_min_time)*1e3, vec![vec![*temperature as f64, (*volume*1e3) as f64].into_boxed_slice(), map(active_amounts, |&v| (v as f32/active_amounts.iter().sum::<f32>()) as f64)].into_boxed_slice());
-		time += integrator.step(&mut f, model.time_step as f32, &mut state);
-		min = min.min(state[1..].iter().copied().reduce(f32::min).unwrap());
+		let point_end_time = time+point_duration;
+		while time < point_end_time {
+			time += integrator.step(&mut f, model.time_step as f32, &mut state) as f64;
+		}
+		//min = min.min(state[1..].iter().copied().reduce(f32::min).unwrap());
 		point
 	});
 	//let end = std::time::Instant::now();
@@ -117,17 +127,18 @@ fn main() -> Result<()> {
 	//println!("{evaluations} / {time}s = {}", (evaluations as f64)/time);
 	//println!("{:.0e}", min);
 	if true {
-		let H = species_names.iter().position(|&name| name=="OH").unwrap();
-		let max_H = points.iter().map(|point|{
+		let OH = species_names.iter().position(|&name| name=="OH").unwrap();
+		let max_OH = points.iter().map(|point|{
 			let (_, box [ box [_, _], ref active_amounts]) = point else { unreachable!() };
-			ordered_float::OrderedFloat(active_amounts[H])
+			ordered_float::OrderedFloat(active_amounts[OH])
 		}).position_max().unwrap();
-		let from = /*amounts*/|point: &(f32, Box<[Box<[f64]>]>)| -> State {
+		println!("{max_OH} {}", (max_OH as f64)*model.time_step);
+		let from = /*amounts*/|point: &(_, Box<[Box<[f64]>]>)| -> State {
 			let (_, box [ box [temperature, volume], ref active_amounts]) = point else { unreachable!() };
 			let amounts = [&active_amounts, &amounts[active..]].concat().into_boxed_slice(); // Inerts stays during reaction
 			State{pressure_R, volume: *volume, temperature: *temperature, amounts}
 		};
-		println!("{}", serde_yaml::to_string(&StandardState::from(&from(&points[max_H])))?);
+		println!("{}", serde_yaml::to_string(&StandardState::from(&from(&points[max_OH])))?);
 		println!("{}", serde_yaml::to_string(&StandardState::from(&from(points.last().unwrap())))?);
 	}
 	let key = map((0..active).map(|k| points.iter().map(move |(_, sets)| sets[1][k])), |Y| Y.reduce(f64::max).unwrap());
@@ -140,7 +151,7 @@ fn main() -> Result<()> {
 	});
 	let keys = vec![&["T","V"] as &[_], &species_names];
 	let mut plot = ui::plot::Plot::new(&keys, &points);
-	if true { Ok(ui::app::run(plot)?) }
+	if false { Ok(ui::app::run(plot)?) }
 	else {
 		let mut target = image::Image::zero((3840, 2160).into());
 		ui::widget::Widget::paint(&mut plot, &mut target.as_mut())?;
