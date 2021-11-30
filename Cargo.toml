@@ -15,7 +15,7 @@ vpu=['spirv','vulkan','anyhow','libc']
 plot=['ui','image','png','anyhow']
 cantera=[]
 check=[]
-default=['interpret','main','rand','plot','cantera']
+default=['interpret','main','rand','cantera']
 
 [dependencies]
 iter={git='https://github.com/Matthias-Fauconneau/iter'}

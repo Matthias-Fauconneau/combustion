@@ -31,11 +31,11 @@ fn main() -> Result<()> {
 	use std::os::raw::c_char;
 	#[link(name = "cantera")] extern "C" {
 		fn thermo_newFromFile(file_name: *const c_char, phase_name: *const c_char) -> i32;
-		fn thermo_nSpecies(n: i32) -> usize;
-		fn thermo_setTemperature(n: i32, t: f64) -> i32;
-		fn thermo_setMoleFractions(n: i32, len: usize, x: *const f64, norm: i32) -> i32;
-		fn thermo_getSpeciesName(n: i32, m: usize, len: usize, buffer: *mut c_char) -> i32;
-		fn thermo_setPressure(n: i32, p: f64) -> i32;
+		fn thermo_nSpecies(phase: i32) -> usize;
+		fn thermo_setTemperature(phase: i32, t: f64) -> i32;
+		fn thermo_setMoleFractions(phase: i32, len: usize, x: *const f64, norm: i32) -> i32;
+		fn thermo_getSpeciesName(phase: i32, m: usize, len: usize, buffer: *mut c_char) -> i32;
+		fn thermo_setPressure(phase: i32, p: f64) -> i32;
 		fn kin_newFromFile(file_name: *const c_char, phase_name: *const c_char, reactingPhase: i32, neighbor0: i32, neighbor1: i32, neighbor2: i32, neighbor3: i32) -> i32;
 	}
 	let file = std::ffi::CString::new(path.as_str())?;
@@ -49,10 +49,8 @@ fn main() -> Result<()> {
 	assert!(unsafe{thermo_nSpecies(phase)} == species.len());
 	let kinetics = unsafe{kin_newFromFile(file.as_c_str().as_ptr(), phase_name_cstr_ptr, phase, 0, 0, 0, 0)};
 
-	#[cfg(not(feature="transport"))] let rates = {
-		let rates = reaction::rates(molar_mass, thermodynamics, &reactions, species_names);
-		with_repetitive_input(assemble::<f64>(rates, 1), 1)
-	};
+	#[cfg(not(feature="transport"))] let reactions_rates = with_repetitive_input(assemble::<f64>(reaction::reactions_rates(thermodynamics, &reactions), 1), 1);
+	#[cfg(not(feature="transport"))] let rates = with_repetitive_input(assemble::<f64>(reaction::rates(molar_mass, thermodynamics, &reactions, species_names), 1), 1);
 
 	#[cfg(feature="transport")] let transport = {
 		let (temperature0, viscosity0, thermal_conductivity0) = if true {
@@ -141,48 +139,36 @@ fn main() -> Result<()> {
 			let cantera_species_rates = order(&map(cantera_species_rates, |c| c*1000.)); // kmol -> mol
 			assert!(cantera_species_rates.len() == active);
 			// Rates
-			let error = |x,r| f64::abs(x-r) / f64::max(r, 1e6) /*{
+			let error = |x:f64,r| f64::abs(x-r) / f64::max(r, 1e6) /*{
 				let m=f64::abs(f64::max(a,b));
 				if m < 4e3 { return 0.; }
 				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
 			}*/;
-			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
-			assert!(rates.len() == active, "{}", rates.len());
-			if true {
-				let (k, e)= rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > ε {
-					/*println!("{:>10}", species_names.iter().format(" "));
-					println!("{:10.0}", cantera_species_rates.iter().format(" "));
-					println!("{:10.0}", rates.iter().format(" "));*/
-					println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_species_rates[k]);
-				}
+			if false {
+				let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
+				assert!(rates.len() == active, "{}", rates.len());
+				let (k, e) = rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+				if e >= ε { println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_species_rates[k]); }
 				Ok((k, e))
-			}
-			else {
-				//assert!(std::process::Command::new("make").current_dir("../nekRK/build").arg("-j").status()?.success());
-				let code = std::path::Path::new("/var/tmp/main.c");
-				if !code.exists() || std::fs::metadata("../nekRK/main.py")?.modified()? > code.metadata()?.modified()? {
-					std::fs::write("/var/tmp/main.c", std::process::Command::new("../nekRK/main.py").arg(&path).output()?.stdout)?;
+			} else {
+				let [_dtT, _dtV, reactions_rates @ ..] = &*reactions_rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
+				//assert!(reactions_rates.len() == , "{}", rates.len());
+				#[link(name = "cantera")] extern "C" { 
+					fn kin_getNetRatesOfProgress(kinetics: i32, len: usize, rates: *mut f64) -> i32;
+					fn kin_getReactionString(kinetics: i32, reaction: usize, len: usize, buffer: *mut c_char) -> i32;
 				}
-				let nekrk = std::process::Command::new("../nekRK/build/main").current_dir("../nekRK")
-					.args([code.to_str().unwrap(),"Serial","1","1","0",&(pressure_R*R).to_string(),&temperature.to_string(),&amount_fractions.iter().format(" ").to_string()]).output()?;
-				assert!(nekrk.stderr.is_empty(), "{}", std::str::from_utf8(&nekrk.stderr)?);
-				let stdout = nekrk.stdout;
-				let stdout = std::str::from_utf8(&stdout)?;
-				use iter::list;
-				let lines = list(stdout.split("\n"));
-				let nekrk_species_names = list(lines[0].trim().split(" "));
-				let nekrk_species_names = &*nekrk_species_names;
-				assert!(species_names == nekrk_species_names, "\n{species_names:?}\n{nekrk_species_names:?}");
-				let nekrk = map(lines[1].trim().split(" "), |r| r.trim().parse().unwrap());
-				assert!(nekrk.len() == nekrk_species_names.len()-1, "{} {}", nekrk.len(), nekrk_species_names.len());
-				let (k, e) = cantera_species_rates.iter().zip(&*nekrk).map(|(&a,&b)| error(a,b)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e > ε {
-					/*println!("{:.0}", cantera_species_rates.iter().format(" "));
-					println!("{:.0}", nekrk.iter().format(" "));
-					println!("{:>6}", cantera_species_rates.iter().zip(&*nekrk).map(|(&a,&b)|f64::min(99.,-10.*f64::log10(error(a,b)))).enumerate().map(|(i,r)| format!("{i}:{r:.0}")).format(" "));*/
-					println!("{} {}", cantera_species_rates[k], nekrk[k]);
-				}
+				let cantera_reactions_rates = {
+					let mut rates = vec![0.; reactions.len()];
+					unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
+					map(rates, |c| c*1000.) // kmol -> mol
+				};
+				let cantera_reactions_names = map(0..reactions.len(), |i| {
+					let mut reaction = [0; 32];
+					unsafe{kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr())};
+					unsafe{std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()}
+				});
+				let (k, e) = reactions_rates.iter().zip(&*cantera_reactions_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+				println!("{}: {:.0} {:.0}", cantera_reactions_names[k], reactions_rates[k], cantera_reactions_rates[k]);
 				Ok((k, e))
 			}
 		}

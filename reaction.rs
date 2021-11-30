@@ -204,7 +204,7 @@ fn forward_rate_constant(model: &ReactionModel, k_inf: &RateConstant, T: T, conc
 	}
 }
 
-pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}: T, concentration: Value, concentrations: &[Value], f: &mut Block, species_names: &[&str]) -> Box<[Value]> {
+fn reactions(species: &'t [NASA7], active: usize, Ts@T{T,rcpT,..}: T, concentration: Value, concentrations: &'t [Value], f: &mut Block) -> impl 't+FnMut(&Reaction, &mut Block)->Value {
 	/*let mut notone = vec![false; species.len()];
 	//fn efficiency(&Reaction{model, ..}) ->
 	for Reaction{model, ..} in reactions {
@@ -231,7 +231,6 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 		}
 	}
 	eprintln!("{add} {}", sub+notone.iter().filter(|&&x| x).count());*/
-	let active = reactions[0].net.len();
 	let rcp_C0 = f.def((1./NASA7::reference_pressure) * T, "RT/P0");
 	let C0 = f.def(NASA7::reference_pressure * rcpT, "P0/RT");
 	struct Cache {
@@ -267,9 +266,8 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 		exp: vec![None; active].into_boxed_slice(),
 		exp_neg: vec![None; active].into_boxed_slice(),
 	};
-	let mut species_rates: Box<[Option<Value>]> = vec![None; active].into_boxed_slice();
-	for Reaction{reactants, products, net, Σnet, rate_constant, model, ..} in reactions {
-		let forward_rate_constant = forward_rate_constant(model, rate_constant, Ts, concentration, concentrations, f);
+	move |Reaction{reactants, products, net, Σnet, rate_constant, model, ..}, f| {
+		let forward_rate_constant = forward_rate_constant(&model, &rate_constant, Ts, concentration, concentrations, f);
 		let Rforward = product_of_exponentiations(concentrations, reactants, f, "Rf");
 		let Rnet = if let ReactionModel::Irreversible = model { Rforward } else {
 			let Gibbs0_RT = |k, f: &mut Block| -> Expression {
@@ -307,7 +305,16 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 			let Rreverse = {let e = rcp_equilibrium_constant * product_of_exponentiations(concentrations, products, f, "Rr"); f.def(e, "Rr/K")};
 			f.def(Rforward - Rreverse, "R").into()
 		};
-		let cR = f.def(forward_rate_constant * Rnet, "cR");
+		f.def(forward_rate_constant * Rnet, "cR")
+	}
+}
+
+pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts: T, concentration: Value, concentrations: &[Value], f: &mut Block, species_names: &[&str]) -> Box<[Value]> {
+	let active = reactions[0].net.len();
+	let mut species_rates: Box<[Option<Value>]> = vec![None; active].into_boxed_slice();
+	let mut cR = self::reactions(species, active, Ts, concentration, concentrations, f);
+	for reaction@Reaction{net, ..} in reactions {
+		let cR = cR(reaction, f);
 		for ((sum, &ν), specie) in zip(zip(&mut *species_rates, &**net), species_names).filter(|((_,&ν),_)| ν != 0) {
 			let name = format!("rates_{specie}"); //ω̇
 			*sum = Some(
@@ -317,6 +324,33 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts@T{T,rcpT,..}:
 		}
 	}
 	map(&*species_rates, |x| x.unwrap())
+}
+
+pub fn reactions_rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
+	let active = reactions[0].net.len();
+	let input@[pressure_R, T, volume, nonbulk_amounts @ ..] = &*map(0..(4+species.len()-1), Value) else { panic!() };
+	let mut values = ["pressure_","rcp_pressure_", "T", "volume"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
+	let mut function = Block::new(&mut values);
+	let ref mut f = function;
+	let molar_density = f.def(1./volume, "molar_density");
+	let rcpT = f.def(1./T, "rcpT");
+	let lnT = def(ln(1024., T, f), f, "lnT");
+	let T2 = f.def(T*T, "T2");
+	let nonbulk_concentrations = map(nonbulk_amounts, |nonbulk_amount| f.def(molar_density*max(0., nonbulk_amount), "nonbulk_concentrations"));
+	let T3 = f.def(T*T2, "T3");
+	let concentration = f.def(pressure_R * rcpT, "concentration");
+	let rcpT2 = f.def(rcpT*rcpT, "rcpT2");
+	let T4 = f.def(T2*T2, "T4");
+	let Ts = T{lnT,T: *T,T2,T3,T4,rcpT,rcpT2};
+	let bulk_concentration = f.def(concentration - sum(&*nonbulk_concentrations), "bulk_concentration"); // Constant pressure
+	let concentrations = list(nonbulk_concentrations.into_vec().into_iter().chain([bulk_concentration].into_iter()));
+	let mut cR = self::reactions(species, active, Ts, concentration, &concentrations, f);
+	Function{
+		output: map(reactions, |r| cR(r, f).into()),
+		statements: function.block.statements.into(),
+		input: vec![Type::F32; input.len()].into(),
+		values: values.into()
+	}
 }
 
 pub fn rates(molar_mass: &[f64], species: &[NASA7], reactions: &[Reaction], species_names: &[&str]) -> Function {
