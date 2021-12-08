@@ -1,9 +1,10 @@
-package={name='combustion', description='Chemical reaction kinetics and species transport properties', version='0.0.0', edition='2021', default-run='cantera'}
+package={name='combustion', description='Chemical reaction kinetics and species transport properties', version='0.0.0', edition='2021', default-run='perf'}
 lib={path='lib.rs'}
 bin=[
+	{name='perf', path='perf.rs', required-features=['vpu']},
 	{name='cantera', path='cantera.rs', required-features=['main','rand','cantera']},
 	{name='plot', path='plot.rs', required-features=['main','plot']},
-#	{name='cuda', path='cuda.rs', required-features=['main']},
+	{name='cuda', path='cuda.rs', required-features=['main']},
 ]
 
 [features]
@@ -15,7 +16,7 @@ vpu=['spirv','vulkan','anyhow','libc']
 plot=['ui','image','png','anyhow']
 cantera=[]
 check=[]
-default=['interpret','main','rand','cantera']
+default=['interpret','main','vpu']
 
 [dependencies]
 iter={git='https://github.com/Matthias-Fauconneau/iter'}

@@ -94,11 +94,11 @@ fn thermodynamics<const N: usize>(thermodynamics: &[NASA7], expressions: [impl F
 				let results = map(species, |specie| f.value(format!("{debug}[{specie}]")));
 				use iter::Zip;
 				for (&specie, result) in species.zip(&*results) { assert!(specie_results[specie].replace(result.into()).is_none()) }
-				let mut true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts));
-				let mut false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts));
-				let defs = eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
-				for def in defs { let Statement::Value{value,id} = &def else { panic!() }; assert!(f.values.insert(value.clone(), *id).is_none()); f.statements.push(def); }
-				for e in true_exprs.iter().chain(&*false_exprs) { check(e, f).unwrap(); }
+				let /*mut*/ true_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[0], Ts));
+				let /*mut*/ false_exprs = map(species, |&specie| expression(&thermodynamics[specie].pieces[1], Ts));
+				//let defs = eliminate_common_subexpressions(&mut true_exprs, &mut false_exprs, f);
+				//for def in defs { let Statement::Value{value,id} = &def else { panic!() }; assert!(f.values.insert(value.clone(), *id).is_none()); f.statements.push(def); }
+				//for e in true_exprs.iter().chain(&*false_exprs) { check(e, f).unwrap(); }
 				([true_exprs, false_exprs], results)
 			}).unzip();
 			let (true_exprs, false_exprs):(Vec<_>,Vec<_>) = exprs.into_iter().map(|[a,b]| (a,b)).unzip();
@@ -328,7 +328,7 @@ pub fn species_rates(species: &[NASA7], reactions: &[Reaction], Ts: T, concentra
 
 pub fn reactions_rates(species: &[NASA7], reactions: &[Reaction]) -> Function {
 	let active = reactions[0].net.len();
-	let input@[pressure_R, T, volume, nonbulk_amounts @ ..] = &*map(0..(4+species.len()-1), Value) else { panic!() };
+	let input@[pressure_R, T, volume, nonbulk_amounts @ ..] = &*map(0..(3+species.len()-1), Value) else { panic!() };
 	let mut values = ["pressure_","rcp_pressure_", "T", "volume"].iter().map(|s| s.to_string()).chain((0..species.len()-1).map(|i| format!("active_amounts[{i}]"))).collect();
 	let mut function = Block::new(&mut values);
 	let ref mut f = function;

@@ -47,6 +47,7 @@ fn expr(&mut self, expr: &Expression, parent: Option<&Expr>, wrap: usize) -> Str
 				Exp(x) => { let x = self.expr(x, None, wrap); format!("exp({x})") }
 				Ln{x,..} => { let x = self.expr(x, None, wrap); format!("log({x})") }
 				Sq(x) => { let x = self.expr(x, None, wrap); format!("sq({x})") }
+				_ => unreachable!()
 			}
 		}
 		Expression::Block { statements, result } => {
@@ -72,7 +73,7 @@ fn extend(&mut self, s: &Statement) {
 			for (t,e) in zip(&*types, &**false_exprs) { assert!(self.rtype(e) == *t); }
 			for (rtype, id) in zip(&*types, &**results) { if self.registers[id.0].is_none() {
 				let value = self.value(id);
-				if !self.values.iter().filter_map(|v| v.as_ref()).any(|v| v.1 == value) { self.builder.push(format!("{rtype} {value}")) }
+				if !self.values.iter().filter_map(|v| v.as_ref()).any(|v| v.1 == value) { self.builder.push(format!("{rtype} {value};")) }
 			}}
 
 			let condition = self.expr(condition, None, WRAP);
@@ -137,7 +138,7 @@ use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,
 
 #[fehler::throws(anyhow::Error)] fn main() {
 	let path = args().skip(1).next().unwrap_or("gri30".to_string());
-	let path = if Path::new(&path).exists() { path } else { format!("/usr/share/cantera/data/{path}.yaml") };
+	let path = if Path::new(&path).exists() { path } else { format!("/usr/local/share/cantera/data/{path}.yaml") };
 	let model = Loader::load_from_str(std::str::from_utf8(&read(&path).context(path.clone())?)?)?;
 	let model = parse(&model);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _, reactions, State{ref amounts, temperature, pressure_R, ..}) = new(&model);
@@ -207,22 +208,22 @@ use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,
 	}
 
 	let rates = {
-		let input@[lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(6+K), Value) else { panic!() };
-		let values = list(["lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))));
+		let input@[pressure_R, lnT, T, T2, T3, T4, rcpT, concentrations @ ..] = &*map(0..(7+K), Value) else { panic!() };
+		let values = list(["pressure_R","lnT","T","T2","T3","T4","rcpT"].iter().map(|s| s.to_string()).chain((0..K).map(|i| format!("concentrations{i}"))));
 		assert_eq!(input.len(), values.len());
 		let mut values = values.into();
 		let mut function = Block::new(&mut values);
 		let ref mut f = function;
 		use reaction::*;
 		let T = T{lnT:*lnT,T:*T,T2:*T2,T3:*T3,T4:*T4,rcpT:*rcpT,rcpT2: f.def(rcpT*rcpT,"rcpT2")};
+		let concentration = f.def(pressure_R * rcpT, "concentration");
 		Function{
-			output: map(&*species_rates(thermodynamics, &reactions, T, concentrations, f, species_names), |x| x.into()),
+			output: map(&*species_rates(thermodynamics, &reactions, T, concentration, concentrations, f, species_names), |x| x.into()),
 			statements: function.block.statements.into(),
 			input: vec![Type::F64; input.len()].into(),
 			values: values.into()
 		}
 	};
-
 
 	let compile = |mut f: Function, name, array_input, direct| {
 		let [constants, SFU, ALU] = {
@@ -235,6 +236,7 @@ use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,
 					Value(_)|Neg(_/*TODO: fmsub*/) => [constants, SFU, ALU],
 					Div{..}|Sqrt{..}|Exp{..}|Ln{..} => [constants, SFU+1, ALU], //TODO: 1/sqrt
 					Add{..}|Sub{..}|Mul{..}|Sq{..} |Min{..}|Max{..}|LessOrEqual{..} => [constants, SFU, ALU+1], //TODO: FMA
+					_ => unreachable!()
 					},
 					Expression::Block{..} => [constants, SFU, ALU]
 				}
@@ -309,6 +311,7 @@ use {anyhow::Context, std::{path::Path,fs::read,env::args}, self::yaml::{Loader,
 		s.replace("+-","-").replace("double","dfloat")
 	};
 	let target = std::path::PathBuf::from(args().skip(2).next().unwrap_or(std::env::var("HOME")?+"/nekRK/share/mechanisms"));
+	eprintln!("{target:?}");
 	let name = std::path::Path::new(&path).file_stem().unwrap();
 	let name = name.to_str().unwrap();
 	let prefix = args().skip(3).next().unwrap_or("nekrk_".to_string());

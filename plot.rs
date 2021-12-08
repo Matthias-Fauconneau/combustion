@@ -1,11 +1,6 @@
 #![feature(trait_alias,destructuring_assignment,default_free_fn,let_else,iter_zip,unboxed_closures,fn_traits,box_patterns)]
 #![allow(non_snake_case,non_upper_case_globals)]
-/*fn parse(s:&str) -> std::collections::HashMap<&str,f64> {
-	s.split(",").map(|e| { let [key, value] = {let b:Box<[_;2]> = e.split(":").collect::<Box<_>>().try_into().unwrap(); *b}; (key, value.parse().unwrap()) }).collect()
-}*/
-mod yaml;
-mod device;
-
+mod yaml; mod device;
 use {std::iter::zip, anyhow::Result, iter::map, itertools::Itertools, combustion::*, device::*};
 fn main() -> Result<()> {
 	let path = std::env::args().skip(1).next().unwrap_or("LiDryer".to_string());

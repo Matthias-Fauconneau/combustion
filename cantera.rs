@@ -1,32 +1,36 @@
-#![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
 #![feature(default_free_fn,associated_type_bounds,unboxed_closures,fn_traits,trait_alias,iter_zip,let_else)]
-
+#![allow(non_snake_case,non_upper_case_globals,mixed_script_confusables)]
 mod yaml; mod device;
-use {std::iter::zip, anyhow::{Result/*, ensure*/}, iter::map, itertools::Itertools, combustion::*, device::*};
+use {std::iter::zip, anyhow::Result, iter::map, itertools::{Itertools, izip}, combustion::*, device::*};
 fn main() -> Result<()> {
 	let arg = std::env::args().skip(1).next().unwrap_or("gri30".to_string());
 	let (path, name) = if std::path::Path::new(&arg).exists() { (arg, None) } else { (format!("/usr/local/share/cantera/data/{arg}.yaml"), Some(arg)) };
+	eprintln!("{path}");
 	let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?)?;
 	let model = yaml::parse(&yaml);
 	let (ref species_names, ref species@Species{ref molar_mass, ref thermodynamics, ..}, _active, reactions, /*ref state@State{ref amounts, temperature, pressure_R, ..}*/..) = new(&model);
 	let species_names = &**species_names;
 	let state = {
 		let name = name.unwrap();
-		let path = format!("../test/share/mechanisms/{name}.final");
+		let path = format!("../test/share/mechanisms/{name}.ignition");
 		let yaml = yaml::Loader::load_from_str(std::str::from_utf8(&std::fs::read(&path).expect(&path))?).unwrap();
 		let state = &yaml[0];
-		let X = state["X"].as_hash().unwrap();
-		State{
-			pressure_R: state["pressure"].as_f64().unwrap() / R,
-			volume: 1.,
-			temperature: state["temperature"].as_f64().unwrap(),
-			amounts: map(species_names, |&name| X[&yaml::Yaml::from_str(name)].as_f64().unwrap())
+		let pressure_R = state["pressure"].as_f64().unwrap() / R;
+		let temperature = state["temperature"].as_f64().unwrap();
+		let volume = {assert!(state["volume"].is_badvalue()); 1.};
+		let total_amount = pressure_R * volume / temperature;
+		State{pressure_R, volume, temperature,
+			amounts: {
+				let X = state["X"].as_hash().unwrap();
+				let amounts_proportions = map(species_names, |&name| {let x = X[&yaml::Yaml::from_str(name)].as_f64().unwrap(); assert!(x >= 0.); x});
+				map(&*amounts_proportions, |amount_proportion| total_amount * amount_proportion/amounts_proportions.iter().sum::<f64>())
+			}
 		}
 	};
 	let ref state@State{ref amounts, temperature, pressure_R, ..} = state;
 	let amounts = &**amounts;
 	let _ = (amounts, temperature, pressure_R);
-	eprintln!("{}", zip(amounts, species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
+	//eprintln!("{}", zip(amounts, species_names).filter(|(&x,_)| x != 0.).map(|(_,name)| name).format(" "));
 
 	use std::os::raw::c_char;
 	#[link(name = "cantera")] extern "C" {
@@ -85,7 +89,7 @@ fn main() -> Result<()> {
 	#[cfg(feature="ir")] let ε = f64::max(ε, 1e-2);
 
 	let test = move |state: &State| -> Result<_> {
-		let State{temperature, pressure_R, amounts, ..} = state;
+		let State{pressure_R, temperature, volume, amounts, ..} = state;
 		let total_amount = amounts.iter().sum::<f64>();
 
 		let cantera_order = |o: &[f64]| (0..o.len()).map(|i| o[species_names.iter().position(|&s| s==cantera_species_names[i]).expect(&cantera_species_names[i])]).collect::<Box<_>>();
@@ -137,40 +141,16 @@ fn main() -> Result<()> {
 			let active = _active;
 			let order = |o: &[f64]| map(&species_names[0..active], |specie| o[cantera_species_names.iter().position(|s| s==specie).expect(specie)]);
 			let cantera_species_rates = order(&map(cantera_species_rates, |c| c*1000.)); // kmol -> mol
+			let cantera_species_rates = &*cantera_species_rates;
 			assert!(cantera_species_rates.len() == active);
 			// Rates
-			let error = |x:f64,r| f64::abs(x-r) / f64::max(r, 1e6) /*{
-				let m=f64::abs(f64::max(a,b));
-				if m < 4e3 { return 0.; }
-				let threshold=1e6; (if m < threshold { m/threshold } else { 1. }) * num::relative_error(a,b)
-			}*/;
-			if false {
-				let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
-				assert!(rates.len() == active, "{}", rates.len());
-				let (k, e) = rates.iter().zip(&*cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				if e >= ε { println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_species_rates[k]); }
-				Ok((k, e))
-			} else {
-				let [_dtT, _dtV, reactions_rates @ ..] = &*reactions_rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[total_amount, *temperature] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
-				//assert!(reactions_rates.len() == , "{}", rates.len());
-				#[link(name = "cantera")] extern "C" { 
-					fn kin_getNetRatesOfProgress(kinetics: i32, len: usize, rates: *mut f64) -> i32;
-					fn kin_getReactionString(kinetics: i32, reaction: usize, len: usize, buffer: *mut c_char) -> i32;
-				}
-				let cantera_reactions_rates = {
-					let mut rates = vec![0.; reactions.len()];
-					unsafe{kin_getNetRatesOfProgress(kinetics, rates.len(), rates.as_mut_ptr())};
-					map(rates, |c| c*1000.) // kmol -> mol
-				};
-				let cantera_reactions_names = map(0..reactions.len(), |i| {
-					let mut reaction = [0; 32];
-					unsafe{kin_getReactionString(kinetics, i, reaction.len(), reaction.as_mut_ptr())};
-					unsafe{std::ffi::CStr::from_ptr(reaction.as_ptr()).to_str().unwrap().to_owned()}
-				});
-				let (k, e) = reactions_rates.iter().zip(&*cantera_reactions_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
-				println!("{}: {:.0} {:.0}", cantera_reactions_names[k], reactions_rates[k], cantera_reactions_rates[k]);
-				Ok((k, e))
-			}
+			let error = |x:f64, r| f64::abs(x-r) / f64::max(r, 1e3);
+			let [_dtT, _dtV, rates @ ..] = &*rates(&[*pressure_R as _, (1./pressure_R) as _], &([&[*temperature, *volume] as &[_], &*nonbulk_amounts].concat()))? else { panic!() };
+			assert!(rates.len() == active, "{}", rates.len());
+			eprintln!("{}", izip!(species_names, rates, cantera_species_rates).format_with("\n", |(k,v,c),f| f(&format_args!("{k} {v:e} {c:e}"))));
+			let (k, e) = zip(rates, cantera_species_rates).map(|(&x,&r)| error(x as _,r)).enumerate().reduce(|a,b| if a.1 > b.1 { a } else { b }).unwrap();
+			if e >= ε { println!("{}: {:.0} {:.0}", species_names[k], rates[k], cantera_species_rates[k]); }
+			Ok((k, e))
 		}
 	};
 	if false {
@@ -196,7 +176,7 @@ fn main() -> Result<()> {
 			if e > max { max = e; println!("{i} {e:.0e}"); } else if i%100000==0 { println!("{i} {max:.0e} {:.0}K/s", (i as f64/1000.)/start.elapsed().as_secs_f64()) }
 		}
 	} else {
-		println!("{state:?}");
+		//println!("{state:?}");
 		let (_, e) = test(&state)?;
 		println!("{e:e}");
 		//ensure!(e < 2e-3, "{e:e}");

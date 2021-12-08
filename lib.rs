@@ -62,8 +62,8 @@ impl Species {
 
 #[derive(Debug,serde::Serialize)] pub struct State {
     pub pressure_R: f64,
-    pub volume: f64,
     pub temperature: f64,
+    pub volume: f64,
     pub amounts: Box<[f64]>
 }
 
@@ -81,7 +81,7 @@ pub fn initial_state(model::Model{species, state, ..}: &model::Model<'_>) -> Sta
 
 pub use model::{RateConstant, Troe, SRI};
 
-pub enum ReactionModel {
+#[derive(Debug)] pub enum ReactionModel {
 	Elementary,
 	Irreversible,
 	ThreeBody { efficiencies: Box<[f64]> },
@@ -90,7 +90,7 @@ pub enum ReactionModel {
 	SRI { efficiencies: Box<[f64]>, k0: RateConstant, sri: SRI },
 }
 
-pub struct Reaction {
+#[derive(Debug)] pub struct Reaction {
 	pub reactants: Box<[u8]>,
 	pub products: Box<[u8]>,
 	pub net: Box<[i8/*; S-1*/]>,
