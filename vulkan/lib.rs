@@ -24,7 +24,7 @@ impl Device {
 		unsafe {
 			let entry = Entry::new()?;
 			let instance = entry.create_instance(&InstanceCreateInfo::builder()
-				.application_info(&ApplicationInfo::builder().api_version(make_api_version(0, 1, 2, 0)).application_name(main).application_version(0).engine_name(main))
+				.application_info(&ApplicationInfo::builder().api_version(make_api_version(0, 1, 5, 0)).application_name(main).application_version(0).engine_name(main))
 				.enabled_layer_names(&[CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
 				.enabled_extension_names(&[DebugUtils::name().as_ptr()])
 				.push_next(&mut ValidationFeaturesEXT::builder().enabled_validation_features(&[ValidationFeatureEnableEXT::DEBUG_PRINTF]))
@@ -50,7 +50,7 @@ impl Device {
 				message_severity: DebugUtilsMessageSeverityFlagsEXT::all(),
 				message_type: DebugUtilsMessageTypeFlagsEXT::all(), pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?;
 
-			let device = *instance.enumerate_physical_devices()?.first().unwrap();
+			let device = instance.enumerate_physical_devices()?.into_iter().find(|device| instance.get_physical_device_properties(*device).device_type == PhysicalDeviceType::DISCRETE_GPU).unwrap();
 			let timestamp_period = instance.get_physical_device_properties(device).limits.timestamp_period;
 			let memory_properties = instance.get_physical_device_memory_properties(device);
 			let queue_family_index = instance.get_physical_device_queue_family_properties(device).iter().position(|p| p.queue_flags.contains(QueueFlags::COMPUTE)).unwrap() as u32;
@@ -98,14 +98,14 @@ impl<T:Plain> Buffer<T> {
 				usage: BufferUsageFlags::STORAGE_BUFFER|BufferUsageFlags::TRANSFER_SRC|BufferUsageFlags::TRANSFER_DST,
 				sharing_mode: SharingMode::EXCLUSIVE, ..default()}, None)?;
 			let memory_requirements = device.get_buffer_memory_requirements(buffer);
-			let flags = MemoryPropertyFlags::DEVICE_LOCAL;
+			let flags = MemoryPropertyFlags::DEVICE_LOCAL | MemoryPropertyFlags::HOST_VISIBLE;
 			let memory_type_index = device.memory_properties.memory_types[..device.memory_properties.memory_type_count as _].iter().enumerate().position(
 				|(index, memory_type)| (1 << index) & memory_requirements.memory_type_bits != 0 && memory_type.property_flags & flags == flags).unwrap() as _;
 			let memory = device.allocate_memory(&MemoryAllocateInfo{allocation_size: memory_requirements.size, memory_type_index, ..default()}, None)?;
 			device.bind_buffer_memory(buffer, memory, 0)?;
 			Self{len: data.len(), buffer, memory, _type: default()}
 		};
-		if false { buffer.map_mut(device)?.copy_from_slice(data); }
+		if true || as_u8(data).len() > 65536 { buffer.map_mut(device)?.copy_from_slice(data); }
 		else {
 			let Device{device, command_pool, queue, fence, ..} = device;
 			unsafe {

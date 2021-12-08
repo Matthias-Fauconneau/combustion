@@ -49,3 +49,6 @@ png={optional=true, package= 'image', version='*', default-features=false, featu
 libc={optional=true, version='*'}
 cuda= {optional=true, package='rustacuda', git='https://github.com/Matthias-Fauconneau/RustaCuda'}
 serde_yaml= '*'
+
+[profile.dev]
+opt-level = 3
